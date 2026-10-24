@@ -45,27 +45,43 @@ class FlacMusicProvider {
             ?: throw IOException("不支持的音源平台。")
         if (keyword.isBlank()) throw IOException("请输入要搜索的歌名或歌手。")
 
-        val url = apiUrl("search")
-        val request = baseRequest(url, cookie, userAgent)
-            .post(
-                FormBody.Builder()
-                    .add("platform", normalizedPlatform)
-                    .add("keyword", keyword.trim())
-                    .add("page", "1")
-                    .add("size", "20")
-                    .build()
-            )
-            .build()
-        val root = JSONObject(executeJson(request))
-        checkApiCode(root)
-        val data = root.optJSONObject("data")
-            ?: throw IOException("下载站搜索响应中没有 data 字段。")
-        val list = data.optJSONArray("list") ?: JSONArray()
-        val songs = (0 until list.length()).mapNotNull { index ->
-            parseSong(list.optJSONObject(index), normalizedPlatform)
+        val primaryFailure = try {
+            val url = apiUrl("search")
+            val request = baseRequest(url, cookie, userAgent)
+                .post(
+                    FormBody.Builder()
+                        .add("platform", normalizedPlatform)
+                        .add("keyword", keyword.trim())
+                        .add("page", "1")
+                        .add("size", "20")
+                        .build()
+                )
+                .build()
+            val root = JSONObject(executeJson(request))
+            checkApiCode(root)
+            val data = root.optJSONObject("data")
+                ?: throw IOException("下载站搜索响应中没有 data 字段。")
+            val list = data.optJSONArray("list") ?: JSONArray()
+            val songs = (0 until list.length()).mapNotNull { index ->
+                parseSong(list.optJSONObject(index), normalizedPlatform)
+            }
+            if (songs.isEmpty()) throw IOException("没有搜索到歌曲。")
+            return@withContext songs
+        } catch (error: Exception) {
+            error
         }
-        if (songs.isEmpty()) throw IOException("没有搜索到歌曲。若网页提示访问验证，请先在下方网站中完成人机验证后重试。")
-        songs
+
+        try {
+            val fallbackSongs = searchGdStudio(keyword, normalizedPlatform)
+            if (fallbackSongs.isNotEmpty()) return@withContext fallbackSongs
+            throw IOException("GD Studio 没有搜索到候选歌曲。")
+        } catch (fallbackError: Exception) {
+            throw IOException(
+                "主音源搜索失败（" + (primaryFailure.message ?: "未知错误") +
+                    "）；GD Studio 兜底也失败（" + (fallbackError.message ?: "未知错误") + "）。",
+                primaryFailure,
+            )
+        }
     }
 
     suspend fun resolveDownloadUrl(
@@ -80,6 +96,10 @@ class FlacMusicProvider {
         val actualBitrate = when (normalizedFormat) {
             "flac" -> "2000"
             else -> bitrate.takeIf { it in setOf("128", "320") } ?: "320"
+        }
+        if (song.platform.startsWith("gd:")) {
+            val gdBitrate = if (normalizedFormat == "flac") "999" else actualBitrate
+            return@withContext resolveGdStudioUrl(song, gdBitrate, userAgent)
         }
         val request = baseRequest(apiUrl("getUrl"), cookie, userAgent)
             .post(
@@ -113,6 +133,53 @@ class FlacMusicProvider {
         direct
     }
 
+    suspend fun resolveDownloadUrlWithFallback(
+        song: FlacSiteSong,
+        format: String,
+        bitrate: String,
+        cookie: String?,
+        userAgent: String,
+    ): Pair<String, Boolean> {
+        try {
+            val url = resolveDownloadUrl(song, format, bitrate, cookie, userAgent)
+            return url to song.platform.startsWith("gd:")
+        } catch (primaryError: Exception) {
+            val platform = if (song.platform.contains("kuwo", ignoreCase = true)) "kuwo" else "wyy"
+            val fallbackCandidates = try {
+                withContext(Dispatchers.IO) {
+                    searchGdStudio(song.title + " " + song.artist, platform)
+                }
+            } catch (searchError: Exception) {
+                throw IOException(
+                    "主音源解析失败（" + (primaryError.message ?: "未知错误") +
+                        "）；GD Studio 搜索兜底失败（" + (searchError.message ?: "未知错误") + "）。",
+                    primaryError,
+                )
+            }
+            fun normalize(value: String): String = value.lowercase().filter { it.isLetterOrDigit() }
+            val wantedTitle = normalize(song.title)
+            val wantedArtist = normalize(song.artist.substringBefore(" / "))
+            val match = fallbackCandidates.firstOrNull { candidate ->
+                val candidateTitle = normalize(candidate.title)
+                val candidateArtist = normalize(candidate.artist)
+                candidateTitle == wantedTitle &&
+                    (wantedArtist.isBlank() || candidateArtist.contains(wantedArtist) || wantedArtist.contains(candidateArtist))
+            } ?: throw IOException(
+                "主音源解析失败；GD Studio 也没有找到歌名和歌手都匹配的版本，已停止以免下载错歌。",
+                primaryError,
+            )
+            return try {
+                resolveDownloadUrl(match, format, bitrate, cookie, userAgent) to true
+            } catch (fallbackError: Exception) {
+                throw IOException(
+                    "主音源解析失败（" + (primaryError.message ?: "未知错误") +
+                        "）；GD Studio 兜底解析也失败（" + (fallbackError.message ?: "未知错误") + "）。",
+                    fallbackError,
+                )
+            }
+        }
+    }
+
     suspend fun fetchLyrics(
         song: FlacSiteSong,
         cookie: String?,
@@ -141,6 +208,116 @@ class FlacMusicProvider {
         } else {
             body
         }
+    }
+
+    private fun searchGdStudio(keyword: String, normalizedPlatform: String): List<FlacSiteSong> {
+        val source = if (normalizedPlatform == "wyy") "netease" else normalizedPlatform
+        val url = HttpUrl.Builder()
+            .scheme("https")
+            .host("music-api.gdstudio.xyz")
+            .addPathSegments("api.php")
+            .addQueryParameter("types", "search")
+            .addQueryParameter("source", source)
+            .addQueryParameter("name", keyword.trim())
+            .addQueryParameter("count", "20")
+            .addQueryParameter("pages", "1")
+            .build()
+        val request = Request.Builder()
+            .url(url)
+            .header("Referer", "https://music.gdstudio.xyz/")
+            .header("User-Agent", fallbackUserAgent)
+            .get()
+            .build()
+        val body = executeBody(request).trim()
+        val root = runCatching { JSONObject(body) }.getOrNull()
+        if (root != null && root.has("code") && root.optInt("code") != 0 && root.optInt("code") != 200) {
+            throw IOException("GD Studio 搜索返回错误：" + root.optString("msg").ifBlank { root.optString("message") })
+        }
+        val list = if (body.startsWith("[")) {
+            JSONArray(body)
+        } else {
+            root?.optJSONArray("data")
+                ?: root?.optJSONObject("data")?.optJSONArray("list")
+                ?: root?.optJSONArray("result")
+                ?: root?.optJSONArray("list")
+                ?: root?.optJSONArray("songs")
+                ?: JSONArray()
+        }
+        val songs = (0 until list.length()).mapNotNull { index ->
+            val item = list.optJSONObject(index) ?: return@mapNotNull null
+            val id = item.optString("id").ifBlank { item.optString("track_id") }
+            val title = item.optString("name").ifBlank { item.optString("title") }
+            if (id.isBlank() || title.isBlank()) return@mapNotNull null
+            val artistValue = item.opt("artist")
+            val artist = when (artistValue) {
+                is JSONArray -> (0 until artistValue.length()).mapNotNull { i ->
+                    when (val a = artistValue.opt(i)) {
+                        is JSONObject -> a.optString("name").ifBlank { null }
+                        is String -> a.trim().ifBlank { null }
+                        else -> null
+                    }
+                }.joinToString(" / ")
+                is JSONObject -> artistValue.optString("name")
+                is String -> artistValue
+                else -> item.optString("artists")
+            }
+            val cover = listOf(
+                item.optString("pic_url"),
+                item.optString("coverUrl"),
+                item.optString("cover"),
+            ).firstOrNull { it.startsWith("http://") || it.startsWith("https://") || it.startsWith("//") }.orEmpty()
+                .let { if (it.startsWith("//")) "https:" + it else it.replaceFirst(Regex("^http://", RegexOption.IGNORE_CASE), "https://") }
+            FlacSiteSong(
+                id = id,
+                platform = "gd:" + source,
+                title = title,
+                artist = artist.ifBlank { "未知歌手" },
+                album = item.optString("album"),
+                sign = "",
+                time = "",
+                coverUrl = cover,
+            )
+        }
+        if (songs.isEmpty()) throw IOException("GD Studio 没有搜索到候选歌曲。")
+        return songs
+    }
+
+    private fun resolveGdStudioUrl(song: FlacSiteSong, bitrate: String, userAgent: String): String {
+        val source = song.platform.removePrefix("gd:").ifBlank { "netease" }
+        val url = HttpUrl.Builder()
+            .scheme("https")
+            .host("music-api.gdstudio.xyz")
+            .addPathSegments("api.php")
+            .addQueryParameter("types", "url")
+            .addQueryParameter("source", source)
+            .addQueryParameter("id", song.id)
+            .addQueryParameter("br", bitrate)
+            .build()
+        val request = Request.Builder()
+            .url(url)
+            .header("Referer", "https://music.gdstudio.xyz/")
+            .header("User-Agent", userAgent.ifBlank { fallbackUserAgent })
+            .get()
+            .build()
+        val body = executeBody(request).trim()
+        val direct = if (body.startsWith("http://") || body.startsWith("https://")) {
+            body
+        } else {
+            val json = runCatching { JSONObject(body) }.getOrElse {
+                throw IOException("GD Studio 没有返回有效的下载地址。", it)
+            }
+            val code = json.optInt("code", 0)
+            if (code != 0 && code != 200) {
+                throw IOException("GD Studio 下载接口返回错误：" + json.optString("msg").ifBlank { json.optString("message") })
+            }
+            json.optString("url")
+                .ifBlank { json.optJSONObject("data")?.optString("url").orEmpty() }
+        }
+        val uri = runCatching { android.net.Uri.parse(direct) }.getOrNull()
+        if (uri == null || uri.scheme?.lowercase() !in setOf("http", "https") || uri.host.isNullOrBlank()) {
+            throw IOException("GD Studio 没有返回有效的 HTTP/HTTPS 音频地址。")
+        }
+        return direct
     }
 
     private fun apiUrl(action: String) = HttpUrl.Builder()

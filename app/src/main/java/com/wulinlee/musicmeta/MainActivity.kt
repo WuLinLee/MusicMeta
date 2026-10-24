@@ -62,6 +62,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -89,6 +91,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.distinctUntilChanged
 import java.io.File
 import java.io.IOException
 
@@ -181,6 +185,8 @@ private fun MusicMetaApp() {
         if (inputMode == "liked") likedFilterText = value else publicFilterText = value
     }
     var isSyncing by remember { mutableStateOf(false) }
+    var isLoadingMore by remember { mutableStateOf(false) }
+    var suppressAutoLoadMore by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("输入公开歌单 ID 或链接开始。无需登录网易云账号。") }
     var lastErrorReport by remember { mutableStateOf<String?>(null) }
     val captureError: (String, Throwable) -> Unit = { stage, error ->
@@ -233,7 +239,94 @@ private fun MusicMetaApp() {
         } ?: "Download/MusicMeta（默认）"
     }
 
-    val busy = isSyncing || isSearchingFlac || isResolvingUrl || isDownloading
+    val busy = isSyncing || isLoadingMore || isSearchingFlac || isResolvingUrl || isDownloading
+
+    val loadMoreTracks: () -> Unit = {
+        val current = playlist
+        if (
+            current != null &&
+            current.nextOffset < current.totalTrackCount &&
+            !isSyncing && !isLoadingMore && !isSearchingFlac && !isResolvingUrl && !isDownloading
+        ) {
+            val pageOffset = current.nextOffset
+            val targetMode = inputMode
+            isLoadingMore = true
+            suppressAutoLoadMore = false
+            status = "正在加载下一批歌曲（第 " + (pageOffset + 1) + " 首起）……"
+            scope.launch {
+                try {
+                    val page = withTimeout(28_000L) {
+                        withContext(Dispatchers.IO) {
+                            playlistProvider.load(
+                                input = current.id.toString(),
+                                likedByUserId = false,
+                                offset = pageOffset,
+                                limit = 100,
+                            )
+                        }
+                    }
+                    if (page.nextOffset <= pageOffset && page.totalTrackCount > pageOffset) {
+                        throw IOException("接口没有推进分页位置，请重试。")
+                    }
+                    val existing = if (targetMode == "liked") likedPlaylist else publicPlaylist
+                    if (existing != null && existing.id == current.id) {
+                        val updated = existing.copy(
+                            tracks = (existing.tracks + page.tracks).distinctBy { it.id },
+                            totalTrackCount = maxOf(existing.totalTrackCount, page.totalTrackCount),
+                            nextOffset = maxOf(existing.nextOffset, page.nextOffset),
+                            coverUrl = existing.coverUrl.ifBlank { page.coverUrl },
+                            name = existing.name.ifBlank { page.name },
+                            creator = existing.creator.ifBlank { page.creator },
+                        )
+                        if (targetMode == "liked") likedPlaylist = updated else publicPlaylist = updated
+                        status = if (updated.nextOffset >= updated.totalTrackCount) {
+                            "已到歌单末尾：目前显示 " + updated.tracks.size +
+                                " 首有效歌曲，歌单共 " + updated.totalTrackCount + " 个曲目位置。"
+                        } else {
+                            "已读取 " + updated.nextOffset + " / " + updated.totalTrackCount +
+                                " 个曲目位置，目前显示 " + updated.tracks.size + " 首；继续下滑加载下一批。"
+                        }
+                    }
+                } catch (error: Exception) {
+                    val detail = error.message?.takeIf { it.isNotBlank() } ?: "网络或接口暂不可用"
+                    status = "继续加载失败：" + detail + "，已加载内容会保留。"
+                    captureError("继续加载歌单", error)
+                    suppressAutoLoadMore = true
+                } finally {
+                    isLoadingMore = false
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(
+        inputMode,
+        playlist?.id,
+        playlist?.tracks?.size,
+        playlist?.nextOffset,
+        isLoadingMore,
+        suppressAutoLoadMore,
+        filterText,
+    ) {
+        val current = playlist ?: return@LaunchedEffect
+        if (
+            current.nextOffset >= current.totalTrackCount ||
+            isLoadingMore ||
+            suppressAutoLoadMore ||
+            filterText.isNotBlank()
+        ) {
+            return@LaunchedEffect
+        }
+        snapshotFlow {
+            val info = listState.layoutInfo
+            val lastVisibleIndex = info.visibleItemsInfo.lastOrNull()?.index ?: -1
+            info.totalItemsCount > 0 && lastVisibleIndex >= info.totalItemsCount - 3
+        }.distinctUntilChanged().collect { nearBottom ->
+            if (nearBottom && !isLoadingMore && !suppressAutoLoadMore) {
+                loadMoreTracks()
+            }
+        }
+    }
 
     val syncPlaylist: () -> Unit = {
         val input = playlistInput.trim()
@@ -247,13 +340,20 @@ private fun MusicMetaApp() {
             scope.launch {
                 try {
                     val loaded = withTimeout(28_000L) {
-                        withContext(Dispatchers.IO) { playlistProvider.load(input, likedByUserId = inputMode == "liked") }
+                        withContext(Dispatchers.IO) { playlistProvider.load(input, likedByUserId = inputMode == "liked", offset = 0, limit = 100) }
                     }
                     if (inputMode == "liked") likedPlaylist = loaded else publicPlaylist = loaded
                     selectedTrack = null
                     flacResults = emptyList()
                     setFilterText("")
-                    status = "已同步 " + loaded.tracks.size + " 首歌曲。点歌曲右侧“找音源”继续。"
+                    suppressAutoLoadMore = false
+                    scope.launch { listState.scrollToItem(0) }
+                    status = if (loaded.nextOffset >= loaded.totalTrackCount) {
+                        "已加载 " + loaded.tracks.size + " 首歌曲。点歌曲右侧“找音源”继续。"
+                    } else {
+                        "已加载首批 " + loaded.tracks.size + " 首 / 共 " + loaded.totalTrackCount +
+                            " 首。滑到列表底部会继续读取下一批 100 首。"
+                    }"
                 } catch (error: Exception) {
                     val detail = error.message?.takeIf { it.isNotBlank() } ?: "网络或接口暂不可用"
                     status = "同步失败：" + detail
@@ -796,7 +896,7 @@ private fun MusicMetaApp() {
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
-                                Text(currentPlaylist.tracks.size.toString() + " 首歌曲", color = SubInk, fontSize = 12.sp)
+                                Text("已载入 " + currentPlaylist.tracks.size + " / " + currentPlaylist.totalTrackCount + " 首", color = SubInk, fontSize = 12.sp)
                             }
                         }
                     }
@@ -825,7 +925,7 @@ private fun MusicMetaApp() {
                         }
                         Surface(color = SoftAccent, shape = CircleShape) {
                             Text(
-                                currentPlaylist.tracks.size.toString(),
+                                currentPlaylist.totalTrackCount.toString(),
                                 color = Accent,
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
                                 fontSize = 12.sp,
@@ -1056,6 +1156,38 @@ private fun MusicMetaApp() {
                             }
                         }
                     }
+                        }
+                    }
+                }
+                if (currentPlaylist.nextOffset < currentPlaylist.totalTrackCount || isLoadingMore) {
+                    item(key = "load-more-tracks") {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(18.dp),
+                            color = SurfaceColor,
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                if (isLoadingMore) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        color = Accent,
+                                        strokeWidth = 2.dp,
+                                    )
+                                    Spacer(Modifier.size(10.dp))
+                                    Text("正在加载下一批歌曲…", color = SubInk, fontSize = 12.sp)
+                                } else if (suppressAutoLoadMore || filterText.isNotBlank()) {
+                                    OutlinedButton(
+                                        onClick = { loadMoreTracks() },
+                                        enabled = !busy,
+                                    ) { Text("加载下一批 100 首") }
+                                } else {
+                                    Text("滑到这里自动加载下一批 100 首", color = SubInk, fontSize = 12.sp)
+                                }
+                            }
                         }
                     }
                 }

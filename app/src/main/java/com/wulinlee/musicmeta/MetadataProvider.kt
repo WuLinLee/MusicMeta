@@ -28,10 +28,17 @@ class MetadataProvider {
             ?: resolveCoverUrlFromGdStudio(track)?.let(::downloadCover)
             ?: resolveCoverUrlFromItunes(track)?.let(::downloadCover)
         var lyrics = getLyrics(track.id)
+        if (lyrics.original.isBlank() || lyrics.translated.isBlank()) {
+            val gdFallback = getGdStudioLyrics(track.id)
+            lyrics = lyrics.copy(
+                original = lyrics.original.ifBlank { gdFallback.original },
+                translated = lyrics.translated.ifBlank { gdFallback.translated },
+            )
+        }
         if (lyrics.original.isBlank()) {
             val fallback = getLrclibLyrics(track)
             lyrics = lyrics.copy(
-                original = fallback.first,
+                original = lyrics.original.ifBlank { fallback.first },
                 translated = lyrics.translated.ifBlank { fallback.second },
             )
         }
@@ -75,21 +82,73 @@ class MetadataProvider {
         }
     }
 
+    private fun getGdStudioLyrics(id: Long): LyricsPayload {
+        if (id <= 0L) return LyricsPayload()
+        return try {
+            val url = HttpUrl.Builder()
+                .scheme("https").host("music-api.gdstudio.xyz").addPathSegments("api.php")
+                .addQueryParameter("types", "lyric")
+                .addQueryParameter("source", "netease")
+                .addQueryParameter("id", id.toString())
+                .build()
+            val body = get(url.toString(), "https://music.gdstudio.xyz/")
+            val root = JSONObject(body)
+            val data = root.optJSONObject("data")
+            LyricsPayload(
+                original = root.optString("lyric").ifBlank { data?.optString("lyric").orEmpty() },
+                translated = root.optString("tlyric").ifBlank { data?.optString("tlyric").orEmpty() },
+            )
+        } catch (_: Exception) {
+            LyricsPayload()
+        }
+    }
+
     private fun getLrclibLyrics(track: MusicTrack): Pair<String, String> {
+        fun normalize(value: String): String = value.trim().lowercase().filter { it.isLetterOrDigit() }
+        val wantedTitle = normalize(track.title)
+        val wantedArtist = normalize(track.artists.substringBefore(" / "))
+
+        // LRCLIB's exact-signature endpoint uses duration and is generally safer than a loose search.
+        val durationSeconds = (track.durationMs / 1000L).toInt()
+        if (durationSeconds in 1..3600) {
+            try {
+                val exactUrl = HttpUrl.Builder()
+                    .scheme("https").host("lrclib.net").addPathSegments("api/get")
+                    .addQueryParameter("track_name", track.title)
+                    .addQueryParameter("artist_name", track.artists.substringBefore(" / "))
+                    .addQueryParameter("album_name", track.album)
+                    .addQueryParameter("duration", durationSeconds.toString())
+                    .build()
+                val match = JSONObject(get(exactUrl.toString()))
+                val title = normalize(match.optString("trackName").ifBlank { match.optString("name") })
+                val artist = normalize(match.optString("artistName"))
+                if (title == wantedTitle && (wantedArtist.isBlank() || artist.contains(wantedArtist) || wantedArtist.contains(artist))) {
+                    val synced = match.optString("syncedLyrics")
+                    val plain = match.optString("plainLyrics")
+                    if (synced.isNotBlank() || plain.isNotBlank()) return (synced.ifBlank { plain }) to ""
+                }
+            } catch (_: Exception) {
+                // Continue to strict title/artist search below.
+            }
+        }
+
         return try {
             val url = HttpUrl.Builder()
                 .scheme("https").host("lrclib.net").addPathSegments("api/search")
                 .addQueryParameter("track_name", track.title)
-                .addQueryParameter("artist_name", track.artists)
+                .addQueryParameter("artist_name", track.artists.substringBefore(" / "))
+                .addQueryParameter("album_name", track.album)
                 .build()
             val result = JSONArray(get(url.toString()))
             val list = (0 until result.length()).mapNotNull { result.optJSONObject(it) }
             val match = list.firstOrNull {
-                it.optString("trackName").equals(track.title, true) &&
-                    it.optString("artistName").contains(track.artists.substringBefore(" / "), true)
-            } ?: list.firstOrNull()
-            val synced = match?.optString("syncedLyrics").orEmpty()
-            val plain = match?.optString("plainLyrics").orEmpty()
+                val title = normalize(it.optString("trackName").ifBlank { it.optString("name") })
+                val artist = normalize(it.optString("artistName"))
+                title == wantedTitle &&
+                    (wantedArtist.isBlank() || artist.contains(wantedArtist) || wantedArtist.contains(artist))
+            } ?: return "" to ""
+            val synced = match.optString("syncedLyrics")
+            val plain = match.optString("plainLyrics")
             (synced.ifBlank { plain }) to ""
         } catch (_: Exception) {
             "" to ""

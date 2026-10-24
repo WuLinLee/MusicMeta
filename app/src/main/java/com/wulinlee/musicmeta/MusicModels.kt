@@ -15,6 +15,8 @@ data class PublicPlaylist(
     val creator: String,
     val coverUrl: String,
     val tracks: List<MusicTrack>,
+    val totalTrackCount: Int = tracks.size,
+    val nextOffset: Int = tracks.size,
 )
 
 data class TrackAssets(
