@@ -13,7 +13,10 @@ class LrcMergerTest {
     @Test fun keepsOriginalWhenTranslationMissing() {
         assertEquals("[00:01.00]Hello", LrcMerger.merge("[00:01.00]Hello", ""))
     }
-    @Test fun expandsMultipleTimestampsOnOneLine() {
-        assertEquals("[00:01.00]Hi\n[00:02.00]Hi", LrcMerger.merge("[00:01.00][00:02.00]Hi", ""))
+    @Test fun mergesEachTimestampWhenTranslationIsAvailable() {
+        assertEquals(
+            "[00:01.00]Hi\n[00:01.00]你好\n[00:02.00]Hi\n[00:02.00]世界",
+            LrcMerger.merge("[00:01.00][00:02.00]Hi", "[00:01.00]你好\n[00:02.00]世界")
+        )
     }
 }
