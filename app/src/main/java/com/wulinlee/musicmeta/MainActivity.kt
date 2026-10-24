@@ -133,19 +133,19 @@ private fun MusicMetaApp() {
     val scope = rememberCoroutineScope()
     val folderPreferences = remember { context.getSharedPreferences("music_meta_settings", Context.MODE_PRIVATE) }
     remember(folderPreferences) {
-        if (folderPreferences.getInt("download_defaults_version", 0) < 3) {
+        if (folderPreferences.getInt("download_defaults_version", 0) < 4) {
             folderPreferences.edit()
                 .remove("destination_tree_uri")
                 .putString("quality", "320k")
                 .putString("source_platform", "wyy")
-                .putString("naming_format", "song_artist")
+                .putString("naming_format", "song_title")
                 .putString("folder_rule", "none")
                 .putBoolean("download_lyrics", false)
                 .putBoolean("write_audio_tags", true)
                 .putBoolean("save_translated_lyrics", true)
                 .putBoolean("save_romanization_lyrics", false)
                 .putBoolean("save_word_by_word_lyrics", true)
-                .putInt("download_defaults_version", 3)
+                .putInt("download_defaults_version", 4)
                 .apply()
         }
     }
@@ -169,7 +169,7 @@ private fun MusicMetaApp() {
     var flacPlatform by remember { mutableStateOf(folderPreferences.getString("source_platform", "wyy") ?: "wyy") }
     var selectedQuality by remember { mutableStateOf(folderPreferences.getString("quality", "320k") ?: "320k") }
     var showDownloadSettings by remember { mutableStateOf(false) }
-    var namingFormat by remember { mutableStateOf(folderPreferences.getString("naming_format", "song_artist") ?: "song_artist") }
+    var namingFormat by remember { mutableStateOf(folderPreferences.getString("naming_format", "song_title") ?: "song_title") }
     var downloadLyrics by remember { mutableStateOf(folderPreferences.getBoolean("download_lyrics", false)) }
     var writeAudioTags by remember { mutableStateOf(folderPreferences.getBoolean("write_audio_tags", true)) }
     var saveTranslatedLyrics by remember { mutableStateOf(folderPreferences.getBoolean("save_translated_lyrics", true)) }
@@ -1074,7 +1074,8 @@ private fun MusicMetaApp() {
                     ) { Text("选择下载目录") }
                     Text("文件命名", fontWeight = FontWeight.SemiBold, color = Ink)
                     listOf(
-                        "song_artist" to "歌曲名 - 艺术家（默认）",
+                        "song_title" to "歌曲名（默认）",
+                        "song_artist" to "歌曲名 - 艺术家",
                         "artist_song" to "艺术家 - 歌曲名",
                         "song_artist_quality" to "歌曲名 - 艺术家 [音质]",
                         "artist_song_quality" to "艺术家 - 歌曲名 [音质]",
