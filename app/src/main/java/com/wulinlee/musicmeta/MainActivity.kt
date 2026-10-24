@@ -272,7 +272,7 @@ private fun MusicMetaApp() {
                     } else if (sourceFile.extension.equals("mp3", ignoreCase = true)) {
                         "下载完成，正在处理歌曲信息……"
                     } else {
-                        "音频已下载，正在转码为 \${selectedQuality} MP3……"
+                        "音频已下载，正在转码为 " + selectedQuality + " MP3……"
                     }
                     val outputFile = withContext(Dispatchers.IO) {
                         if (selectedQuality == "FLAC") {
@@ -638,7 +638,7 @@ private fun MusicMetaApp() {
                                     )
                                 }
                                 Text(
-                                    if (selectedQuality == "FLAC") "保存无损 FLAC 文件" else "保存 MP3 · \${selectedQuality}",
+                                    if (selectedQuality == "FLAC") "保存无损 FLAC 文件" else "保存 MP3 · " + selectedQuality,
                                     color = SubInk,
                                     fontSize = 11.sp,
                                 )
