@@ -107,7 +107,7 @@ class FlacMusicProvider {
                 .ifBlank { root.optJSONObject("data")?.optString("url").orEmpty() }
         }
         val uri = runCatching { android.net.Uri.parse(direct) }.getOrNull()
-        if (uri?.scheme?.lowercase() !in setOf("http", "https") || uri.host.isNullOrBlank()) {
+        if (uri == null || uri.scheme?.lowercase() !in setOf("http", "https") || uri.host.isNullOrBlank()) {
             throw IOException("下载站没有返回有效的 HTTP/HTTPS 音频地址。")
         }
         direct
