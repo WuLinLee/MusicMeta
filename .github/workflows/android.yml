@@ -104,11 +104,11 @@ jobs:
         if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
-          REQUESTED_RELEASE_TYPE: ${{ github.event_name == 'workflow_dispatch' && inputs.release_type || 'preview' }}
+          REQUESTED_RELEASE_TYPE: ${{ github.event_name == 'workflow_dispatch' && inputs.release_type || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release:') && 'formal') || 'preview' }}
         run: |
           RELEASE_TYPE="$REQUESTED_RELEASE_TYPE"
-          # Pushes always publish previews. A formal release can only be selected
-          # explicitly through workflow_dispatch.
+          # Ordinary pushes publish previews. A push explicitly titled release:...
+          # is also an explicit formal-release request; workflow_dispatch can choose either channel.
           if [[ "$RELEASE_TYPE" == "formal" ]]; then
             VERSION="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n 1)"
             if [[ -z "$VERSION" ]]; then
