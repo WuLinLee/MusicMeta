@@ -17,6 +17,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -59,7 +60,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -72,6 +73,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -90,26 +92,27 @@ import java.io.File
 import java.io.IOException
 
 private const val DEFAULT_SOURCE = "https://flac.music.hi.cn/"
-private val PageBackground = Color(0xFFF7F8F5)
-private val Ink = Color(0xFF202923)
-private val SubInk = Color(0xFF788179)
-private val Accent = Color(0xFF427564)
-private val SoftAccent = Color(0xFFE5F0E9)
-private val Hairline = Color(0xFFE7EAE5)
+private val PageBackground = Color(0xFF0D1210)
+private val SurfaceColor = Color(0xFF171E1A)
+private val Ink = Color(0xFFE5ECE7)
+private val SubInk = Color(0xFF9AA69E)
+private val Accent = Color(0xFF80C9AA)
+private val SoftAccent = Color(0xFF203D30)
+private val Hairline = Color(0xFF2B3730)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             MaterialTheme(
-                colorScheme = lightColorScheme(
+                colorScheme = darkColorScheme(
                     primary = Accent,
-                    onPrimary = Color.White,
+                    onPrimary = Color(0xFF102019),
                     primaryContainer = SoftAccent,
-                    onPrimaryContainer = Color(0xFF244C3D),
-                    secondary = Color(0xFF65786C),
+                    onPrimaryContainer = Ink,
+                    secondary = Color(0xFF9BBDAA),
                     background = PageBackground,
-                    surface = Color.White,
+                    surface = SurfaceColor,
                     onSurface = Ink,
                     onSurfaceVariant = SubInk,
                     outline = Hairline,
@@ -145,10 +148,10 @@ private fun MusicMetaApp() {
         lastErrorReport = makeErrorReport(context, stage, error)
     }
     var selectedTrack by remember { mutableStateOf<MusicTrack?>(null) }
-    var flacPlatform by remember { mutableStateOf("kuwo") }
+    var flacPlatform by remember { mutableStateOf(folderPreferences.getString("source_platform", "wyy") ?: "wyy") }
     var selectedQuality by remember { mutableStateOf(folderPreferences.getString("quality", "320k") ?: "320k") }
     var showDownloadSettings by remember { mutableStateOf(false) }
-    var namingFormat by remember { mutableStateOf(folderPreferences.getString("naming_format", "song_artist") ?: "song_artist") }
+    var namingFormat by remember { mutableStateOf(folderPreferences.getString("naming_format", "source_original") ?: "source_original") }
     var downloadLyrics by remember { mutableStateOf(folderPreferences.getBoolean("download_lyrics", false)) }
     var writeAudioTags by remember { mutableStateOf(folderPreferences.getBoolean("write_audio_tags", true)) }
     var saveTranslatedLyrics by remember { mutableStateOf(folderPreferences.getBoolean("save_translated_lyrics", true)) }
@@ -188,7 +191,7 @@ private fun MusicMetaApp() {
     val destinationFolderName = remember(destinationTreeUri) {
         destinationTreeUri?.let { uri ->
             runCatching { DocumentFile.fromTreeUri(context, uri)?.name }.getOrNull()
-        } ?: "Music/MusicMeta（默认）"
+        } ?: "Download/MusicMeta（默认）"
     }
 
     val busy = isSyncing || isSearchingFlac || isResolvingUrl || isDownloading
@@ -444,9 +447,19 @@ private fun MusicMetaApp() {
         topBar = {
             CenterAlignedTopAppBar(
                 title = {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("音笺", fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
-                        Text("MUSIC META", color = SubInk, fontSize = 9.sp, letterSpacing = 2.sp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.musicmeta_cover),
+                            contentDescription = "音笺应用封面",
+                            modifier = Modifier.size(34.dp).clip(RoundedCornerShape(9.dp)),
+                        )
+                        Column(horizontalAlignment = Alignment.Start) {
+                            Text("音笺", fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
+                            Text("MUSIC META", color = SubInk, fontSize = 9.sp, letterSpacing = 2.sp)
+                        }
                     }
                 },
                 actions = {
@@ -464,7 +477,7 @@ private fun MusicMetaApp() {
             )
         },
         bottomBar = {
-            Surface(color = Color.White, shadowElevation = 3.dp) {
+            Surface(color = SurfaceColor, shadowElevation = 3.dp) {
                 Column(Modifier.fillMaxWidth()) {
                     if (busy) {
                         LinearProgressIndicator(
@@ -544,7 +557,7 @@ private fun MusicMetaApp() {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(22.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    colors = CardDefaults.cardColors(containerColor = SurfaceColor),
                 ) {
                     Column(
                         modifier = Modifier.padding(15.dp),
@@ -609,7 +622,7 @@ private fun MusicMetaApp() {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    colors = CardDefaults.cardColors(containerColor = SurfaceColor),
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(start = 15.dp, top = 13.dp, end = 12.dp, bottom = 13.dp),
@@ -652,7 +665,7 @@ private fun MusicMetaApp() {
                                     onClick = {
                                         folderPreferences.edit().remove("destination_tree_uri").apply()
                                         destinationTreeUri = null
-                                        status = "已恢复默认目录：Music/MusicMeta"
+                                        status = "已恢复默认目录：Download/MusicMeta"
                                     },
                                     enabled = !busy,
                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
@@ -670,7 +683,7 @@ private fun MusicMetaApp() {
                     isSearchingFlac -> {
                         Card(
                             shape = RoundedCornerShape(22.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            colors = CardDefaults.cardColors(containerColor = SurfaceColor),
                         ) {
                             Row(
                                 modifier = Modifier.padding(16.dp),
@@ -698,7 +711,7 @@ private fun MusicMetaApp() {
                     flacResults.isNotEmpty() -> {
                         Card(
                             shape = RoundedCornerShape(22.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            colors = CardDefaults.cardColors(containerColor = SurfaceColor),
                         ) {
                             Column(
                                 modifier = Modifier.padding(15.dp),
@@ -719,6 +732,7 @@ private fun MusicMetaApp() {
                                             onClick = {
                                                 if (flacPlatform != "kuwo") {
                                                     flacPlatform = "kuwo"
+                                                    folderPreferences.edit().putString("source_platform", "kuwo").apply()
                                                     selectedTrack?.let { searchTrackSource(it) }
                                                 }
                                             },
@@ -729,6 +743,7 @@ private fun MusicMetaApp() {
                                             onClick = {
                                                 if (flacPlatform != "wyy") {
                                                     flacPlatform = "wyy"
+                                                    folderPreferences.edit().putString("source_platform", "wyy").apply()
                                                     selectedTrack?.let { searchTrackSource(it) }
                                                 }
                                             },
@@ -871,7 +886,7 @@ private fun MusicMetaApp() {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(24.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        colors = CardDefaults.cardColors(containerColor = SurfaceColor),
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(15.dp),
@@ -967,7 +982,7 @@ private fun MusicMetaApp() {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(24.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        colors = CardDefaults.cardColors(containerColor = SurfaceColor),
                     ) {
                         Column(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 28.dp, horizontal = 20.dp),
@@ -1017,6 +1032,7 @@ private fun MusicMetaApp() {
                     ) { Text("选择下载目录") }
                     Text("文件命名", fontWeight = FontWeight.SemiBold, color = Ink)
                     listOf(
+                        "source_original" to "音乐源原始文件名（默认）",
                         "song_artist" to "歌曲名 - 艺术家",
                         "artist_song" to "艺术家 - 歌曲名",
                         "song_artist_quality" to "歌曲名 - 艺术家 [音质]",
@@ -1109,7 +1125,7 @@ private fun MusicMetaApp() {
                     Text("完成", color = Accent)
                 }
             },
-            containerColor = Color.White,
+            containerColor = SurfaceColor,
         )
     }
 
@@ -1118,7 +1134,7 @@ private fun MusicMetaApp() {
             Surface(
                 modifier = Modifier.fillMaxWidth().height(560.dp),
                 shape = RoundedCornerShape(24.dp),
-                color = Color.White,
+                color = SurfaceColor,
             ) {
                 Column {
                     Row(
@@ -1216,7 +1232,7 @@ private fun TrackRow(
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
-        color = Color.White,
+        color = SurfaceColor,
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 10.dp),
