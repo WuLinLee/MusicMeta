@@ -260,7 +260,7 @@ private fun MusicMetaApp() {
                             translatedLyrics = "",
                             bilingualLyrics = "",
                         )
-                        coverAvailable = !safeAssets.coverBytes.isNullOrEmpty()
+                        coverAvailable = safeAssets.coverBytes != null && safeAssets.coverBytes.isNotEmpty()
                         lyricSummary = when {
                             safeAssets.originalLyrics.isBlank() -> "暂无歌词"
                             safeAssets.translatedLyrics.isNotBlank() -> "原文 + 中文翻译"
