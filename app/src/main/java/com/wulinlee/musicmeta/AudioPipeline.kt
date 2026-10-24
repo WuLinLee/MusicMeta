@@ -6,6 +6,8 @@ import android.net.Uri
 import android.provider.MediaStore
 import android.webkit.MimeTypeMap
 import android.webkit.URLUtil
+import com.arthenica.ffmpegkit.FFmpegKit
+import com.arthenica.ffmpegkit.ReturnCode
 import org.jaudiotagger.audio.AudioFileIO
 import org.jaudiotagger.tag.FieldKey
 import org.jaudiotagger.tag.Tag
@@ -82,6 +84,23 @@ object AudioDownloader {
     }
 
     private const val fallbackUserAgent = "Mozilla/5.0 (Linux; Android) AppleWebKit/537.36 Chrome/124.0 Mobile Safari/537.36"
+}
+
+
+object AudioConverter {
+    fun toMp3(input: File): File {
+        if (input.extension.equals("mp3", ignoreCase = true)) return input
+        val output = File(input.parentFile, input.nameWithoutExtension + "-converted.mp3")
+        output.delete()
+        val command = "-y -i \"${input.absolutePath}\" -vn -map_metadata 0 -codec:a libmp3lame -q:a 2 \"${output.absolutePath}\""
+        val session = FFmpegKit.execute(command)
+        if (!ReturnCode.isSuccess(session.returnCode) || !output.isFile || output.length() == 0L) {
+            output.delete()
+            throw IOException("MP3 转码失败。原始下载文件仍保留，可选择仅保存原文件。")
+        }
+        if (input.absolutePath != output.absolutePath) input.delete()
+        return output
+    }
 }
 
 object AudioTagWriter {
