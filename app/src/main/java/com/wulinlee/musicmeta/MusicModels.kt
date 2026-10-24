@@ -23,4 +23,6 @@ data class TrackAssets(
     val originalLyrics: String,
     val translatedLyrics: String,
     val bilingualLyrics: String,
+    val romanizationLyrics: String = "",
+    val wordByWordLyrics: String = "",
 )
