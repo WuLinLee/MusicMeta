@@ -130,6 +130,7 @@ object AudioFileNamer {
             else -> "320k"
         }
         val rawBase = when (namingFormat) {
+            "song_title" -> track.title
             "artist_song" -> "${track.artists} - ${track.title}"
             "song_artist_quality" -> "${track.title} - ${track.artists} [${qualityLabel}]"
             "artist_song_quality" -> "${track.artists} - ${track.title} [${qualityLabel}]"
