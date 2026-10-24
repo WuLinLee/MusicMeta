@@ -1,5 +1,9 @@
 name: MusicMeta Android - Build and Preview Release
 
+concurrency:
+  group: musicmeta-android-release
+  cancel-in-progress: true
+
 on:
   push:
     branches: [main]
