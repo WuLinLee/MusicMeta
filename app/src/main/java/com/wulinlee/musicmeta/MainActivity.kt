@@ -78,6 +78,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import java.io.File
+import java.io.IOException
 
 private const val DEFAULT_SOURCE = "https://flac.music.hi.cn/"
 private val PageBackground = Color(0xFFF7F8F5)
@@ -252,7 +253,6 @@ private fun MusicMetaApp() {
             isDownloading = true
             scope.launch {
                 var downloaded: File? = null
-                var mp3File: File? = null
                 try {
                     status = "正在下载 " + (track?.title ?: "音频") + "……"
                     val sourceFile = withContext(Dispatchers.IO) {
@@ -267,24 +267,17 @@ private fun MusicMetaApp() {
                         )
                     }
                     downloaded = sourceFile
-                    status = if (selectedQuality == "FLAC") {
-                        "下载完成，正在处理无损音频标签……"
-                    } else if (sourceFile.extension.equals("mp3", ignoreCase = true)) {
-                        "下载完成，正在处理歌曲信息……"
-                    } else {
-                        "音频已下载，正在转码为 " + selectedQuality + " MP3……"
-                    }
+                    status = "下载完成，正在核对所选音质并写入歌曲信息……"
                     val outputFile = withContext(Dispatchers.IO) {
-                        if (selectedQuality == "FLAC") {
-                            if (!sourceFile.extension.equals("flac", ignoreCase = true)) {
-                                throw IOException("网站没有返回 FLAC 无损文件，请切换到 320k MP3 后重试。")
-                            }
-                            sourceFile
-                        } else {
-                            AudioConverter.toMp3(sourceFile, selectedQuality)
+                        val actualExtension = sourceFile.extension.lowercase()
+                        if (selectedQuality == "FLAC" && actualExtension != "flac") {
+                            throw IOException("你选择的是无损 FLAC，但网站返回的文件是 " + actualExtension.uppercase() + "；应用不会偷偷转换格式，请切换音质或音源重试。")
                         }
+                        if (selectedQuality != "FLAC" && actualExtension != "mp3") {
+                            throw IOException("你选择的是 " + selectedQuality + " MP3，但网站返回的是 " + actualExtension.uppercase() + " 文件；应用不会转换格式，请切换音质或音源重试。")
+                        }
+                        AudioFileNamer.renameForTrack(sourceFile, track)
                     }
-                    mp3File = outputFile
 
                     var coverAvailable = false
                     var lyricSummary = "未匹配歌单歌曲"
@@ -430,7 +423,7 @@ private fun MusicMetaApp() {
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        "公开歌单免登录 · 自动转 MP3 · 封面与歌词写入文件",
+                        "公开歌单免登录 · 保留所选音质与格式 · 封面歌词写入文件",
                         color = SubInk,
                         fontSize = 12.sp,
                     )
