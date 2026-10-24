@@ -27,8 +27,9 @@ class PublicPlaylistProvider {
         .callTimeout(12, TimeUnit.SECONDS)
         .build()
 
-    suspend fun load(input: String): PublicPlaylist = withContext(Dispatchers.IO) {
-        val playlistId = parsePlaylistId(input)
+    suspend fun load(input: String, likedByUserId: Boolean = false): PublicPlaylist = withContext(Dispatchers.IO) {
+        val suppliedId = parsePlaylistId(input)
+        val playlistId = if (likedByUserId) findLikedPlaylistId(suppliedId) else suppliedId
         var gdError: Exception? = null
 
         try {
@@ -53,6 +54,33 @@ class PublicPlaylistProvider {
                 neteaseError,
             )
         }
+    }
+
+    private fun findLikedPlaylistId(userId: Long): Long {
+        val url = HttpUrl.Builder()
+            .scheme("https")
+            .host("music.163.com")
+            .addPathSegments("api/user/playlist")
+            .addQueryParameter("uid", userId.toString())
+            .addQueryParameter("limit", "100")
+            .addQueryParameter("offset", "0")
+            .build()
+        val root = JSONObject(get(url.toString(), "https://music.163.com/"))
+        if (root.optInt("code", -1) != 200) {
+            throw IOException("网易云没有允许读取这个用户的歌单列表（用户 ID：$userId）。红心歌单可能需要网易云账号授权。")
+        }
+        val playlists = root.optJSONArray("playlist") ?: root.optJSONArray("playlists")
+            ?: throw IOException("网易云没有返回该用户的歌单列表。请确认输入的是用户 ID，而不是歌单 ID。")
+        val liked = (0 until playlists.length())
+            .mapNotNull { playlists.optJSONObject(it) }
+            .firstOrNull {
+                it.optInt("specialType", 0) == 5 ||
+                    it.optString("name").trim() == "我喜欢的音乐"
+            }
+        val id = liked?.optLong("id", 0L)?.takeIf { it > 0L }
+        return id ?: throw IOException(
+            "没有找到这个用户的“我喜欢的音乐”歌单。请检查用户 ID；如果红心歌单是私密的，可能需要先授权网易云账号。"
+        )
     }
 
     private fun loadFromGdStudio(playlistId: Long): PublicPlaylist {
