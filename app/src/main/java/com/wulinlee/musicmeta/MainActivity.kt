@@ -117,7 +117,7 @@ class MainActivity : ComponentActivity() {
 private fun MusicMetaApp() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val settings = remember { context.getSharedPreferences("music_meta_settings", Context.MODE_PRIVATE) }
+    val folderPreferences = remember { context.getSharedPreferences("music_meta_settings", Context.MODE_PRIVATE) }
     var destinationTreeUri by remember { mutableStateOf(loadSavedDestination(context)) }
     val playlistProvider = remember { PublicPlaylistProvider() }
     val metadataProvider = remember { MetadataProvider() }
@@ -146,7 +146,7 @@ private fun MusicMetaApp() {
                     uri,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
                 )
-                settings.edit().putString("destination_tree_uri", uri.toString()).apply()
+                folderPreferences.edit().putString("destination_tree_uri", uri.toString()).apply()
                 destinationTreeUri = uri
                 val folderName = runCatching { DocumentFile.fromTreeUri(context, uri)?.name }.getOrNull()
                     ?: "所选文件夹"
@@ -518,7 +518,7 @@ private fun MusicMetaApp() {
                             if (destinationTreeUri != null) {
                                 TextButton(
                                     onClick = {
-                                        settings.edit().remove("destination_tree_uri").apply()
+                                        folderPreferences.edit().remove("destination_tree_uri").apply()
                                         destinationTreeUri = null
                                         status = "已恢复默认目录：Music/MusicMeta"
                                     },
