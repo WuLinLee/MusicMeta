@@ -1,0 +1,19 @@
+package com.wulinlee.musicmeta
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class LrcMergerTest {
+    @Test fun mergesTranslationAtTheSameTimestamp() {
+        assertEquals(
+            "[00:01.00]Hello\n[00:01.00]你好\n[00:02.50]World\n[00:02.50]世界",
+            LrcMerger.merge("[00:01.00]Hello\n[00:02.50]World", "[00:01.00]你好\n[00:02.50]世界")
+        )
+    }
+    @Test fun keepsOriginalWhenTranslationMissing() {
+        assertEquals("[00:01.00]Hello", LrcMerger.merge("[00:01.00]Hello", ""))
+    }
+    @Test fun expandsMultipleTimestampsOnOneLine() {
+        assertEquals("[00:01.00]Hi\n[00:02.00]Hi", LrcMerger.merge("[00:01.00][00:02.00]Hi", ""))
+    }
+}
