@@ -114,8 +114,25 @@ class PublicPlaylistProvider {
             playlist.optInt("track_count", trackArray.length()),
         )
         val totalCount = maxOf(expectedCount, trackArray.length())
+        if (trackArray.length() == 0) throw IOException("GD Studio 没有返回歌单曲目。")
         if (offset >= trackArray.length()) {
-            throw IOException("GD Studio 只提供了歌单前 " + trackArray.length() + " 首，无法读取更后面的分页。")
+            val creatorValue = playlist.opt("creator")
+            val creator = when (creatorValue) {
+                is JSONObject -> creatorValue.optString("nickname").ifBlank { creatorValue.optString("name") }
+                is String -> creatorValue
+                else -> ""
+            }
+            return PublicPlaylist(
+                id = playlist.optLong("id", playlistId).takeIf { it > 0L } ?: playlistId,
+                name = playlist.optString("name").ifBlank { "网易云歌单 " + playlistId },
+                creator = creator,
+                coverUrl = normalizeCoverUrl(
+                    playlist.optString("coverImgUrl").ifBlank { playlist.optString("picUrl") }.ifBlank { playlist.optString("cover") }
+                ),
+                tracks = emptyList(),
+                totalTrackCount = totalCount,
+                nextOffset = totalCount,
+            )
         }
         val end = minOf(offset + limit, trackArray.length())
         val parsed = (offset until end).mapNotNull { index ->
@@ -260,8 +277,17 @@ class PublicPlaylistProvider {
             sourceIds.size,
             previewTracks.size,
         )
+        if (sourceIds.isEmpty()) throw IOException("网易云没有返回歌曲 ID。")
         if (offset >= sourceIds.size) {
-            throw IOException("网易云没有提供第 " + (offset + 1) + " 首之后的曲目 ID。")
+            return PublicPlaylist(
+                id = playlistId,
+                name = playlist.optString("name").ifBlank { "网易云歌单 " + playlistId },
+                creator = playlist.optJSONObject("creator")?.optString("nickname").orEmpty(),
+                coverUrl = normalizeCoverUrl(playlist.optString("coverImgUrl")),
+                tracks = emptyList(),
+                totalTrackCount = totalCount,
+                nextOffset = totalCount,
+            )
         }
         val pageIds = sourceIds.drop(offset).take(limit)
         if (pageIds.isEmpty()) throw IOException("歌单已没有更多可读取的歌曲。")
