@@ -55,6 +55,17 @@ jobs:
           if "A" in image.getbands() and image.getchannel("A").getextrema()[0] == 255:
               raise SystemExit("Cover 3 alpha channel is fully opaque; expected transparent cutout.")
           PY
+      - name: Require persistent signing secrets
+        env:
+          MUSICMETA_KEYSTORE_BASE64: ${{ secrets.MUSICMETA_KEYSTORE_BASE64 }}
+          MUSICMETA_STORE_PASSWORD: ${{ secrets.MUSICMETA_STORE_PASSWORD }}
+          MUSICMETA_KEY_ALIAS: ${{ secrets.MUSICMETA_KEY_ALIAS }}
+          MUSICMETA_KEY_PASSWORD: ${{ secrets.MUSICMETA_KEY_PASSWORD }}
+        run: |
+          if [[ -z "$MUSICMETA_KEYSTORE_BASE64" || -z "$MUSICMETA_STORE_PASSWORD" || -z "$MUSICMETA_KEY_ALIAS" || -z "$MUSICMETA_KEY_PASSWORD" ]]; then
+            echo "::error::Fixed signing key is not configured. Add all four MUSICMETA_* repository Actions secrets before building a release."
+            exit 1
+          fi
       - name: Read app version
         run: |
           VERSION_NAME="$(grep 'versionName = "' app/build.gradle.kts | sed -E 's/.*versionName = "([^"]+)".*/\1/' | head -n 1)"
@@ -66,7 +77,7 @@ jobs:
           echo "MUSICMETA_APK=MusicMeta-v$VERSION_NAME.apk" >> "$GITHUB_ENV"
       - name: Run tests and build release APK
         run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease
-      - name: Align and explicitly sign APK
+      - name: Align and sign APK with the persistent key
         env:
           MUSICMETA_KEYSTORE_BASE64: ${{ secrets.MUSICMETA_KEYSTORE_BASE64 }}
           MUSICMETA_STORE_PASSWORD: ${{ secrets.MUSICMETA_STORE_PASSWORD }}
@@ -77,32 +88,15 @@ jobs:
           RELEASE_UNSIGNED="app/build/outputs/apk/release/app-release-unsigned.apk"
           test -s "$RELEASE_UNSIGNED"
           "$BUILD_TOOLS/zipalign" -f -p 4 "$RELEASE_UNSIGNED" "$RUNNER_TEMP/musicmeta-release-aligned.apk"
-
-          if [[ -n "$MUSICMETA_KEYSTORE_BASE64" && -n "$MUSICMETA_STORE_PASSWORD" && -n "$MUSICMETA_KEY_ALIAS" && -n "$MUSICMETA_KEY_PASSWORD" ]]; then
-            echo "Using the persistent MusicMeta signing key from GitHub Actions secrets."
-            KEYSTORE_PATH="$RUNNER_TEMP/musicmeta-signing.keystore"
-            printf '%s' "$MUSICMETA_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
-            STORE_PASSWORD="$MUSICMETA_STORE_PASSWORD"
-            KEY_ALIAS="$MUSICMETA_KEY_ALIAS"
-            KEY_PASSWORD="$MUSICMETA_KEY_PASSWORD"
-          else
-            echo "::warning::Persistent signing secrets are not configured. This build uses a one-run key and may not install as an in-place update of a previous APK. Configure MUSICMETA_KEYSTORE_BASE64, MUSICMETA_STORE_PASSWORD, MUSICMETA_KEY_ALIAS, and MUSICMETA_KEY_PASSWORD in repository Actions secrets to make future updates signature-stable."
-            KEYSTORE_PATH="$RUNNER_TEMP/musicmeta-temporary.keystore"
-            STORE_PASSWORD="android"
-            KEY_ALIAS="androiddebugkey"
-            KEY_PASSWORD="android"
-            keytool -genkeypair -noprompt \
-              -keystore "$KEYSTORE_PATH" \
-              -storepass "$STORE_PASSWORD" -keypass "$KEY_PASSWORD" \
-              -alias "$KEY_ALIAS" -keyalg RSA -keysize 2048 -validity 10000 \
-              -dname "CN=MusicMeta Build,O=MusicMeta,C=US"
-          fi
-
+          KEYSTORE_PATH="$RUNNER_TEMP/musicmeta-signing.keystore"
+          printf '%s' "$MUSICMETA_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          test -s "$KEYSTORE_PATH"
+          keytool -list -keystore "$KEYSTORE_PATH" -storepass "$MUSICMETA_STORE_PASSWORD" -alias "$MUSICMETA_KEY_ALIAS" >/dev/null
           "$BUILD_TOOLS/apksigner" sign \
             --ks "$KEYSTORE_PATH" \
-            --ks-pass "pass:$STORE_PASSWORD" \
-            --key-pass "pass:$KEY_PASSWORD" \
-            --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass "pass:$MUSICMETA_STORE_PASSWORD" \
+            --key-pass "pass:$MUSICMETA_KEY_PASSWORD" \
+            --ks-key-alias "$MUSICMETA_KEY_ALIAS" \
             --out "$MUSICMETA_APK" \
             "$RUNNER_TEMP/musicmeta-release-aligned.apk"
           "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$MUSICMETA_APK"
@@ -126,8 +120,6 @@ jobs:
           REQUESTED_RELEASE_TYPE: ${{ github.event_name == 'workflow_dispatch' && inputs.release_type || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release:') && 'formal') || 'preview' }}
         run: |
           RELEASE_TYPE="$REQUESTED_RELEASE_TYPE"
-          # Ordinary pushes publish previews. A push explicitly titled release:...
-          # is also an explicit formal-release request; workflow_dispatch can choose either channel.
           if [[ "$RELEASE_TYPE" == "formal" ]]; then
             VERSION="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n 1)"
             if [[ -z "$VERSION" ]]; then
@@ -154,8 +146,8 @@ jobs:
               --target "$GITHUB_SHA"
 
             # Replace the previous formal release only after both new assets exist.
-            if gh release view "v0.1.2" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              gh release delete "v0.1.2" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
+            if gh release view "v0.1.3" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              gh release delete "v0.1.3" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
             fi
           else
             TAG="preview-$(git rev-parse --short "$GITHUB_SHA")"
