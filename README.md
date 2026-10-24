@@ -8,7 +8,7 @@
 
 1. 粘贴网易云公开歌单链接或 ID，直接同步，不需要登录网易云账号。
 2. 在同一页面筛选歌曲并点“找音源”，选择酷我或网易云候选版本。
-3. 通过下载站提供的正常地址下载音频；非 MP3 音频会实际转码为 MP3。
+3. 选择 128k / 320k MP3 或无损 FLAC，通过下载站提供的正常地址下载；保留下载到的音频格式，不进行转码，并按歌名与歌手命名文件。
 4. 尽可能获取封面、原文歌词和现成的中文翻译歌词，嵌入音频标签。
 5. 保存到默认的“音乐/MusicMeta”目录，或在主页面“保存位置”中选择任意系统允许访问的文件夹；选择结果会记住，下次继续使用。
 
@@ -31,7 +31,6 @@
 - [Hachimi](https://github.com/qingyueyin/Hachimi)：参考只读歌单、原文/翻译歌词字段与标签处理的功能设计；未移植其登录功能。
 - [GD Studio Music API](https://music.gdstudio.xyz/)：公开歌单元数据接口，需遵守其服务条款和频率限制。
 - [jaudiotagger](https://www.jthink.net/jaudiotagger/index.jsp) 3.0.1（LGPL-2.1-or-later）：音频标签写入。
-- [FFmpegKit maintained audio](https://github.com/ffmpegkit-maintained/ffmpeg) 8.1.9（LGPL-3.0）：MP3 转码。
 - [LRCLIB](https://lrclib.net/)：歌词补充查询。
 - Android Jetpack Compose、OkHttp、Coil。
 
