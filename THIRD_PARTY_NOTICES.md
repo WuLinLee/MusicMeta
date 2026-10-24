@@ -1,6 +1,7 @@
 # Third-party notices
 
 - jaudiotagger 3.0.1: LGPL-2.1-or-later. License and upstream information: https://www.jthink.net/jaudiotagger/index.jsp
+- FFmpegKit maintained audio 8.1.9: LGPL-3.0; used for MP3 encoding/transcoding. Source, license and notices: https://github.com/ffmpegkit-maintained/ffmpeg
 - AndroidX / Jetpack Compose / Kotlin / Coroutines: Apache License 2.0 or component-specific license.
 - OkHttp: Apache License 2.0; see https://square.github.io/okhttp/
 - Coil: Apache License 2.0; see https://github.com/coil-kt/coil
