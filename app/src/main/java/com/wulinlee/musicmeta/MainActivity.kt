@@ -278,7 +278,7 @@ private fun MusicMetaApp() {
                                         address = DEFAULT_SOURCE
                                         browser?.loadUrl(DEFAULT_SOURCE)
                                         tab = 1
-                                        status = "已选《${track.title}》，并复制了歌名和歌手。请在下载网站中粘贴搜索，再点站点自己的下载按钮。"
+                                        status = "已选《${track.title}》，已复制歌名和歌手。可点上方“API 搜索”直连音源，也可在下方网页中手动搜索。"
                                     }) { Text("去下载") }
                                 }
                             }
@@ -294,7 +294,11 @@ private fun MusicMetaApp() {
                     ) {
                         OutlinedTextField(
                             value = flacQuery,
-                            onValueChange = { flacQuery = it },
+                            onValueChange = {
+                                val expected = selectedTrack?.let { track -> "${track.title} ${track.artists}" }
+                                if (expected != null && !it.equals(expected, ignoreCase = true)) selectedTrack = null
+                                flacQuery = it
+                            },
                             modifier = Modifier.weight(1f),
                             singleLine = true,
                             label = { Text("直接搜索下载站音源") },
