@@ -4,7 +4,7 @@
         android:allowBackup="false"
         android:icon="@mipmap/musicmeta_icon"
         android:roundIcon="@mipmap/musicmeta_icon"
-        android:label="音笺 MusicMeta"
+        android:label="音笺"
         android:supportsRtl="true"
         android:usesCleartextTraffic="false"
         android:theme="@android:style/Theme.Material.NoActionBar">
