@@ -10,3 +10,6 @@
 - LRCLIB: public lyric lookup provider, https://lrclib.net/
 
 This app is independently developed and is not affiliated with NetEase or flac.music.hi.cn. Trademarks and audio rights remain with their owners.
+
+- GD Studio Music API (used for public NetEase playlist metadata fallback/primary lookup): https://music.gdstudio.xyz/ and API documentation https://music-api.ucds.me/api. The service states CC BY-NC 4.0, requests attribution, and limits usage. This service is not bundled or self-hosted by this app; users must comply with the service terms.
+- flac.music.hi.cn AJAX API (site-provided search and URL resolution): https://flac.music.hi.cn/. Requests use the user's active embedded-WebView session cookies where the site requires verification; the app does not bypass the site's verification controls.
