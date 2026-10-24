@@ -507,7 +507,7 @@ private fun MusicMetaApp() {
                         Image(
                             painter = painterResource(id = R.drawable.musicmeta_cover),
                             contentDescription = "音笺应用封面",
-                            modifier = Modifier.size(34.dp).clip(RoundedCornerShape(9.dp)),
+                            modifier = Modifier.size(48.dp).clip(RoundedCornerShape(9.dp)),
                             contentScale = ContentScale.Crop,
                         )
                         Column(horizontalAlignment = Alignment.Start) {
