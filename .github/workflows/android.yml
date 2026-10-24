@@ -40,9 +40,13 @@ jobs:
         run: |
           BUILD_TOOLS="$ANDROID_HOME/build-tools/35.0.0"
           "$BUILD_TOOLS/zipalign" -f -p 4 app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/app-debug-aligned.apk
-          test -f "$HOME/.android/debug.keystore"
+          keytool -genkeypair -noprompt \
+            -keystore "$RUNNER_TEMP/musicmeta-debug.keystore" \
+            -storepass android -keypass android \
+            -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
           "$BUILD_TOOLS/apksigner" sign \
-            --ks "$HOME/.android/debug.keystore" \
+            --ks "$RUNNER_TEMP/musicmeta-debug.keystore" \
             --ks-pass pass:android \
             --key-pass pass:android \
             --out MusicMeta-v0.1.0-debug.apk \
