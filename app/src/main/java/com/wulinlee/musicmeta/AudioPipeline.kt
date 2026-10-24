@@ -41,7 +41,7 @@ object AudioDownloader {
         if (!cookie.isNullOrBlank()) builder.header("Cookie", cookie)
         if (referer.startsWith("http://") || referer.startsWith("https://")) builder.header("Referer", referer)
 
-        client.newCall(builder.build()).execute().use { response ->
+        return client.newCall(builder.build()).execute().use { response ->
             if (!response.isSuccessful) throw IOException("下载失败：HTTP ${response.code}")
             val body = response.body ?: throw IOException("网站没有返回音频文件。")
             val responseType = response.header("Content-Type")?.substringBefore(';')?.trim()?.lowercase().orEmpty()
