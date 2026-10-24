@@ -24,7 +24,7 @@ import java.util.concurrent.TimeUnit
 class PublicPlaylistProvider {
     private val client = OkHttpClient.Builder()
         .followRedirects(true)
-        .callTimeout(35, TimeUnit.SECONDS)
+        .callTimeout(12, TimeUnit.SECONDS)
         .build()
 
     suspend fun load(input: String): PublicPlaylist = withContext(Dispatchers.IO) {
