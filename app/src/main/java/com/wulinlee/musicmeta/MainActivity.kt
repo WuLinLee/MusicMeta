@@ -410,7 +410,7 @@ private fun MusicMetaApp() {
                         overflow = TextOverflow.Ellipsis,
                     )
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, bottom = 4.dp),
+                        modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 4.dp),
                         horizontalArrangement = Arrangement.End,
                     ) {
                         TextButton(
