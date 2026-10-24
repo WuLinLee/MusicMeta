@@ -131,6 +131,23 @@ private fun MusicMetaApp() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val folderPreferences = remember { context.getSharedPreferences("music_meta_settings", Context.MODE_PRIVATE) }
+    remember(folderPreferences) {
+        if (folderPreferences.getInt("download_defaults_version", 0) < 2) {
+            folderPreferences.edit()
+                .remove("destination_tree_uri")
+                .putString("quality", "320k")
+                .putString("source_platform", "wyy")
+                .putString("naming_format", "source_original")
+                .putString("folder_rule", "none")
+                .putBoolean("download_lyrics", false)
+                .putBoolean("write_audio_tags", true)
+                .putBoolean("save_translated_lyrics", true)
+                .putBoolean("save_romanization_lyrics", false)
+                .putBoolean("save_word_by_word_lyrics", true)
+                .putInt("download_defaults_version", 2)
+                .apply()
+        }
+    }
     var destinationTreeUri by remember { mutableStateOf(loadSavedDestination(context)) }
     val playlistProvider = remember { PublicPlaylistProvider() }
     val metadataProvider = remember { MetadataProvider() }
