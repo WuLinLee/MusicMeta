@@ -6,10 +6,10 @@ import android.net.Uri
 import android.provider.MediaStore
 import android.webkit.MimeTypeMap
 import android.webkit.URLUtil
-import net.jthink.jaudiotagger.audio.AudioFileIO
-import net.jthink.jaudiotagger.tag.FieldKey
-import net.jthink.jaudiotagger.tag.Tag
-import net.jthink.jaudiotagger.tag.images.ArtworkFactory
+import org.jaudiotagger.audio.AudioFileIO
+import org.jaudiotagger.tag.FieldKey
+import org.jaudiotagger.tag.Tag
+import org.jaudiotagger.tag.images.ArtworkFactory
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
