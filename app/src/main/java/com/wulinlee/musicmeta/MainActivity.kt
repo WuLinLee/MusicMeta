@@ -129,6 +129,7 @@ private fun MusicMetaApp() {
     val listState = rememberLazyListState()
 
     var playlistInput by remember { mutableStateOf("") }
+    var inputMode by remember { mutableStateOf("playlist") }
     var playlist by remember { mutableStateOf<PublicPlaylist?>(null) }
     var filterText by remember { mutableStateOf("") }
     var isSyncing by remember { mutableStateOf(false) }
@@ -177,7 +178,7 @@ private fun MusicMetaApp() {
     val syncPlaylist: () -> Unit = {
         val input = playlistInput.trim()
         if (input.isBlank()) {
-            status = "先粘贴网易云公开歌单链接或 ID。"
+            status = if (inputMode == "liked") "请输入网易云用户 ID。" else "先粘贴网易云公开歌单链接或 ID。"
         } else if (busy) {
             status = "当前任务还没完成，请稍候。"
         } else {
@@ -186,7 +187,7 @@ private fun MusicMetaApp() {
             scope.launch {
                 try {
                     val loaded = withTimeout(28_000L) {
-                        withContext(Dispatchers.IO) { playlistProvider.load(input) }
+                        withContext(Dispatchers.IO) { playlistProvider.load(input, likedByUserId = inputMode == "liked") }
                     }
                     playlist = loaded
                     selectedTrack = null
@@ -475,13 +476,30 @@ private fun MusicMetaApp() {
                         modifier = Modifier.padding(15.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = inputMode == "playlist",
+                                onClick = { inputMode = "playlist" },
+                                enabled = !busy,
+                                label = { Text("公开歌单") },
+                            )
+                            FilterChip(
+                                selected = inputMode == "liked",
+                                onClick = {
+                                    inputMode = "liked"
+                                    playlistInput = playlistInput.filter { it.isDigit() }
+                                },
+                                enabled = !busy,
+                                label = { Text("我的红心歌单") },
+                            )
+                        }
                         OutlinedTextField(
                             value = playlistInput,
                             onValueChange = { playlistInput = it },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
-                            label = { Text("网易云歌单链接或 ID") },
-                            placeholder = { Text("粘贴分享链接，或输入纯数字 ID") },
+                            label = { Text(if (inputMode == "liked") "网易云用户 ID" else "网易云歌单链接或 ID") },
+                            placeholder = { Text(if (inputMode == "liked") "输入你的网易云个人主页 ID" else "粘贴分享链接，或输入纯数字 ID") },
                             shape = RoundedCornerShape(15.dp),
                             keyboardOptions = KeyboardOptions(
                                 keyboardType = KeyboardType.Uri,
