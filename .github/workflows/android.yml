@@ -11,6 +11,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -20,17 +21,15 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: gradle
-      - name: Select preinstalled Android SDK
+      - name: Verify preinstalled Android SDK
         run: |
           echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
           echo "/usr/local/lib/android/sdk/platform-tools" >> "$GITHUB_PATH"
-      - name: Install SDK 35
-        run: |
-          SDKMANAGER="$(find /usr/local/lib/android/sdk/cmdline-tools -path '*/bin/sdkmanager' -type f | sort -V | tail -n 1)"
-          test -n "$SDKMANAGER"
-          yes | "$SDKMANAGER" --licenses >/dev/null
-          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+          test -d /usr/local/lib/android/sdk/platforms/android-35
+          test -d /usr/local/lib/android/sdk/build-tools/35.0.0
+          ls /usr/local/lib/android/sdk/platforms
+          ls /usr/local/lib/android/sdk/build-tools
       - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
