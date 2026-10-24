@@ -860,7 +860,7 @@ private fun MusicMetaApp() {
                                                             latestDownloadAndSave(
                                                                 directUrl,
                                                                 fallbackUserAgent,
-                                                                if (selectedQuality == "FLAC") "attachment; filename=\"audio.flac\"" else "attachment; filename=\"audio.mp3\"",
+                                                                null,
                                                                 if (selectedQuality == "FLAC") "audio/flac" else "audio/mpeg",
                                                                 DEFAULT_SOURCE,
                                                                 cookie,
