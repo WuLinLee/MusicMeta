@@ -1,56 +1,49 @@
 # 音笺 MusicMeta
 
-精简的中文 Android 工具：免登录同步网易云公开歌单、打开用户指定的下载站点、保存站点正常提供的音频，并尽可能嵌入专辑封面、原文与中文翻译歌词。
+一个只围绕“公开歌单 → 选歌 → 下载 → 写入标签 → 保存”的 Android 小工具。
 
-## 核心功能
+界面参考椒盐音乐 / Salt Player 的视觉方向：封面优先、轻量歌曲列表、清晰层级与统一圆角。这里不打包椒盐音乐的播放器代码、商标或图片素材，只借鉴其简洁的界面组织方式。
 
-- 输入网易云歌单 ID 或完整链接；仅读取公开歌单，不需要账号。
-- 使用歌单完整 trackIds 批量获取歌曲信息，避免只显示接口返回的前几首。
-- 搜索筛选歌曲；点“去下载”自动复制歌曲名与歌手，并打开下载站。
-- 默认打开 https://flac.music.hi.cn/ ，也可输入其他网站或标准音频直链。
-- 内置 flac.music.hi.cn AJAX 适配器：通过站点的 `search` 与 `getUrl` 接口搜索歌曲并解析其正常提供的下载链接；网页验证 Cookie 从内嵌 WebView 读取，不需要音乐账号登录。
-- 同时保留网站 WebView 与标准 HTTP/HTTPS 下载回调，站点 API 不可用时仍可尝试网页操作。
-- 查询封面、原文歌词与中文翻译；按时间戳合并双语 LRC 并写入可用的音频标签。
-- 保存到手机 Music/MusicMeta 目录；可选择保留未修改的原文件。
+## 主要流程
 
-## 使用方法
+1. 粘贴网易云公开歌单链接或 ID，直接同步，不需要登录网易云账号。
+2. 在同一页面筛选歌曲并点“找音源”，选择酷我或网易云候选版本。
+3. 通过下载站提供的正常地址下载音频；非 MP3 音频会实际转码为 MP3。
+4. 尽可能获取封面、原文歌词和现成的中文翻译歌词，嵌入音频标签。
+5. 自动保存到手机的“音乐/MusicMeta”目录。
 
-1. 从 GitHub Releases 下载 APK 并安装。
-2. 在“网易云歌单”页面输入公开歌单 ID（纯数字）或网易云歌单链接，点“同步”。
-3. 找到歌曲点“去下载”；应用会预填歌曲名和歌手，并打开下载站。
-4. 在“下载网站”页顶部使用“API 搜索”，可选“酷我”或“网易云”音源；选中结果后点“下载并转 MP3”，应用会调用站点正常提供的下载地址。
-5. 如果站点返回访问验证页，请先在内嵌网页中完成人工验证，再重新搜索。这里不绕过验证码或站点访问控制。
-6. 下载完成后检查歌曲版本与歌词状态，点“嵌入封面 / 双语歌词并保存”。
-7. 音频保存在手机的“音乐/MusicMeta”目录。
+## 下载站验证
+
+默认音源适配器使用 https://flac.music.hi.cn/ 的公开 AJAX 接口。如果网站触发访问验证，可以点击页面右上角“下载站验证”，在弹出的网页中手动完成，然后重新搜索。应用不会绕过验证码或站点访问控制。如果 API 不可用，也可以在该网页中使用网站本身提供的正常下载入口。
+
+## 已知限制
+
+- 只读取公开歌单；私人歌单需要账号的场景不支持。
+- 歌曲版本仍需在下载前核对；同名歌曲可能存在现场版、翻唱版或不同母带。
+- 只有找到原文/翻译时才会写入相应歌词，不会自动编造翻译。
+- 下载站或公开 API 可能限流、验证或变更；遇到错误会显示在页面底部。
+- 本应用不是音源服务。请仅下载自己有权保存的内容，并遵守来源站点条款和当地法律。
 
 ## 参考与组件
 
-- Hachimi（MIT）：参考只读歌单/歌曲信息与原文/翻译歌词字段，以及写入标签的功能设计。没有搬入登录、云盘、发现页等不需要的模块。
-- net.jthink:jaudiotagger 3.0.1（LGPL-2.1-or-later）：处理 MP3/FLAC 等音频标签。
-- FFmpegKit maintained audio 8.1.9（LGPL-3.0）：真正的音频转码与 MP3 编码。
-- LRCLIB：仅作为歌词补充来源，使用其公开检索 API；服务可用性及歌词覆盖率可能变化。
-- Android Jetpack Compose、OkHttp、Coil：复用成熟 UI、网络与封面显示组件。
-- Gradle Wrapper 脚本/JAR：Apache License 2.0。
-
-## 限制与隐私
-
-- 不登录网易云或其他音乐账号，不保存网易云账号 Cookie；网易云只读取公开歌单元数据。站点验证 Cookie 仅从内嵌网页的 CookieManager 临时读取，用于向该站发送 API 请求。
-- 本应用不是音源服务。下载内容由用户指定的网站提供，只下载你有权保存的内容，并遵守网站条款和当地法律。
-- 仅接管标准 HTTP/HTTPS 音频下载；不绕过 DRM、付费墙、验证码或网站限制。blob/data 下载链接无法由当前版本接管。
-- 没有公开中文翻译的歌曲只会嵌入能找到的歌词，不会生成虚假的翻译。
-- 网易云歌单优先使用 GD Studio 的公开 `types=playlist` 接口，失败或曲目不完整时回退网易云只读接口；公开 API 可能限流或变更。GD Studio API 标注 CC BY-NC 4.0（仅限非商业用途），并要求注明来源；请遵守其条款与访问频率限制。
-- flac.music.hi.cn 的 API 可能要求 SafeLine 网页访问验证；若遇到验证页或 HTTP 468，需要在内嵌网页中人工完成验证。应用不绕过挑战，也不自动伪造验证 Cookie。
-- 公开 API 可能只返回部分内容；若完整性校验失败，应用会提示，不会静默声称同步完整。
-- 非 MP3 音频会通过 FFmpeg 音频模块真正转码为 MP3（VBR 高质量设置），然后再嵌入封面/歌词；原本是 MP3 的文件不重复转码。
+- [Salt Player](https://github.com/Moriafly/SaltPlayerSource) / [Salt UI](https://github.com/Moriafly/SaltUI)：参考其简洁的列表与封面布局风格。
+- [Hachimi](https://github.com/qingyueyin/Hachimi)：参考只读歌单、原文/翻译歌词字段与标签处理的功能设计；未移植其登录功能。
+- [GD Studio Music API](https://music.gdstudio.xyz/)：公开歌单元数据接口，需遵守其服务条款和频率限制。
+- [jaudiotagger](https://www.jthink.net/jaudiotagger/index.jsp) 3.0.1（LGPL-2.1-or-later）：音频标签写入。
+- [FFmpegKit maintained audio](https://github.com/ffmpegkit-maintained/ffmpeg) 8.1.9（LGPL-3.0）：MP3 转码。
+- [LRCLIB](https://lrclib.net/)：歌词补充查询。
+- Android Jetpack Compose、OkHttp、Coil。
 
 ## 本地构建
 
 需要 JDK 17、Android SDK 35 与 Gradle 8.9：
 
-    gradle :app:testDebugUnitTest :app:assembleDebug
+```bash
+gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+```
 
-APK 输出：app/build/outputs/apk/debug/app-debug.apk
+APK 输出：`app/build/outputs/apk/debug/app-debug.apk`
 
-## 许可
+## 许可与声明
 
-项目源码按根目录 MIT License 发布。jaudiotagger 使用 LGPL 许可；第三方许可说明见 THIRD_PARTY_NOTICES.md。该应用与网易云音乐、下载站点及音源提供方没有官方关联。
+项目源码按根目录 MIT License 发布。第三方依赖许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。本项目与网易云音乐、椒盐音乐或下载站点没有官方关联，相关商标和音频版权归各自所有者。
