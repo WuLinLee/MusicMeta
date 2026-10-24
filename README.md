@@ -24,7 +24,8 @@
 ## 参考与组件
 
 - Hachimi（MIT）：参考只读歌单/歌曲信息与原文/翻译歌词字段，以及写入标签的功能设计。没有搬入登录、云盘、发现页等不需要的模块。
-- net.jthink:jaudiotagger 3.0.1（LGPL-2.1-or-later）：处理 MP3/FLAC 等音频标签；分发时保留其许可证与相应义务说明。
+- net.jthink:jaudiotagger 3.0.1（LGPL-2.1-or-later）：处理 MP3/FLAC 等音频标签。
+- FFmpegKit maintained audio 8.1.9（LGPL-3.0）：真正的音频转码与 MP3 编码。
 - LRCLIB：仅作为歌词补充来源，使用其公开检索 API；服务可用性及歌词覆盖率可能变化。
 - Android Jetpack Compose、OkHttp、Coil：复用成熟 UI、网络与封面显示组件。
 - Gradle Wrapper 脚本/JAR：Apache License 2.0。
@@ -36,7 +37,7 @@
 - 仅接管标准 HTTP/HTTPS 音频下载；不绕过 DRM、付费墙、验证码或网站限制。blob/data 下载链接无法由当前版本接管。
 - 没有公开中文翻译的歌曲只会嵌入能找到的歌词，不会生成虚假的翻译。
 - 公开 API 可能限流、变更或只返回部分内容；若完整性校验失败，应用会提示，不会静默声称同步完整。
-- 此版本保存源站实际提供的音频格式，不会把 FLAC 直接改名为 MP3，也不进行转码。
+- 非 MP3 音频会通过 FFmpeg 音频模块真正转码为 MP3（VBR 高质量设置），然后再嵌入封面/歌词；原本是 MP3 的文件不重复转码。
 
 ## 本地构建
 
