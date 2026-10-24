@@ -1,4 +1,4 @@
-name: Android build and preview release
+name: MusicMeta Android - Build and Preview Release
 
 on:
   push:
@@ -104,18 +104,11 @@ jobs:
         if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
-          REQUESTED_RELEASE_TYPE: ${{ github.event.inputs.release_type || 'auto' }}
+          REQUESTED_RELEASE_TYPE: ${{ github.event_name == 'workflow_dispatch' && inputs.release_type || 'preview' }}
         run: |
           RELEASE_TYPE="$REQUESTED_RELEASE_TYPE"
-          if [[ "$RELEASE_TYPE" == "auto" ]]; then
-            COMMIT_SUBJECT="$(git log -1 --format=%s)"
-            if [[ "$COMMIT_SUBJECT" == release:* ]]; then
-              RELEASE_TYPE="formal"
-            else
-              RELEASE_TYPE="preview"
-            fi
-          fi
-
+          # Pushes always publish previews. A formal release can only be selected
+          # explicitly through workflow_dispatch.
           if [[ "$RELEASE_TYPE" == "formal" ]]; then
             VERSION="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n 1)"
             if [[ -z "$VERSION" ]]; then
