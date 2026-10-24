@@ -7,8 +7,6 @@ import android.provider.MediaStore
 import android.webkit.MimeTypeMap
 import android.webkit.URLUtil
 import androidx.documentfile.provider.DocumentFile
-import com.arthenica.ffmpegkit.FFmpegKit
-import com.arthenica.ffmpegkit.ReturnCode
 import org.jaudiotagger.audio.AudioFileIO
 import org.jaudiotagger.tag.FieldKey
 import org.jaudiotagger.tag.Tag
@@ -111,20 +109,46 @@ object AudioDownloader {
 }
 
 
-object AudioConverter {
-    fun toMp3(input: File, bitrate: String = "320k"): File {
-        if (input.extension.equals("mp3", ignoreCase = true)) return input
-        val safeBitrate = bitrate.takeIf { it in setOf("128k", "320k") } ?: "320k"
-        val output = File(input.parentFile, input.nameWithoutExtension + "-converted.mp3")
-        output.delete()
-        val command = "-y -i \"${input.absolutePath}\" -vn -map_metadata 0 -codec:a libmp3lame -b:a $safeBitrate \"${output.absolutePath}\""
-        val session = FFmpegKit.execute(command)
-        if (!ReturnCode.isSuccess(session.returnCode) || !output.isFile || output.length() == 0L) {
-            output.delete()
-            throw IOException("MP3 转码失败。原始下载文件仍保留，请切换音质或音源重试。")
+object AudioFileNamer {
+    /** Rename the downloaded file to the playlist track's title without changing its audio format. */
+    fun renameForTrack(file: File, track: MusicTrack?): File {
+        if (track == null) return file
+        val rawBase = listOf(track.title, track.artists)
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .joinToString(" - ")
+        val safeBase = rawBase
+            .replace(Regex("[\\\\/:*?\"<>|]"), "_")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .trimEnd('.')
+            .take(150)
+            .ifBlank { "music" }
+        val extension = file.extension.lowercase()
+        var target = File(file.parentFile, safeBase + "." + extension)
+        var suffix = 1
+        while (target.exists() && target.absolutePath != file.absolutePath) {
+            target = File(file.parentFile, safeBase + " (" + suffix + ")." + extension)
+            suffix++
+            if (suffix > 1000) throw IOException("同名歌曲文件太多，无法安全命名。")
         }
-        if (input.absolutePath != output.absolutePath) input.delete()
-        return output
+        if (target.absolutePath == file.absolutePath) return file
+        if (!file.renameTo(target)) {
+            try {
+                file.inputStream().buffered().use { input ->
+                    target.outputStream().buffered().use { output -> input.copyTo(output) }
+                }
+                if (!target.isFile || target.length() != file.length()) {
+                    target.delete()
+                    throw IOException("无法将音频重命名为歌曲名称。")
+                }
+                file.delete()
+            } catch (error: Exception) {
+                target.delete()
+                throw IOException("无法将音频重命名为歌曲名称：" + (error.message ?: "未知错误"), error)
+            }
+        }
+        return target
     }
 }
 
