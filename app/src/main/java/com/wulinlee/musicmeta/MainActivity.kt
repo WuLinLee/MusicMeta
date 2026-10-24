@@ -1038,6 +1038,19 @@ private fun MusicMetaApp() {
                     modifier = Modifier.fillMaxWidth().heightIn(max = 570.dp).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
+                    Text("默认音源", fontWeight = FontWeight.SemiBold, color = Ink)
+                    listOf("wyy" to "网易云", "kuwo" to "酷我").forEach { (value, label) ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(
+                                selected = flacPlatform == value,
+                                onClick = {
+                                    flacPlatform = value
+                                    folderPreferences.edit().putString("source_platform", value).apply()
+                                },
+                            )
+                            Text(label, color = Ink, fontSize = 13.sp)
+                        }
+                    }
                     Text("默认音质", fontWeight = FontWeight.SemiBold, color = Ink)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         FilterChip(selected = selectedQuality == "128k", onClick = { setQuality("128k") }, label = { Text("MP3 128k") })
