@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -36,8 +37,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -140,7 +145,19 @@ private fun MusicMetaApp() {
     }
     var selectedTrack by remember { mutableStateOf<MusicTrack?>(null) }
     var flacPlatform by remember { mutableStateOf("kuwo") }
-    var selectedQuality by remember { mutableStateOf("320k") }
+    var selectedQuality by remember { mutableStateOf(folderPreferences.getString("quality", "320k") ?: "320k") }
+    var showDownloadSettings by remember { mutableStateOf(false) }
+    var namingFormat by remember { mutableStateOf(folderPreferences.getString("naming_format", "song_artist") ?: "song_artist") }
+    var downloadLyrics by remember { mutableStateOf(folderPreferences.getBoolean("download_lyrics", false)) }
+    var writeAudioTags by remember { mutableStateOf(folderPreferences.getBoolean("write_audio_tags", true)) }
+    var saveTranslatedLyrics by remember { mutableStateOf(folderPreferences.getBoolean("save_translated_lyrics", true)) }
+    var saveRomanizationLyrics by remember { mutableStateOf(folderPreferences.getBoolean("save_romanization_lyrics", false)) }
+    var saveWordByWordLyrics by remember { mutableStateOf(folderPreferences.getBoolean("save_word_by_word_lyrics", true)) }
+    var folderRule by remember { mutableStateOf(folderPreferences.getString("folder_rule", "none") ?: "none") }
+    val setQuality: (String) -> Unit = { value ->
+        selectedQuality = value
+        folderPreferences.edit().putString("quality", value).apply()
+    }
     var flacResults by remember { mutableStateOf<List<FlacSiteSong>>(emptyList()) }
     var isSearchingFlac by remember { mutableStateOf(false) }
     var isResolvingUrl by remember { mutableStateOf(false) }
@@ -287,12 +304,13 @@ private fun MusicMetaApp() {
                         if (selectedQuality != "FLAC" && actualExtension != "mp3") {
                             throw IOException("你选择的是 " + selectedQuality + " MP3，但网站返回的是 " + actualExtension.uppercase() + " 文件；应用不会转换格式，请切换音质或音源重试。")
                         }
-                        AudioFileNamer.renameForTrack(sourceFile, track)
+                        AudioFileNamer.renameForTrack(sourceFile, track, namingFormat, selectedQuality)
                     }
 
                     var coverAvailable = false
                     var lyricSummary = "未匹配歌单歌曲"
                     var tagWriteSucceeded = true
+                    var sidecarLyrics = ""
                     if (track != null) {
                         status = "正在获取《" + track.title + "》的封面和歌词……"
                         val assets = try {
@@ -308,20 +326,63 @@ private fun MusicMetaApp() {
                             translatedLyrics = "",
                             bilingualLyrics = "",
                         )
-                        coverAvailable = safeAssets.coverBytes != null && safeAssets.coverBytes.isNotEmpty()
+                        val primaryLyrics = if (
+                            saveWordByWordLyrics && safeAssets.wordByWordLyrics.isNotBlank()
+                        ) safeAssets.wordByWordLyrics else safeAssets.originalLyrics
+                        val chosenLyrics = buildString {
+                            if (primaryLyrics.isNotBlank()) append(primaryLyrics.trim())
+                            if (saveTranslatedLyrics && safeAssets.translatedLyrics.isNotBlank()) {
+                                if (isNotEmpty()) append("\n\n")
+                                append(safeAssets.translatedLyrics.trim())
+                            }
+                            if (saveRomanizationLyrics && safeAssets.romanizationLyrics.isNotBlank()) {
+                                if (isNotEmpty()) append("\n\n")
+                                append(safeAssets.romanizationLyrics.trim())
+                            }
+                        }.trim()
+                        sidecarLyrics = if (chosenLyrics.isNotBlank()) {
+                            buildString {
+                                append("[ti:").append(track.title).append("]\n")
+                                append("[ar:").append(track.artists).append("]\n")
+                                if (track.album.isNotBlank()) append("[al:").append(track.album).append("]\n")
+                                append("\n").append(chosenLyrics)
+                            }
+                        } else ""
+                        coverAvailable = writeAudioTags && safeAssets.coverBytes != null && safeAssets.coverBytes.isNotEmpty()
                         lyricSummary = when {
-                            safeAssets.originalLyrics.isBlank() -> "暂无歌词"
-                            safeAssets.translatedLyrics.isNotBlank() -> "原文 + 中文翻译"
-                            else -> "已找到原文，暂无中文翻译"
+                            chosenLyrics.isBlank() -> "暂无歌词"
+                            downloadLyrics -> "歌词已准备保存为 .lrc"
+                            saveTranslatedLyrics && safeAssets.translatedLyrics.isNotBlank() -> "原文 + 翻译"
+                            else -> "已找到歌词"
                         }
-                        tagWriteSucceeded = withContext(Dispatchers.IO) {
-                            runCatching { AudioTagWriter.write(outputFile, track, safeAssets) }.isSuccess
+                        if (writeAudioTags) {
+                            tagWriteSucceeded = withContext(Dispatchers.IO) {
+                                runCatching {
+                                    AudioTagWriter.write(
+                                        outputFile,
+                                        track,
+                                        safeAssets,
+                                        lyrics = chosenLyrics,
+                                        includeCover = true,
+                                    )
+                                }.isSuccess
+                            }
                         }
                     }
 
+                    val subfolderName = resolveDownloadFolder(folderRule, playlist, track)
                     status = "正在保存到手机音乐库……"
                     withContext(Dispatchers.IO) {
-                        MediaPublisher.publish(context, outputFile, track, destinationTreeUri)
+                        MediaPublisher.publish(context, outputFile, track, destinationTreeUri, subfolderName)
+                        if (downloadLyrics && sidecarLyrics.isNotBlank() && track != null) {
+                            MediaPublisher.publishText(
+                                context = context,
+                                fileName = outputFile.nameWithoutExtension + ".lrc",
+                                content = sidecarLyrics,
+                                destinationTreeUri = destinationTreeUri,
+                                subfolderName = subfolderName,
+                            )
+                        }
                     }
 
                     val outputName = outputFile.name
@@ -329,14 +390,18 @@ private fun MusicMetaApp() {
                     if (sourceFile.absolutePath != outputFile.absolutePath) sourceFile.delete()
 
                     status = buildString {
-                        append("已保存到 音乐/MusicMeta：")
+                        append("已保存到 ")
+                        append(destinationFolderName)
+                        if (!subfolderName.isNullOrBlank()) append("/").append(subfolderName)
+                        append("：")
                         append(outputName)
                         if (track != null) {
                             append(" · ")
-                            append(if (coverAvailable) "已写入封面" else "暂无封面")
+                            append(if (writeAudioTags && coverAvailable) "已写入封面" else "未嵌入封面")
                             append(" · ")
                             append(lyricSummary)
-                            if (!tagWriteSucceeded) append(" · 标签写入失败")
+                            if (downloadLyrics && sidecarLyrics.isNotBlank()) append(" · 已保存 .lrc")
+                            if (writeAudioTags && !tagWriteSucceeded) append(" · 标签写入失败")
                         }
                     }
                     flacResults = emptyList()
@@ -379,6 +444,9 @@ private fun MusicMetaApp() {
                     }
                 },
                 actions = {
+                    TextButton(onClick = { showDownloadSettings = true }, enabled = !busy) {
+                        Text("下载设置", color = Accent, fontSize = 12.sp)
+                    }
                     TextButton(onClick = { verificationOpen = true }) {
                         Text("下载站验证", color = Accent, fontSize = 12.sp)
                     }
@@ -666,19 +734,19 @@ private fun MusicMetaApp() {
                                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                     FilterChip(
                                         selected = selectedQuality == "128k",
-                                        onClick = { selectedQuality = "128k" },
+                                        onClick = { setQuality("128k") },
                                         enabled = !isDownloading && !isResolvingUrl,
                                         label = { Text("标准 128k") },
                                     )
                                     FilterChip(
                                         selected = selectedQuality == "320k",
-                                        onClick = { selectedQuality = "320k" },
+                                        onClick = { setQuality("320k") },
                                         enabled = !isDownloading && !isResolvingUrl,
                                         label = { Text("高品质 320k") },
                                     )
                                     FilterChip(
                                         selected = selectedQuality == "FLAC",
-                                        onClick = { selectedQuality = "FLAC" },
+                                        onClick = { setQuality("FLAC") },
                                         enabled = !isDownloading && !isResolvingUrl,
                                         label = { Text("无损 FLAC") },
                                     )
@@ -919,6 +987,126 @@ private fun MusicMetaApp() {
         }
     }
 
+    if (showDownloadSettings) {
+        AlertDialog(
+            onDismissRequest = { showDownloadSettings = false },
+            title = { Text("下载设置", fontWeight = FontWeight.SemiBold) },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 570.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text("默认音质", fontWeight = FontWeight.SemiBold, color = Ink)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FilterChip(selected = selectedQuality == "128k", onClick = { setQuality("128k") }, label = { Text("MP3 128k") })
+                        FilterChip(selected = selectedQuality == "320k", onClick = { setQuality("320k") }, label = { Text("MP3 320k") })
+                        FilterChip(selected = selectedQuality == "FLAC", onClick = { setQuality("FLAC") }, label = { Text("FLAC") })
+                    }
+                    Text("下载目录", fontWeight = FontWeight.SemiBold, color = Ink)
+                    Text(destinationFolderName, color = SubInk, fontSize = 12.sp)
+                    OutlinedButton(
+                        onClick = { destinationPicker.launch(destinationTreeUri) },
+                        enabled = !busy,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("选择下载目录") }
+                    Text("文件命名", fontWeight = FontWeight.SemiBold, color = Ink)
+                    listOf(
+                        "song_artist" to "歌曲名 - 艺术家",
+                        "artist_song" to "艺术家 - 歌曲名",
+                        "song_artist_quality" to "歌曲名 - 艺术家 [音质]",
+                        "artist_song_quality" to "艺术家 - 歌曲名 [音质]",
+                    ).forEach { (value, label) ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = namingFormat == value,
+                                onCheckedChange = {
+                                    namingFormat = value
+                                    folderPreferences.edit().putString("naming_format", value).apply()
+                                },
+                            )
+                            Text(label, color = Ink, fontSize = 13.sp)
+                        }
+                    }
+                    Text("下载文件夹规则", fontWeight = FontWeight.SemiBold, color = Ink)
+                    listOf(
+                        "none" to "不使用",
+                        "playlist" to "按歌单名称",
+                        "artist" to "按歌手名称",
+                        "album" to "按专辑名称",
+                        "artist_album" to "歌手 - 专辑",
+                    ).forEach { (value, label) ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = folderRule == value,
+                                onCheckedChange = {
+                                    folderRule = value
+                                    folderPreferences.edit().putString("folder_rule", value).apply()
+                                },
+                            )
+                            Text(label, color = Ink, fontSize = 13.sp)
+                        }
+                    }
+                    DownloadSettingSwitchRow(
+                        title = "下载歌词",
+                        summary = "歌曲旁边额外保存 .lrc 歌词文件",
+                        checked = downloadLyrics,
+                        onCheckedChange = {
+                            downloadLyrics = it
+                            folderPreferences.edit().putBoolean("download_lyrics", it).apply()
+                        },
+                    )
+                    DownloadSettingSwitchRow(
+                        title = "写入音频标签",
+                        summary = "写入歌曲名、歌手、专辑与可用封面",
+                        checked = writeAudioTags,
+                        onCheckedChange = {
+                            writeAudioTags = it
+                            folderPreferences.edit().putBoolean("write_audio_tags", it).apply()
+                        },
+                    )
+                    DownloadSettingSwitchRow(
+                        title = "保存歌词翻译",
+                        summary = "歌词有翻译时一并保存",
+                        checked = saveTranslatedLyrics,
+                        onCheckedChange = {
+                            saveTranslatedLyrics = it
+                            folderPreferences.edit().putBoolean("save_translated_lyrics", it).apply()
+                        },
+                    )
+                    DownloadSettingSwitchRow(
+                        title = "保存歌词罗马音",
+                        summary = "歌词接口提供罗马音时一并保存",
+                        checked = saveRomanizationLyrics,
+                        onCheckedChange = {
+                            saveRomanizationLyrics = it
+                            folderPreferences.edit().putBoolean("save_romanization_lyrics", it).apply()
+                        },
+                    )
+                    DownloadSettingSwitchRow(
+                        title = "保存逐字歌词",
+                        summary = "优先使用逐字歌词；没有时自动回退普通歌词",
+                        checked = saveWordByWordLyrics,
+                        onCheckedChange = {
+                            saveWordByWordLyrics = it
+                            folderPreferences.edit().putBoolean("save_word_by_word_lyrics", it).apply()
+                        },
+                    )
+                    Text(
+                        "说明：当前音源只提供 MP3 / FLAC 选项，未提供 Hachimi 的 AI 增强音质筛选，因此不会显示一个无效开关。",
+                        color = SubInk,
+                        fontSize = 11.sp,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showDownloadSettings = false }) {
+                    Text("完成", color = Accent)
+                }
+            },
+            containerColor = Color.White,
+        )
+    }
+
     if (verificationOpen) {
         Dialog(onDismissRequest = { verificationOpen = false }) {
             Surface(
@@ -977,6 +1165,40 @@ private fun MusicMetaApp() {
             }
         }
     }
+}
+
+@Composable
+private fun DownloadSettingSwitchRow(
+    title: String,
+    summary: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, fontWeight = FontWeight.Medium, fontSize = 13.sp, color = Ink)
+            Text(summary, color = SubInk, fontSize = 11.sp, lineHeight = 15.sp)
+        }
+        Checkbox(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+private fun resolveDownloadFolder(rule: String, playlist: PublicPlaylist?, track: MusicTrack?): String? {
+    val value = when (rule) {
+        "playlist" -> playlist?.name
+        "artist" -> track?.artists
+        "album" -> track?.album
+        "artist_album" -> listOfNotNull(
+            track?.artists?.takeIf { it.isNotBlank() },
+            track?.album?.takeIf { it.isNotBlank() },
+        ).joinToString(" - ").ifBlank { null }
+        else -> null
+    } ?: return null
+    return AudioFileNamer.sanitizeComponent(value).takeIf { it.isNotBlank() }
 }
 
 @Composable
