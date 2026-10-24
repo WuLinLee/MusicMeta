@@ -18,6 +18,7 @@ class MetadataProvider {
         val translated: String = "",
         val romanization: String = "",
         val wordByWord: String = "",
+        val wordByWordTranslated: String = "",
     )
 
     suspend fun fetchAssets(track: MusicTrack): TrackAssets = withContext(Dispatchers.IO) {
@@ -38,6 +39,7 @@ class MetadataProvider {
             bilingualLyrics = LrcMerger.merge(lyrics.original, lyrics.translated),
             romanizationLyrics = lyrics.romanization,
             wordByWordLyrics = lyrics.wordByWord,
+            wordByWordTranslatedLyrics = lyrics.wordByWordTranslated,
         )
     }
 
@@ -53,8 +55,8 @@ class MetadataProvider {
         return try {
             val json = JSONObject(get(url.toString(), "https://music.163.com/"))
             if (json.optInt("code") != 200) return LyricsPayload()
-            val translated = json.optJSONObject("ytlrc")?.optString("lyric").orEmpty()
-                .ifBlank { json.optJSONObject("tlyric")?.optString("lyric").orEmpty() }
+            val translated = json.optJSONObject("tlyric")?.optString("lyric").orEmpty()
+            val wordByWordTranslated = json.optJSONObject("ytlrc")?.optString("lyric").orEmpty()
             val romanization = json.optJSONObject("yromalrc")?.optString("lyric").orEmpty()
                 .ifBlank { json.optJSONObject("romalrc")?.optString("lyric").orEmpty() }
             LyricsPayload(
@@ -62,6 +64,7 @@ class MetadataProvider {
                 translated = translated,
                 romanization = romanization,
                 wordByWord = json.optJSONObject("yrc")?.optString("lyric").orEmpty(),
+                wordByWordTranslated = wordByWordTranslated,
             )
         } catch (_: Exception) {
             LyricsPayload()
