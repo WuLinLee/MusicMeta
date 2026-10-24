@@ -336,7 +336,11 @@ private fun MusicMetaApp() {
                         ) safeAssets.wordByWordLyrics else safeAssets.originalLyrics
                         val chosenLyrics = buildString {
                             if (primaryLyrics.isNotBlank()) append(primaryLyrics.trim())
-                            if (saveTranslatedLyrics && safeAssets.translatedLyrics.isNotBlank()) {
+                            if (
+                                saveTranslatedLyrics &&
+                                safeAssets.translatedLyrics.isNotBlank() &&
+                                shouldAppendTranslation(primaryLyrics, safeAssets.translatedLyrics)
+                            ) {
                                 if (isNotEmpty()) append("\n\n")
                                 append(safeAssets.translatedLyrics.trim())
                             }
@@ -1221,6 +1225,18 @@ private fun resolveDownloadFolder(rule: String, playlist: PublicPlaylist?, track
         else -> null
     } ?: return null
     return AudioFileNamer.sanitizeComponent(value).takeIf { it.isNotBlank() }
+}
+
+private fun shouldAppendTranslation(original: String, translated: String): Boolean {
+    if (original.isBlank() || translated.isBlank()) return false
+    val cleaned = original.replace(Regex("\\[[^]]*]"), " ")
+    val letters = cleaned.count { it.isLetter() }
+    if (letters == 0) return true
+    val han = cleaned.count { it in '\u4E00'..'\u9FFF' }
+    val kana = cleaned.count { it in '\u3040'..'\u30FF' }
+    val likelyChinese = han >= 8 && han.toDouble() / letters >= 0.28 &&
+        kana.toDouble() / letters < 0.035
+    return !likelyChinese
 }
 
 @Composable
