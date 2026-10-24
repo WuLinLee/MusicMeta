@@ -13,3 +13,5 @@ This app is independently developed and is not affiliated with NetEase or flac.m
 
 - GD Studio Music API (used for public NetEase playlist metadata fallback/primary lookup): https://music.gdstudio.xyz/ and API documentation https://music-api.ucds.me/api. The service states CC BY-NC 4.0, requests attribution, and limits usage. This service is not bundled or self-hosted by this app; users must comply with the service terms.
 - flac.music.hi.cn AJAX API (site-provided search and URL resolution): https://flac.music.hi.cn/. Requests use the user's active embedded-WebView session cookies where the site requires verification; the app does not bypass the site's verification controls.
+
+- UI design reference: Salt Player / Salt UI (https://github.com/Moriafly/SaltPlayerSource and https://github.com/Moriafly/SaltUI). The app takes visual inspiration from the cover-led list layout; it does not bundle their logos, images, or player implementation.
