@@ -2,6 +2,7 @@ package com.wulinlee.musicmeta
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.webkit.CookieManager
@@ -11,6 +12,8 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -68,6 +71,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
+import androidx.documentfile.provider.DocumentFile
 import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -113,6 +117,8 @@ class MainActivity : ComponentActivity() {
 private fun MusicMetaApp() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val settings = remember { context.getSharedPreferences("music_meta_settings", Context.MODE_PRIVATE) }
+    var destinationTreeUri by remember { mutableStateOf(loadSavedDestination(context)) }
     val playlistProvider = remember { PublicPlaylistProvider() }
     val metadataProvider = remember { MetadataProvider() }
     val flacProvider = remember { FlacMusicProvider() }
@@ -130,6 +136,31 @@ private fun MusicMetaApp() {
     var isResolvingUrl by remember { mutableStateOf(false) }
     var isDownloading by remember { mutableStateOf(false) }
     var verificationOpen by remember { mutableStateOf(false) }
+
+    val destinationPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree(),
+    ) { uri ->
+        if (uri != null) {
+            try {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                )
+                settings.edit().putString("destination_tree_uri", uri.toString()).apply()
+                destinationTreeUri = uri
+                val folderName = runCatching { DocumentFile.fromTreeUri(context, uri)?.name }.getOrNull()
+                    ?: "所选文件夹"
+                status = "保存目录已设置为：" + folderName
+            } catch (error: Exception) {
+                status = "系统未允许长期访问该文件夹，请重新选择一个普通文件夹。"
+            }
+        }
+    }
+    val destinationFolderName = remember(destinationTreeUri) {
+        destinationTreeUri?.let { uri ->
+            runCatching { DocumentFile.fromTreeUri(context, uri)?.name }.getOrNull()
+        } ?: "Music/MusicMeta（默认）"
+    }
 
     val busy = isSyncing || isSearchingFlac || isResolvingUrl || isDownloading
 
@@ -273,7 +304,7 @@ private fun MusicMetaApp() {
 
                     status = "正在保存到手机音乐库……"
                     withContext(Dispatchers.IO) {
-                        MediaPublisher.publish(context, outputFile, track)
+                        MediaPublisher.publish(context, outputFile, track, destinationTreeUri)
                     }
 
                     val outputName = outputFile.name
@@ -436,6 +467,66 @@ private fun MusicMetaApp() {
                                 Text("正在同步")
                             } else {
                                 Text("同步公开歌单", fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+                }
+            }
+
+            item(key = "destination-folder") {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(start = 15.dp, top = 13.dp, end = 12.dp, bottom = 13.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Surface(
+                            modifier = Modifier.size(42.dp),
+                            color = SoftAccent,
+                            shape = RoundedCornerShape(13.dp),
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text("♫", color = Accent, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(3.dp),
+                        ) {
+                            Text("保存位置", color = Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                destinationFolderName,
+                                color = SubInk,
+                                fontSize = 12.sp,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        Column(horizontalAlignment = Alignment.End) {
+                            OutlinedButton(
+                                onClick = { destinationPicker.launch(destinationTreeUri) },
+                                enabled = !busy,
+                                shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                            ) {
+                                Text("选择文件夹", fontSize = 12.sp)
+                            }
+                            if (destinationTreeUri != null) {
+                                TextButton(
+                                    onClick = {
+                                        settings.edit().remove("destination_tree_uri").apply()
+                                        destinationTreeUri = null
+                                        status = "已恢复默认目录：Music/MusicMeta"
+                                    },
+                                    enabled = !busy,
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                ) {
+                                    Text("恢复默认", color = SubInk, fontSize = 11.sp)
+                                }
                             }
                         }
                     }
@@ -850,6 +941,20 @@ private fun TrackRow(
             }
         }
     }
+}
+
+private fun loadSavedDestination(context: Context): Uri? {
+    val preferences = context.getSharedPreferences("music_meta_settings", Context.MODE_PRIVATE)
+    val raw = preferences.getString("destination_tree_uri", null) ?: return null
+    val uri = runCatching { Uri.parse(raw) }.getOrNull() ?: return null
+    val permissionIsPersisted = context.contentResolver.persistedUriPermissions.any {
+        it.uri == uri && it.isReadPermission && it.isWritePermission
+    }
+    if (!permissionIsPersisted) {
+        preferences.edit().remove("destination_tree_uri").apply()
+        return null
+    }
+    return uri
 }
 
 private const val fallbackUserAgent = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124.0 Mobile Safari/537.36"

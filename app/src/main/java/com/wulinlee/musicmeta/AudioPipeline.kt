@@ -6,6 +6,7 @@ import android.net.Uri
 import android.provider.MediaStore
 import android.webkit.MimeTypeMap
 import android.webkit.URLUtil
+import androidx.documentfile.provider.DocumentFile
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.ReturnCode
 import org.jaudiotagger.audio.AudioFileIO
@@ -145,7 +146,7 @@ object AudioTagWriter {
 }
 
 object MediaPublisher {
-    fun publish(context: Context, file: File, track: MusicTrack?): Uri {
+    fun publish(context: Context, file: File, track: MusicTrack?, destinationTreeUri: Uri? = null): Uri {
         val extension = file.extension.lowercase()
         val mime = when (extension) {
             "mp3" -> "audio/mpeg"
@@ -158,6 +159,11 @@ object MediaPublisher {
             "wma" -> "audio/x-ms-wma"
             else -> "application/octet-stream"
         }
+
+        if (destinationTreeUri != null) {
+            return publishToSelectedFolder(context, file, destinationTreeUri, mime)
+        }
+
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, file.name)
             put(MediaStore.MediaColumns.MIME_TYPE, mime)
@@ -174,11 +180,56 @@ object MediaPublisher {
         try {
             val output = context.contentResolver.openOutputStream(uri, "w") ?: throw IOException("无法写入音乐目录。")
             output.use { out -> file.inputStream().buffered().use { input -> input.copyTo(out) } }
-            context.contentResolver.update(uri, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
+            context.contentResolver.update(uri, ContentValues().apply {
+                put(MediaStore.MediaColumns.IS_PENDING, 0)
+            }, null, null)
             return uri
         } catch (e: Exception) {
             context.contentResolver.delete(uri, null, null)
             throw e
+        }
+    }
+
+    private fun publishToSelectedFolder(
+        context: Context,
+        file: File,
+        treeUri: Uri,
+        mime: String,
+    ): Uri {
+        val directory = DocumentFile.fromTreeUri(context, treeUri)
+            ?: throw IOException("无法打开所选保存目录，请重新选择。")
+        if (!directory.isDirectory || !directory.canWrite()) {
+            throw IOException("所选保存目录不可写，请重新选择一个可写文件夹。")
+        }
+
+        var displayName = file.name
+        if (directory.findFile(displayName) != null) {
+            val base = file.nameWithoutExtension
+            val extension = file.extension
+            var suffix = 1
+            do {
+                displayName = if (extension.isBlank()) {
+                    base + " (" + suffix + ")"
+                } else {
+                    base + " (" + suffix + ")." + extension
+                }
+                suffix++
+                if (suffix > 1000 && directory.findFile(displayName) != null) {
+                    throw IOException("目标文件夹中同名文件太多，无法安全命名。")
+                }
+            } while (directory.findFile(displayName) != null)
+        }
+
+        val created = directory.createFile(mime, displayName)
+            ?: throw IOException("无法在所选文件夹中创建音乐文件。")
+        try {
+            val output = context.contentResolver.openOutputStream(created.uri, "w")
+                ?: throw IOException("无法写入所选文件夹。")
+            output.use { out -> file.inputStream().buffered().use { input -> input.copyTo(out) } }
+            return created.uri
+        } catch (error: Exception) {
+            created.delete()
+            throw IOException("保存到所选文件夹失败：" + (error.message ?: "未知错误"), error)
         }
     }
 }
