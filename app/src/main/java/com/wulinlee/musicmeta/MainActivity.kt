@@ -2,9 +2,12 @@ package com.wulinlee.musicmeta
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.ClipboardManager
+import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.Build
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -130,6 +133,10 @@ private fun MusicMetaApp() {
     var filterText by remember { mutableStateOf("") }
     var isSyncing by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("输入公开歌单 ID 或链接开始。无需登录网易云账号。") }
+    var lastErrorReport by remember { mutableStateOf<String?>(null) }
+    val captureError: (String, Throwable) -> Unit = { stage, error ->
+        lastErrorReport = makeErrorReport(context, stage, error)
+    }
     var selectedTrack by remember { mutableStateOf<MusicTrack?>(null) }
     var flacPlatform by remember { mutableStateOf("kuwo") }
     var selectedQuality by remember { mutableStateOf("320k") }
@@ -155,6 +162,7 @@ private fun MusicMetaApp() {
                 status = "保存目录已设置为：" + folderName
             } catch (error: Exception) {
                 status = "系统未允许长期访问该文件夹，请重新选择一个普通文件夹。"
+                captureError("选择保存目录", error)
             }
         }
     }
@@ -188,6 +196,7 @@ private fun MusicMetaApp() {
                 } catch (error: Exception) {
                     val detail = error.message?.takeIf { it.isNotBlank() } ?: "网络或接口暂不可用"
                     status = "同步失败：" + detail
+                    captureError("同步公开歌单", error)
                 } finally {
                     isSyncing = false
                 }
@@ -225,6 +234,7 @@ private fun MusicMetaApp() {
                 } catch (error: Exception) {
                     val detail = error.message?.takeIf { it.isNotBlank() } ?: "下载站暂不可用"
                     status = "搜索失败：" + detail
+                    captureError("搜索音源", error)
                     if (
                         detail.contains("验证") ||
                         detail.contains("468") ||
@@ -332,6 +342,7 @@ private fun MusicMetaApp() {
                 } catch (error: Exception) {
                     val detail = error.message?.takeIf { it.isNotBlank() } ?: "未知错误"
                     status = "下载或保存失败：" + detail
+                    captureError("下载或保存歌曲", error)
                 } finally {
                     isDownloading = false
                 }
@@ -397,6 +408,29 @@ private fun MusicMetaApp() {
                         maxLines = 3,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, bottom = 4.dp),
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        TextButton(
+                            onClick = {
+                                val report = lastErrorReport
+                                if (report != null) {
+                                    runCatching {
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        clipboard.setPrimaryClip(ClipData.newPlainText("MusicMeta error report", report))
+                                    }.onSuccess {
+                                        status = "错误报告已复制到剪贴板，请粘贴发送给助手。"
+                                    }.onFailure { error ->
+                                        status = "复制失败：" + (error.message ?: "请重试")
+                                    }
+                                }
+                            },
+                            enabled = lastErrorReport != null,
+                        ) {
+                            Text("复制错误报告", color = if (lastErrorReport != null) Accent else SubInk, fontSize = 12.sp)
+                        }
+                    }
                 }
             }
         },
@@ -706,6 +740,7 @@ private fun MusicMetaApp() {
                                                         } catch (error: Exception) {
                                                             val detail = error.message?.takeIf { it.isNotBlank() } ?: "下载站暂不可用"
                                                             status = "解析下载地址失败：" + detail
+                                                            captureError("解析下载地址", error)
                                                             if (detail.contains("验证") || detail.contains("468")) {
                                                                 verificationOpen = true
                                                             }
@@ -990,6 +1025,39 @@ private fun loadSavedDestination(context: Context): Uri? {
         return null
     }
     return uri
+}
+
+
+private fun makeErrorReport(context: Context, stage: String, error: Throwable): String {
+    val appVersion = runCatching {
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "unknown"
+    }.getOrDefault("unknown")
+    fun redact(value: String): String =
+        value.replace(Regex("https?://\\S+"), "<URL已隐藏>")
+            .replace(Regex("(?i)(cookie|authorization|token)\\s*[:=]\\s*[^\\s,;]+"), "<敏感字段已隐藏>")
+            .take(500)
+
+    val errorChain = generateSequence(error) { it.cause }
+        .take(4)
+        .joinToString("\n") { cause ->
+            cause.javaClass.name + if (cause.message.isNullOrBlank()) "" else ": " + redact(cause.message!!)
+        }
+    val frames = error.stackTrace.take(8).joinToString("\n") { frame ->
+        "  at " + frame.className + "." + frame.methodName +
+            "(" + (frame.fileName ?: "unknown") + ":" + frame.lineNumber + ")"
+    }
+    return buildString {
+        appendLine("音笺 MusicMeta 错误报告")
+        appendLine("错误编号: MM-" + System.currentTimeMillis())
+        appendLine("阶段: " + stage)
+        appendLine("应用版本: " + appVersion)
+        appendLine("Android: " + Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ")")
+        appendLine("异常链:")
+        appendLine(errorChain)
+        appendLine("调用位置:")
+        appendLine(frames)
+        appendLine("隐私说明: 未附加歌单输入、下载链接或 Cookie；消息中的网址已隐藏。")
+    }
 }
 
 private const val fallbackUserAgent = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124.0 Mobile Safari/537.36"
