@@ -155,11 +155,11 @@ private fun MusicMetaApp() {
     val flacProvider = remember { FlacMusicProvider() }
     val listState = rememberLazyListState()
 
-    var inputMode by remember { mutableStateOf("playlist") }
+    var inputMode by remember { mutableStateOf(if (folderPreferences.getString("input_mode", "playlist") == "liked") "liked" else "playlist") }
     // Keep the two sources independent: a public playlist ID is not the same as
     // the user ID used to fetch a liked-song list, and both lists remain cached.
-    var publicPlaylistInput by remember { mutableStateOf("") }
-    var likedUserIdInput by remember { mutableStateOf("") }
+    var publicPlaylistInput by remember { mutableStateOf(folderPreferences.getString("last_public_playlist_input", "") ?: "") }
+    var likedUserIdInput by remember { mutableStateOf(folderPreferences.getString("last_liked_user_id_input", "") ?: "") }
     var publicPlaylist by remember { mutableStateOf<PublicPlaylist?>(null) }
     var likedPlaylist by remember { mutableStateOf<PublicPlaylist?>(null) }
     var publicFilterText by remember { mutableStateOf("") }
@@ -168,8 +168,14 @@ private fun MusicMetaApp() {
     val playlist = if (inputMode == "liked") likedPlaylist else publicPlaylist
     val filterText = if (inputMode == "liked") likedFilterText else publicFilterText
     val setPlaylistInput: (String) -> Unit = { value ->
-        if (inputMode == "liked") likedUserIdInput = value.filter { it.isDigit() }
-        else publicPlaylistInput = value
+        if (inputMode == "liked") {
+            val userId = value.filter { it.isDigit() }
+            likedUserIdInput = userId
+            folderPreferences.edit().putString("last_liked_user_id_input", userId).apply()
+        } else {
+            publicPlaylistInput = value
+            folderPreferences.edit().putString("last_public_playlist_input", value).apply()
+        }
     }
     val setFilterText: (String) -> Unit = { value ->
         if (inputMode == "liked") likedFilterText = value else publicFilterText = value
@@ -285,7 +291,11 @@ private fun MusicMetaApp() {
                     } else {
                         "找到 " + flacResults.size + " 个候选版本，请核对歌手和专辑后下载。"
                     }
-                    scope.launch { listState.animateScrollToItem(2) }
+                    scope.launch {
+                        val rowIndex = listState.layoutInfo.visibleItemsInfo
+                            .firstOrNull { it.key == "track-" + track.id }?.index
+                        if (rowIndex != null) listState.animateScrollToItem(rowIndex)
+                    }
                 } catch (error: Exception) {
                     val detail = error.message?.takeIf { it.isNotBlank() } ?: "下载站暂不可用"
                     status = "搜索失败：" + detail
@@ -622,6 +632,7 @@ private fun MusicMetaApp() {
                                 selected = inputMode == "playlist",
                                 onClick = {
                                     inputMode = "playlist"
+                                    folderPreferences.edit().putString("input_mode", "playlist").apply()
                                     selectedTrack = null
                                     flacResults = emptyList()
                                 },
@@ -632,6 +643,7 @@ private fun MusicMetaApp() {
                                 selected = inputMode == "liked",
                                 onClick = {
                                     inputMode = "liked"
+                                    folderPreferences.edit().putString("input_mode", "liked").apply()
                                     selectedTrack = null
                                     flacResults = emptyList()
                                 },
@@ -737,208 +749,6 @@ private fun MusicMetaApp() {
                 }
             }
 
-            item(key = "source-results") {
-                when {
-                    isSearchingFlac -> {
-                        Card(
-                            shape = RoundedCornerShape(22.dp),
-                            colors = CardDefaults.cardColors(containerColor = SurfaceColor),
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(22.dp),
-                                    color = Accent,
-                                    strokeWidth = 2.dp,
-                                )
-                                Column {
-                                    Text("正在找音源", fontWeight = FontWeight.SemiBold)
-                                    Text(
-                                        selectedTrack?.let { it.title + " · " + it.artists }.orEmpty(),
-                                        color = SubInk,
-                                        fontSize = 12.sp,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    flacResults.isNotEmpty() -> {
-                        Card(
-                            shape = RoundedCornerShape(22.dp),
-                            colors = CardDefaults.cardColors(containerColor = SurfaceColor),
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(15.dp),
-                                verticalArrangement = Arrangement.spacedBy(10.dp),
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                ) {
-                                    Column {
-                                        Text("选择音源", fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
-                                        Text(selectedTrack?.title.orEmpty(), color = SubInk, fontSize = 12.sp)
-                                    }
-                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        FilterChip(
-                                            selected = flacPlatform == "kuwo",
-                                            onClick = {
-                                                if (flacPlatform != "kuwo") {
-                                                    flacPlatform = "kuwo"
-                                                    folderPreferences.edit().putString("source_platform", "kuwo").apply()
-                                                    selectedTrack?.let { searchTrackSource(it) }
-                                                }
-                                            },
-                                            label = { Text("酷我") },
-                                        )
-                                        FilterChip(
-                                            selected = flacPlatform == "wyy",
-                                            onClick = {
-                                                if (flacPlatform != "wyy") {
-                                                    flacPlatform = "wyy"
-                                                    folderPreferences.edit().putString("source_platform", "wyy").apply()
-                                                    selectedTrack?.let { searchTrackSource(it) }
-                                                }
-                                            },
-                                            label = { Text("网易云") },
-                                        )
-                                    }
-                                }
-                                Text("下载音质", fontWeight = FontWeight.Medium, fontSize = 12.sp, color = SubInk)
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    FilterChip(
-                                        selected = selectedQuality == "128k",
-                                        onClick = { setQuality("128k") },
-                                        enabled = !isDownloading && !isResolvingUrl,
-                                        label = { Text("标准 128k") },
-                                    )
-                                    FilterChip(
-                                        selected = selectedQuality == "320k",
-                                        onClick = { setQuality("320k") },
-                                        enabled = !isDownloading && !isResolvingUrl,
-                                        label = { Text("高品质 320k") },
-                                    )
-                                    FilterChip(
-                                        selected = selectedQuality == "FLAC",
-                                        onClick = { setQuality("FLAC") },
-                                        enabled = !isDownloading && !isResolvingUrl,
-                                        label = { Text("无损 FLAC") },
-                                    )
-                                }
-                                Text(
-                                    if (selectedQuality == "FLAC") "保存无损 FLAC 文件" else "保存 MP3 · " + selectedQuality,
-                                    color = SubInk,
-                                    fontSize = 11.sp,
-                                )
-                                flacResults.forEach { song ->
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(15.dp))
-                                            .background(PageBackground)
-                                            .padding(10.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                    ) {
-                                        AsyncImage(
-                                            model = song.coverUrl.takeIf { it.isNotBlank() },
-                                            contentDescription = "音源封面",
-                                            modifier = Modifier
-                                                .size(46.dp)
-                                                .clip(RoundedCornerShape(10.dp))
-                                                .background(SoftAccent),
-                                        )
-                                        Column(
-                                            modifier = Modifier.weight(1f),
-                                            verticalArrangement = Arrangement.spacedBy(2.dp),
-                                        ) {
-                                            Text(
-                                                song.title,
-                                                fontWeight = FontWeight.SemiBold,
-                                                fontSize = 13.sp,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                            )
-                                            Text(
-                                                listOf(song.artist, song.album).filter { it.isNotBlank() }.joinToString(" · "),
-                                                color = SubInk,
-                                                fontSize = 11.sp,
-                                                maxLines = 2,
-                                                overflow = TextOverflow.Ellipsis,
-                                            )
-                                        }
-                                        Button(
-                                            onClick = {
-                                                if (!isResolvingUrl && !isDownloading) {
-                                                    isResolvingUrl = true
-                                                    status = "正在解析《" + song.title + "》的下载地址……"
-                                                    scope.launch {
-                                                        try {
-                                                            val cookie = CookieManager.getInstance().getCookie(DEFAULT_SOURCE)
-                                                            val directUrl = withContext(Dispatchers.IO) {
-                                                                flacProvider.resolveDownloadUrl(
-                                                                    song = song,
-                                                                    format = if (selectedQuality == "FLAC") "flac" else "mp3",
-                                                                    bitrate = when (selectedQuality) {
-                                                                        "128k" -> "128"
-                                                                        "320k" -> "320"
-                                                                        else -> "2000"
-                                                                    },
-                                                                    cookie = cookie,
-                                                                    userAgent = fallbackUserAgent,
-                                                                )
-                                                            }
-                                                            isResolvingUrl = false
-                                                            latestDownloadAndSave(
-                                                                directUrl,
-                                                                fallbackUserAgent,
-                                                                null,
-                                                                if (selectedQuality == "FLAC") "audio/flac" else "audio/mpeg",
-                                                                DEFAULT_SOURCE,
-                                                                cookie,
-                                                                selectedTrack,
-                                                            )
-                                                        } catch (error: Exception) {
-                                                            val detail = error.message?.takeIf { it.isNotBlank() } ?: "下载站暂不可用"
-                                                            status = "解析下载地址失败：" + detail
-                                                            captureError("解析下载地址", error)
-                                                            if (detail.contains("验证") || detail.contains("468")) {
-                                                                verificationOpen = true
-                                                            }
-                                                        } finally {
-                                                            isResolvingUrl = false
-                                                        }
-                                                    }
-                                                }
-                                            },
-                                            enabled = !isResolvingUrl && !isDownloading,
-                                            shape = RoundedCornerShape(12.dp),
-                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                                        ) {
-                                            if (isResolvingUrl) {
-                                                CircularProgressIndicator(
-                                                    modifier = Modifier.size(14.dp),
-                                                    strokeWidth = 2.dp,
-                                                    color = Color.White,
-                                                )
-                                            } else {
-                                                Text("下载", fontSize = 12.sp)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
             val currentPlaylist = playlist
             if (currentPlaylist != null) {
                 item(key = "playlist-card") {
@@ -1030,11 +840,224 @@ private fun MusicMetaApp() {
                         it.artists.contains(filterText.trim(), ignoreCase = true)
                 }
                 items(visibleTracks, key = { "track-" + it.id }) { track ->
-                    TrackRow(
-                        track = track,
-                        busy = busy,
-                        onFindSource = { searchTrackSource(track) },
-                    )
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        TrackRow(
+                            track = track,
+                            busy = busy,
+                            onFindSource = { searchTrackSource(track) },
+                        )
+                        if (selectedTrack?.id == track.id) {
+                    when {
+                        isSearchingFlac -> {
+                            Card(
+                                shape = RoundedCornerShape(22.dp),
+                                colors = CardDefaults.cardColors(containerColor = SurfaceColor),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(22.dp),
+                                        color = Accent,
+                                        strokeWidth = 2.dp,
+                                    )
+                                    Column {
+                                        Text("正在找音源", fontWeight = FontWeight.SemiBold)
+                                        Text(
+                                            selectedTrack?.let { it.title + " · " + it.artists }.orEmpty(),
+                                            color = SubInk,
+                                            fontSize = 12.sp,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        flacResults.isNotEmpty() -> {
+                            Card(
+                                shape = RoundedCornerShape(22.dp),
+                                colors = CardDefaults.cardColors(containerColor = SurfaceColor),
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(15.dp),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                    ) {
+                                        Column {
+                                            Text("选择音源", fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+                                            Text(selectedTrack?.title.orEmpty(), color = SubInk, fontSize = 12.sp)
+                                        }
+                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            FilterChip(
+                                                selected = flacPlatform == "kuwo",
+                                                onClick = {
+                                                    if (flacPlatform != "kuwo") {
+                                                        flacPlatform = "kuwo"
+                                                        folderPreferences.edit().putString("source_platform", "kuwo").apply()
+                                                        selectedTrack?.let { searchTrackSource(it) }
+                                                    }
+                                                },
+                                                label = { Text("酷我") },
+                                            )
+                                            FilterChip(
+                                                selected = flacPlatform == "wyy",
+                                                onClick = {
+                                                    if (flacPlatform != "wyy") {
+                                                        flacPlatform = "wyy"
+                                                        folderPreferences.edit().putString("source_platform", "wyy").apply()
+                                                        selectedTrack?.let { searchTrackSource(it) }
+                                                    }
+                                                },
+                                                label = { Text("网易云") },
+                                            )
+                                        }
+                                    }
+                                    Text("下载音质", fontWeight = FontWeight.Medium, fontSize = 12.sp, color = SubInk)
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        FilterChip(
+                                            selected = selectedQuality == "128k",
+                                            onClick = { setQuality("128k") },
+                                            enabled = !isDownloading && !isResolvingUrl,
+                                            label = { Text("标准 128k") },
+                                        )
+                                        FilterChip(
+                                            selected = selectedQuality == "320k",
+                                            onClick = { setQuality("320k") },
+                                            enabled = !isDownloading && !isResolvingUrl,
+                                            label = { Text("高品质 320k") },
+                                        )
+                                        FilterChip(
+                                            selected = selectedQuality == "FLAC",
+                                            onClick = { setQuality("FLAC") },
+                                            enabled = !isDownloading && !isResolvingUrl,
+                                            label = { Text("无损 FLAC") },
+                                        )
+                                    }
+                                    Text(
+                                        if (selectedQuality == "FLAC") "保存无损 FLAC 文件" else "保存 MP3 · " + selectedQuality,
+                                        color = SubInk,
+                                        fontSize = 11.sp,
+                                    )
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth()
+                                            .heightIn(max = 280.dp)
+                                            .verticalScroll(rememberScrollState()),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        flacResults.forEach { song ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(15.dp))
+                                                .background(PageBackground)
+                                                .padding(10.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        ) {
+                                            AsyncImage(
+                                                model = song.coverUrl.takeIf { it.isNotBlank() },
+                                                contentDescription = "音源封面",
+                                                modifier = Modifier
+                                                    .size(46.dp)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(SoftAccent),
+                                            )
+                                            Column(
+                                                modifier = Modifier.weight(1f),
+                                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                                            ) {
+                                                Text(
+                                                    song.title,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    fontSize = 13.sp,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                )
+                                                Text(
+                                                    listOf(song.artist, song.album).filter { it.isNotBlank() }.joinToString(" · "),
+                                                    color = SubInk,
+                                                    fontSize = 11.sp,
+                                                    maxLines = 2,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                )
+                                            }
+                                            Button(
+                                                onClick = {
+                                                    if (!isResolvingUrl && !isDownloading) {
+                                                        isResolvingUrl = true
+                                                        status = "正在解析《" + song.title + "》的下载地址……"
+                                                        scope.launch {
+                                                            try {
+                                                                val cookie = CookieManager.getInstance().getCookie(DEFAULT_SOURCE)
+                                                                val directUrl = withContext(Dispatchers.IO) {
+                                                                    flacProvider.resolveDownloadUrl(
+                                                                        song = song,
+                                                                        format = if (selectedQuality == "FLAC") "flac" else "mp3",
+                                                                        bitrate = when (selectedQuality) {
+                                                                            "128k" -> "128"
+                                                                            "320k" -> "320"
+                                                                            else -> "2000"
+                                                                        },
+                                                                        cookie = cookie,
+                                                                        userAgent = fallbackUserAgent,
+                                                                    )
+                                                                }
+                                                                isResolvingUrl = false
+                                                                latestDownloadAndSave(
+                                                                    directUrl,
+                                                                    fallbackUserAgent,
+                                                                    null,
+                                                                    if (selectedQuality == "FLAC") "audio/flac" else "audio/mpeg",
+                                                                    DEFAULT_SOURCE,
+                                                                    cookie,
+                                                                    selectedTrack,
+                                                                )
+                                                            } catch (error: Exception) {
+                                                                val detail = error.message?.takeIf { it.isNotBlank() } ?: "下载站暂不可用"
+                                                                status = "解析下载地址失败：" + detail
+                                                                captureError("解析下载地址", error)
+                                                                if (detail.contains("验证") || detail.contains("468")) {
+                                                                    verificationOpen = true
+                                                                }
+                                                            } finally {
+                                                                isResolvingUrl = false
+                                                            }
+                                                        }
+                                                    }
+                                                },
+                                                enabled = !isResolvingUrl && !isDownloading,
+                                                shape = RoundedCornerShape(12.dp),
+                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                                            ) {
+                                                if (isResolvingUrl) {
+                                                    CircularProgressIndicator(
+                                                        modifier = Modifier.size(14.dp),
+                                                        strokeWidth = 2.dp,
+                                                        color = Color.White,
+                                                    )
+                                                } else {
+                                                    Text("下载", fontSize = 12.sp)
+                                                }
+                                            }
+                                        }
+                                    }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                        }
+                    }
                 }
             } else {
                 item(key = "empty-playlist") {
