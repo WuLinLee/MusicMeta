@@ -348,18 +348,27 @@ private fun MusicMetaApp() {
                             translatedLyrics = "",
                             bilingualLyrics = "",
                         )
-                        val primaryLyrics = if (
+                        val usingWordByWordLyrics =
                             saveWordByWordLyrics && safeAssets.wordByWordLyrics.isNotBlank()
-                        ) safeAssets.wordByWordLyrics else safeAssets.originalLyrics
+                        val primaryLyrics = if (usingWordByWordLyrics) {
+                            safeAssets.wordByWordLyrics
+                        } else {
+                            safeAssets.originalLyrics
+                        }
+                        val matchingTranslation = if (usingWordByWordLyrics) {
+                            safeAssets.wordByWordTranslatedLyrics.ifBlank { safeAssets.translatedLyrics }
+                        } else {
+                            safeAssets.translatedLyrics
+                        }
                         val chosenLyrics = buildString {
                             if (primaryLyrics.isNotBlank()) append(primaryLyrics.trim())
                             if (
                                 saveTranslatedLyrics &&
-                                safeAssets.translatedLyrics.isNotBlank() &&
-                                shouldAppendTranslation(primaryLyrics, safeAssets.translatedLyrics)
+                                matchingTranslation.isNotBlank() &&
+                                shouldAppendTranslation(primaryLyrics, matchingTranslation)
                             ) {
                                 if (isNotEmpty()) append("\n\n")
-                                append(safeAssets.translatedLyrics.trim())
+                                append(matchingTranslation.trim())
                             }
                             if (saveRomanizationLyrics && safeAssets.romanizationLyrics.isNotBlank()) {
                                 if (isNotEmpty()) append("\n\n")
@@ -378,7 +387,8 @@ private fun MusicMetaApp() {
                         lyricSummary = when {
                             chosenLyrics.isBlank() -> "暂无歌词"
                             downloadLyrics -> "歌词已准备保存为 .lrc"
-                            saveTranslatedLyrics && safeAssets.translatedLyrics.isNotBlank() -> "原文 + 翻译"
+                            saveTranslatedLyrics && matchingTranslation.isNotBlank() &&
+                                shouldAppendTranslation(primaryLyrics, matchingTranslation) -> "原文 + 翻译"
                             else -> "已找到歌词"
                         }
                         if (writeAudioTags) {
@@ -1258,7 +1268,8 @@ private fun resolveDownloadFolder(rule: String, playlist: PublicPlaylist?, track
 }
 
 private fun shouldAppendTranslation(original: String, translated: String): Boolean {
-    if (original.isBlank() || translated.isBlank()) return false
+    if (translated.isBlank()) return false
+    if (original.isBlank()) return true
     val cleaned = original.replace(Regex("\\[[^]]*]"), " ")
     val letters = cleaned.count { it.isLetter() }
     if (letters == 0) return true
