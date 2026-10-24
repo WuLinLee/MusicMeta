@@ -42,7 +42,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Checkbox
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -311,6 +312,7 @@ private fun MusicMetaApp() {
                     var lyricSummary = "未匹配歌单歌曲"
                     var tagWriteSucceeded = true
                     var sidecarLyrics = ""
+                    var sidecarWriteSucceeded = true
                     if (track != null) {
                         status = "正在获取《" + track.title + "》的封面和歌词……"
                         val assets = try {
@@ -375,13 +377,15 @@ private fun MusicMetaApp() {
                     withContext(Dispatchers.IO) {
                         MediaPublisher.publish(context, outputFile, track, destinationTreeUri, subfolderName)
                         if (downloadLyrics && sidecarLyrics.isNotBlank() && track != null) {
-                            MediaPublisher.publishText(
-                                context = context,
-                                fileName = outputFile.nameWithoutExtension + ".lrc",
-                                content = sidecarLyrics,
-                                destinationTreeUri = destinationTreeUri,
-                                subfolderName = subfolderName,
-                            )
+                            sidecarWriteSucceeded = runCatching {
+                                MediaPublisher.publishText(
+                                    context = context,
+                                    fileName = outputFile.nameWithoutExtension + ".lrc",
+                                    content = sidecarLyrics,
+                                    destinationTreeUri = destinationTreeUri,
+                                    subfolderName = subfolderName,
+                                )
+                            }.isSuccess
                         }
                     }
 
@@ -397,10 +401,12 @@ private fun MusicMetaApp() {
                         append(outputName)
                         if (track != null) {
                             append(" · ")
-                            append(if (writeAudioTags && coverAvailable) "已写入封面" else "未嵌入封面")
+                            append(if (writeAudioTags && coverAvailable && tagWriteSucceeded) "已写入封面" else "未嵌入封面")
                             append(" · ")
                             append(lyricSummary)
-                            if (downloadLyrics && sidecarLyrics.isNotBlank()) append(" · 已保存 .lrc")
+                            if (downloadLyrics && sidecarLyrics.isNotBlank()) {
+                                append(if (sidecarWriteSucceeded) " · 已保存 .lrc" else " · .lrc 保存失败")
+                            }
                             if (writeAudioTags && !tagWriteSucceeded) append(" · 标签写入失败")
                         }
                     }
@@ -1017,9 +1023,9 @@ private fun MusicMetaApp() {
                         "artist_song_quality" to "艺术家 - 歌曲名 [音质]",
                     ).forEach { (value, label) ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(
-                                checked = namingFormat == value,
-                                onCheckedChange = {
+                            RadioButton(
+                                selected = namingFormat == value,
+                                onClick = {
                                     namingFormat = value
                                     folderPreferences.edit().putString("naming_format", value).apply()
                                 },
@@ -1036,9 +1042,9 @@ private fun MusicMetaApp() {
                         "artist_album" to "歌手 - 专辑",
                     ).forEach { (value, label) ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(
-                                checked = folderRule == value,
-                                onCheckedChange = {
+                            RadioButton(
+                                selected = folderRule == value,
+                                onClick = {
                                     folderRule = value
                                     folderPreferences.edit().putString("folder_rule", value).apply()
                                 },
@@ -1183,7 +1189,7 @@ private fun DownloadSettingSwitchRow(
             Text(title, fontWeight = FontWeight.Medium, fontSize = 13.sp, color = Ink)
             Text(summary, color = SubInk, fontSize = 11.sp, lineHeight = 15.sp)
         }
-        Checkbox(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 
