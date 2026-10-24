@@ -2,6 +2,7 @@ package com.wulinlee.musicmeta
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.FormBody
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -10,6 +11,16 @@ import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
+/**
+ * Public playlist resolver.
+ *
+ * GD Studio's web client uses:
+ *   GET https://music-api.gdstudio.xyz/api.php?types=playlist&source=netease&id=<playlistId>
+ *
+ * The official site's public read-only playlist endpoint is tried first. If it is
+ * unavailable or returns incomplete tracks, fall back to NetEase's read-only
+ * playlist/detail + POST song/detail endpoints.
+ */
 class PublicPlaylistProvider {
     private val client = OkHttpClient.Builder()
         .followRedirects(true)
@@ -18,6 +29,129 @@ class PublicPlaylistProvider {
 
     suspend fun load(input: String): PublicPlaylist = withContext(Dispatchers.IO) {
         val playlistId = parsePlaylistId(input)
+        var gdError: Exception? = null
+
+        try {
+            return@withContext loadFromGdStudio(playlistId)
+        } catch (error: Exception) {
+            gdError = error
+        }
+
+        try {
+            loadFromNetease(playlistId)
+        } catch (neteaseError: Exception) {
+            val gdMessage = gdError?.message?.takeIf { it.isNotBlank() }
+            val neteaseMessage = neteaseError.message?.takeIf { it.isNotBlank() }
+            throw IOException(
+                buildString {
+                    append("GD Studio 歌单接口未能完整返回曲目")
+                    if (gdMessage != null) append("（").append(gdMessage).append("）")
+                    append("；网易云备用接口也失败")
+                    if (neteaseMessage != null) append("（").append(neteaseMessage).append("）")
+                    append("。请检查网络，稍后重试。")
+                },
+                neteaseError,
+            )
+        }
+    }
+
+    private fun loadFromGdStudio(playlistId: Long): PublicPlaylist {
+        val url = HttpUrl.Builder()
+            .scheme("https")
+            .host("music-api.gdstudio.xyz")
+            .addPathSegments("api.php")
+            .addQueryParameter("types", "playlist")
+            .addQueryParameter("source", "netease")
+            .addQueryParameter("id", playlistId.toString())
+            .build()
+
+        val root = JSONObject(get(url.toString(), "https://music.gdstudio.xyz/"))
+        if (root.has("code") && root.optInt("code") != 200) {
+            throw IOException(
+                "GD Studio 返回代码 ${root.optInt("code")}：${root.optString("msg").ifBlank { "接口暂不可用" }}"
+            )
+        }
+
+        val playlist = root.optJSONObject("playlist")
+            ?: root.optJSONObject("data")?.optJSONObject("playlist")
+            ?: root.optJSONObject("data")
+            ?: throw IOException("GD Studio 返回中没有 playlist 数据。")
+
+        val trackArray = playlist.optJSONArray("tracks")
+            ?: root.optJSONArray("tracks")
+            ?: JSONArray()
+        val tracks = (0 until trackArray.length()).mapNotNull { index ->
+            parseGdStudioTrack(trackArray.optJSONObject(index))
+        }
+        if (tracks.isEmpty()) throw IOException("GD Studio 没有返回可用曲目。")
+
+        val expectedCount = playlist.optInt(
+            "trackCount",
+            playlist.optInt("track_count", tracks.size),
+        )
+        if (expectedCount > tracks.size) {
+            throw IOException("GD Studio 仅返回 ${tracks.size}/${expectedCount} 首，尝试备用接口补全。")
+        }
+
+        val creatorValue = playlist.opt("creator")
+        val creator = when (creatorValue) {
+            is JSONObject -> creatorValue.optString("nickname").ifBlank { creatorValue.optString("name") }
+            is String -> creatorValue
+            else -> ""
+        }
+        val cover = playlist.optString("coverImgUrl")
+            .ifBlank { playlist.optString("picUrl") }
+            .ifBlank { playlist.optString("cover") }
+
+        return PublicPlaylist(
+            id = playlist.optLong("id", playlistId).takeIf { it > 0L } ?: playlistId,
+            name = playlist.optString("name").ifBlank { "网易云歌单 $playlistId" },
+            creator = creator,
+            coverUrl = cover,
+            tracks = tracks.distinctBy { it.id },
+        )
+    }
+
+    private fun parseGdStudioTrack(song: JSONObject?): MusicTrack? {
+        if (song == null) return null
+        val id = song.optLong("id", 0L)
+        if (id <= 0L) return null
+        val albumValue = song.opt("al") ?: song.opt("album")
+        val albumObject = albumValue as? JSONObject
+        val albumName = when (albumValue) {
+            is JSONObject -> albumValue.optString("name")
+            is String -> albumValue
+            else -> ""
+        }
+        val artistArray = song.optJSONArray("ar") ?: song.optJSONArray("artists")
+        val artistNames = if (artistArray == null) {
+            song.optString("artist")
+        } else {
+            (0 until artistArray.length()).mapNotNull { index ->
+                when (val artist = artistArray.opt(index)) {
+                    is JSONObject -> artist.optString("name").ifBlank { null }
+                    is String -> artist.trim().ifBlank { null }
+                    is Number -> artist.toString()
+                    else -> null
+                }
+            }.joinToString(" / ")
+        }
+        val cover = albumObject?.optString("picUrl").orEmpty()
+            .ifBlank { albumObject?.optString("pic_url").orEmpty() }
+            .ifBlank { song.optString("pic_url") }
+            .ifBlank { song.optString("cover") }
+
+        return MusicTrack(
+            id = id,
+            title = song.optString("name").ifBlank { "未知歌曲" },
+            artists = artistNames.ifBlank { "未知歌手" },
+            album = albumName,
+            coverUrl = cover,
+            durationMs = song.optLong("dt", song.optLong("duration", 0L)),
+        )
+    }
+
+    private fun loadFromNetease(playlistId: Long): PublicPlaylist {
         val detailUrl = HttpUrl.Builder()
             .scheme("https")
             .host("music.163.com")
@@ -25,94 +159,106 @@ class PublicPlaylistProvider {
             .addQueryParameter("id", playlistId.toString())
             .addQueryParameter("n", "1000")
             .build()
-        val json = JSONObject(get(detailUrl.toString()))
+
+        val json = JSONObject(get(detailUrl.toString(), "https://music.163.com/"))
         if (json.optInt("code") != 200) {
-            throw IOException("网易云公开歌单接口暂不可用（代码 ${json.optInt("code")}）。请确认歌单公开，稍后重试。")
+            throw IOException("网易云歌单详情返回代码 ${json.optInt("code")}。")
         }
-        val p = json.optJSONObject("playlist") ?: throw IOException("没有读取到歌单信息。")
-        val idsArray = p.optJSONArray("trackIds")
+        val playlist = json.optJSONObject("playlist")
+            ?: throw IOException("网易云没有返回歌单信息。")
+        val idsArray = playlist.optJSONArray("trackIds")
         val ids = if (idsArray != null) {
             (0 until idsArray.length()).mapNotNull { idsArray.optJSONObject(it)?.optLong("id")?.takeIf { id -> id > 0L } }
         } else emptyList()
 
         val tracks = mutableListOf<MusicTrack>()
         if (ids.isNotEmpty()) {
-            ids.chunked(80).forEach { batch -> tracks += fetchTrackBatch(batch) }
+            ids.chunked(100).forEach { batch -> tracks += fetchNeteaseTrackBatch(batch) }
         } else {
-            val firstBatch = p.optJSONArray("tracks")
+            val firstBatch = playlist.optJSONArray("tracks")
             if (firstBatch != null) {
                 for (i in 0 until firstBatch.length()) {
-                    firstBatch.optJSONObject(i)?.let { parseTrack(it)?.let(tracks::add) }
+                    firstBatch.optJSONObject(i)?.let { parseGdStudioTrack(it)?.let(tracks::add) }
                 }
             }
         }
+        val expected = playlist.optInt("trackCount", ids.size)
         if (tracks.isEmpty()) {
-            throw IOException("歌单是空的，或网易云没有返回公开歌曲详情。")
+            throw IOException("网易云没有返回歌曲详情。")
         }
-        val expected = p.optInt("trackCount", ids.size)
-        if (ids.isNotEmpty() && tracks.size < expected) {
-            throw IOException("歌单应有 ${expected} 首，但公开接口只返回 ${tracks.size} 首。为避免错误同步，请稍后重试。")
+        if (expected > 0 && tracks.size < expected) {
+            throw IOException("网易云歌单应有 ${expected} 首，但只拿到 ${tracks.size} 首。")
         }
 
-        PublicPlaylist(
+        val creator = playlist.optJSONObject("creator")?.optString("nickname").orEmpty()
+        return PublicPlaylist(
             id = playlistId,
-            name = p.optString("name").ifBlank { "网易云歌单 ${playlistId}" },
-            creator = p.optJSONObject("creator")?.optString("nickname").orEmpty(),
-            coverUrl = p.optString("coverImgUrl"),
+            name = playlist.optString("name").ifBlank { "网易云歌单 $playlistId" },
+            creator = creator,
+            coverUrl = playlist.optString("coverImgUrl"),
             tracks = tracks.distinctBy { it.id },
         )
     }
 
-    private fun fetchTrackBatch(ids: List<Long>): List<MusicTrack> {
+    /**
+     * Current read-only NetEase endpoint. POST avoids huge query strings for large playlists.
+     * Anonymous playlist/detail often contains only a small tracks preview; trackIds is the
+     * full list, so each batch is explicitly requested.
+     */
+    private fun fetchNeteaseTrackBatch(ids: List<Long>): List<MusicTrack> {
         val url = HttpUrl.Builder()
             .scheme("https")
             .host("music.163.com")
-            .addPathSegments("api/song/detail/")
-            .addQueryParameter("id", ids.first().toString())
-            .addQueryParameter("ids", JSONArray(ids).toString())
+            .addPathSegments("api/v3/song/detail")
             .build()
-        val json = JSONObject(get(url.toString()))
-        val songs = json.optJSONArray("songs") ?: return emptyList()
-        return (0 until songs.length()).mapNotNull { parseTrack(songs.optJSONObject(it) ?: return@mapNotNull null) }
-    }
+        val c = JSONArray().apply {
+            ids.forEach { id -> put(JSONObject().put("id", id)) }
+        }.toString()
+        val request = Request.Builder()
+            .url(url)
+            .header("Referer", "https://music.163.com/")
+            .header("User-Agent", userAgent)
+            .post(FormBody.Builder().add("c", c).build())
+            .build()
 
-    private fun parseTrack(song: JSONObject): MusicTrack? {
-        val id = song.optLong("id")
-        if (id <= 0L) return null
-        val album = song.optJSONObject("al") ?: song.optJSONObject("album") ?: JSONObject()
-        val artists = song.optJSONArray("ar") ?: song.optJSONArray("artists")
-        val artistNames = if (artists == null) "" else {
-            (0 until artists.length()).mapNotNull { artists.optJSONObject(it)?.optString("name") }
-                .filter { it.isNotBlank() }.joinToString(" / ")
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("网易云批量歌曲详情请求失败：HTTP ${response.code}")
+            val json = JSONObject(response.body?.string() ?: throw IOException("网易云批量接口返回空内容。"))
+            val songs = json.optJSONArray("songs") ?: throw IOException("网易云批量接口没有 songs 字段。")
+            return (0 until songs.length()).mapNotNull { index ->
+                parseGdStudioTrack(songs.optJSONObject(index))
+            }
         }
-        return MusicTrack(
-            id = id,
-            title = song.optString("name").ifBlank { "未知歌曲" },
-            artists = artistNames.ifBlank { "未知歌手" },
-            album = album.optString("name"),
-            coverUrl = album.optString("picUrl"),
-            durationMs = song.optLong("dt", song.optLong("duration", 0L)),
-        )
     }
 
     private fun parsePlaylistId(input: String): Long {
         val value = input.trim()
         if (value.matches(Regex("\\d{4,20}"))) return value.toLong()
-        val id = Regex("(?:[?&]|/)(?:id=)?(\\d{4,20})(?:[&#/]|\\z)").findAll(value).lastOrNull()
-            ?.groupValues?.getOrNull(1)?.toLongOrNull()
+        val id = Regex("(?:[?&]|/)(?:id=)?(\\d{4,20})(?:[&#/]|\\z)")
+            .findAll(value).lastOrNull()?.groupValues?.getOrNull(1)?.toLongOrNull()
         return id ?: throw IOException("请输入网易云歌单 ID（纯数字）或完整歌单链接。")
     }
 
-    private fun get(url: String): String {
+    private fun get(url: String, referer: String): String {
         val request = Request.Builder()
             .url(url)
-            .header("Referer", "https://music.163.com/")
-            .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124.0 Mobile Safari/537.36")
+            .header("Referer", referer)
+            .header("Origin", referer.trimEnd('/'))
+            .header("X-Requested-With", "XMLHttpRequest")
+            .header("User-Agent", userAgent)
             .get()
             .build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw IOException("请求失败：HTTP ${response.code}")
-            return response.body?.string() ?: throw IOException("服务器返回空内容。")
+            val body = response.body?.string() ?: throw IOException("服务器返回空内容。")
+            if (body.trimStart().startsWith("<!doctype html", true) || body.trimStart().startsWith("<html", true)) {
+                throw IOException("接口返回了网页而不是 JSON，可能遇到访问验证。")
+            }
+            return body
         }
+    }
+
+    private companion object {
+        const val userAgent = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124.0 Mobile Safari/537.36"
     }
 }
