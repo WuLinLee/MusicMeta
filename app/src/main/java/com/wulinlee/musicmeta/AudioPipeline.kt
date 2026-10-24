@@ -110,20 +110,26 @@ object AudioDownloader {
 
 
 object AudioFileNamer {
-    /** Rename the downloaded file to the playlist track's title without changing its audio format. */
-    fun renameForTrack(file: File, track: MusicTrack?): File {
+    /** Rename the downloaded file to the selected title/artist format without changing audio data. */
+    fun renameForTrack(
+        file: File,
+        track: MusicTrack?,
+        namingFormat: String = "song_artist",
+        quality: String = "320k",
+    ): File {
         if (track == null) return file
-        val rawBase = listOf(track.title, track.artists)
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
-            .joinToString(" - ")
-        val safeBase = rawBase
-            .replace(Regex("[\\\\/:*?\"<>|]"), "_")
-            .replace(Regex("\\s+"), " ")
-            .trim()
-            .trimEnd('.')
-            .take(150)
-            .ifBlank { "music" }
+        val qualityLabel = when (quality) {
+            "FLAC" -> "FLAC"
+            "128k" -> "128k"
+            else -> "320k"
+        }
+        val rawBase = when (namingFormat) {
+            "artist_song" -> "${track.artists} - ${track.title}"
+            "song_artist_quality" -> "${track.title} - ${track.artists} [${qualityLabel}]"
+            "artist_song_quality" -> "${track.artists} - ${track.title} [${qualityLabel}]"
+            else -> "${track.title} - ${track.artists}"
+        }
+        val safeBase = sanitizeComponent(rawBase)
         val extension = file.extension.lowercase()
         var target = File(file.parentFile, safeBase + "." + extension)
         var suffix = 1
@@ -150,10 +156,24 @@ object AudioFileNamer {
         }
         return target
     }
+
+    fun sanitizeComponent(name: String): String = name
+        .replace(Regex("[\\\\/:*?\"<>|]"), "_")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+        .trim('.')
+        .take(150)
+        .ifBlank { "music" }
 }
 
 object AudioTagWriter {
-    fun write(file: File, track: MusicTrack, assets: TrackAssets) {
+    fun write(
+        file: File,
+        track: MusicTrack,
+        assets: TrackAssets,
+        lyrics: String? = assets.bilingualLyrics,
+        includeCover: Boolean = true,
+    ) {
         val audioFile = try {
             AudioFileIO.read(file)
         } catch (e: Exception) {
@@ -163,11 +183,11 @@ object AudioTagWriter {
         setField(tag, FieldKey.TITLE, track.title)
         setField(tag, FieldKey.ARTIST, track.artists)
         if (track.album.isNotBlank()) setField(tag, FieldKey.ALBUM, track.album)
-        if (assets.bilingualLyrics.isNotBlank()) {
-            tag.setField(tag.createField(FieldKey.LYRICS, assets.bilingualLyrics))
+        if (!lyrics.isNullOrBlank()) {
+            tag.setField(tag.createField(FieldKey.LYRICS, lyrics))
         }
         val cover = assets.coverBytes
-        if (cover != null && cover.isNotEmpty()) {
+        if (includeCover && cover != null && cover.isNotEmpty()) {
             val artwork = ArtworkFactory.getNew()
             artwork.binaryData = cover
             artwork.mimeType = detectImageMime(cover, assets.coverMimeType)
@@ -194,7 +214,13 @@ object AudioTagWriter {
 }
 
 object MediaPublisher {
-    fun publish(context: Context, file: File, track: MusicTrack?, destinationTreeUri: Uri? = null): Uri {
+    fun publish(
+        context: Context,
+        file: File,
+        track: MusicTrack?,
+        destinationTreeUri: Uri? = null,
+        subfolderName: String? = null,
+    ): Uri {
         val extension = file.extension.lowercase()
         val mime = when (extension) {
             "mp3" -> "audio/mpeg"
@@ -209,13 +235,13 @@ object MediaPublisher {
         }
 
         if (destinationTreeUri != null) {
-            return publishToSelectedFolder(context, file, destinationTreeUri, mime)
+            return publishToSelectedFolder(context, file, destinationTreeUri, mime, subfolderName)
         }
 
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, file.name)
             put(MediaStore.MediaColumns.MIME_TYPE, mime)
-            put(MediaStore.MediaColumns.RELATIVE_PATH, "Music/MusicMeta")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, relativeMusicPath(subfolderName))
             put(MediaStore.MediaColumns.IS_PENDING, 1)
             if (track != null) {
                 put(MediaStore.Audio.Media.TITLE, track.title)
@@ -243,12 +269,14 @@ object MediaPublisher {
         file: File,
         treeUri: Uri,
         mime: String,
+        subfolderName: String?,
     ): Uri {
-        val directory = DocumentFile.fromTreeUri(context, treeUri)
+        val root = DocumentFile.fromTreeUri(context, treeUri)
             ?: throw IOException("无法打开所选保存目录，请重新选择。")
-        if (!directory.isDirectory || !directory.canWrite()) {
+        if (!root.isDirectory || !root.canWrite()) {
             throw IOException("所选保存目录不可写，请重新选择一个可写文件夹。")
         }
+        val directory = ensureSubfolder(root, subfolderName)
 
         var displayName = file.name
         if (directory.findFile(displayName) != null) {
@@ -279,5 +307,80 @@ object MediaPublisher {
             created.delete()
             throw IOException("保存到所选文件夹失败：" + (error.message ?: "未知错误"), error)
         }
+    }
+
+    fun publishText(
+        context: Context,
+        fileName: String,
+        content: String,
+        destinationTreeUri: Uri?,
+        subfolderName: String? = null,
+    ): Uri {
+        val safeName = fileName.replace(Regex("[\\\\/:*?\"<>|]"), "_").take(180).ifBlank { "lyrics.lrc" }
+        if (destinationTreeUri != null) {
+            val root = DocumentFile.fromTreeUri(context, destinationTreeUri)
+                ?: throw IOException("无法打开歌词保存目录。")
+            if (!root.isDirectory || !root.canWrite()) throw IOException("歌词保存目录不可写。")
+            val directory = ensureSubfolder(root, subfolderName)
+            var targetName = safeName
+            var suffix = 1
+            while (directory.findFile(targetName) != null) {
+                val base = safeName.substringBeforeLast('.', safeName)
+                val ext = safeName.substringAfterLast('.', "")
+                targetName = if (ext.isBlank()) "$base ($suffix)" else "$base ($suffix).$ext"
+                suffix++
+                if (suffix > 1000) throw IOException("歌词目录中同名文件过多。")
+            }
+            val created = directory.createFile("text/plain", targetName)
+                ?: throw IOException("无法创建歌词文件。")
+            try {
+                context.contentResolver.openOutputStream(created.uri, "w")?.bufferedWriter(Charsets.UTF_8)?.use {
+                    it.write(content)
+                } ?: throw IOException("无法写入歌词文件。")
+                return created.uri
+            } catch (error: Exception) {
+                created.delete()
+                throw IOException("保存歌词失败：" + (error.message ?: "未知错误"), error)
+            }
+        }
+
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, safeName)
+            put(MediaStore.MediaColumns.MIME_TYPE, "text/plain")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, relativeMusicPath(subfolderName))
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val uri = context.contentResolver.insert(MediaStore.Files.getContentUri("external"), values)
+            ?: throw IOException("无法创建歌词文件。")
+        try {
+            context.contentResolver.openOutputStream(uri, "w")?.bufferedWriter(Charsets.UTF_8)?.use {
+                it.write(content)
+            } ?: throw IOException("无法写入歌词文件。")
+            context.contentResolver.update(uri, ContentValues().apply {
+                put(MediaStore.MediaColumns.IS_PENDING, 0)
+            }, null, null)
+            return uri
+        } catch (error: Exception) {
+            context.contentResolver.delete(uri, null, null)
+            throw IOException("保存歌词失败：" + (error.message ?: "未知错误"), error)
+        }
+    }
+
+    private fun ensureSubfolder(root: DocumentFile, folderName: String?): DocumentFile {
+        if (folderName.isNullOrBlank()) return root
+        val name = AudioFileNamer.sanitizeComponent(folderName)
+        val existing = root.findFile(name)
+        if (existing != null) {
+            if (!existing.isDirectory || !existing.canWrite()) throw IOException("目标子文件夹不可写。")
+            return existing
+        }
+        return root.createDirectory(name) ?: throw IOException("无法创建下载子文件夹：$name")
+    }
+
+    private fun relativeMusicPath(folderName: String?): String {
+        val parts = listOf("Music", "MusicMeta") + listOfNotNull(
+            folderName?.takeIf { it.isNotBlank() }?.let(AudioFileNamer::sanitizeComponent)
+        )
+        return parts.joinToString("/") + "/"
     }
 }
