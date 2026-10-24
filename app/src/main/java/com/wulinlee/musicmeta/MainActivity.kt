@@ -353,7 +353,7 @@ private fun MusicMetaApp() {
                     } else {
                         "已加载首批 " + loaded.tracks.size + " 首 / 共 " + loaded.totalTrackCount +
                             " 首。滑到列表底部会继续读取下一批 100 首。"
-                    }"
+                    }
                 } catch (error: Exception) {
                     val detail = error.message?.takeIf { it.isNotBlank() } ?: "网络或接口暂不可用"
                     status = "同步失败：" + detail
@@ -1090,6 +1090,9 @@ private fun MusicMetaApp() {
                                                     maxLines = 2,
                                                     overflow = TextOverflow.Ellipsis,
                                                 )
+                                                if (song.platform.startsWith("gd:")) {
+                                                    Text("GD Studio 兜底音源", color = Accent, fontSize = 10.sp)
+                                                }
                                             }
                                             Button(
                                                 onClick = {
@@ -1099,8 +1102,8 @@ private fun MusicMetaApp() {
                                                         scope.launch {
                                                             try {
                                                                 val cookie = CookieManager.getInstance().getCookie(DEFAULT_SOURCE)
-                                                                val directUrl = withContext(Dispatchers.IO) {
-                                                                    flacProvider.resolveDownloadUrl(
+                                                                val (directUrl, usedGdStudioFallback) = withContext(Dispatchers.IO) {
+                                                                    flacProvider.resolveDownloadUrlWithFallback(
                                                                         song = song,
                                                                         format = if (selectedQuality == "FLAC") "flac" else "mp3",
                                                                         bitrate = when (selectedQuality) {
@@ -1111,6 +1114,9 @@ private fun MusicMetaApp() {
                                                                         cookie = cookie,
                                                                         userAgent = fallbackUserAgent,
                                                                     )
+                                                                }
+                                                                if (usedGdStudioFallback) {
+                                                                    status = "主音源不可用，本次使用 GD Studio 兜底下载地址。"
                                                                 }
                                                                 isResolvingUrl = false
                                                                 latestDownloadAndSave(
