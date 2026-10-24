@@ -36,8 +36,24 @@ jobs:
           gradle-version: "8.9"
       - name: Run tests and build APK
         run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
-      - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk MusicMeta-v0.1.0-debug.apk
+      - name: Align and explicitly sign APK
+        run: |
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/35.0.0"
+          "$BUILD_TOOLS/zipalign" -f -p 4 app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/app-debug-aligned.apk
+          test -f "$HOME/.android/debug.keystore"
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks "$HOME/.android/debug.keystore" \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            --out MusicMeta-v0.1.0-debug.apk \
+            app/build/outputs/apk/debug/app-debug-aligned.apk
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs MusicMeta-v0.1.0-debug.apk
+          "$BUILD_TOOLS/aapt" dump badging MusicMeta-v0.1.0-debug.apk | head -n 5
+      - name: Check APK package metadata
+        run: |
+          test -s MusicMeta-v0.1.0-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging MusicMeta-v0.1.0-debug.apk | grep -q "package: name='com.wulinlee.musicmeta.debug'"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify MusicMeta-v0.1.0-debug.apk
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
