@@ -72,6 +72,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -132,19 +133,19 @@ private fun MusicMetaApp() {
     val scope = rememberCoroutineScope()
     val folderPreferences = remember { context.getSharedPreferences("music_meta_settings", Context.MODE_PRIVATE) }
     remember(folderPreferences) {
-        if (folderPreferences.getInt("download_defaults_version", 0) < 2) {
+        if (folderPreferences.getInt("download_defaults_version", 0) < 3) {
             folderPreferences.edit()
                 .remove("destination_tree_uri")
                 .putString("quality", "320k")
                 .putString("source_platform", "wyy")
-                .putString("naming_format", "source_original")
+                .putString("naming_format", "song_artist")
                 .putString("folder_rule", "none")
                 .putBoolean("download_lyrics", false)
                 .putBoolean("write_audio_tags", true)
                 .putBoolean("save_translated_lyrics", true)
                 .putBoolean("save_romanization_lyrics", false)
                 .putBoolean("save_word_by_word_lyrics", true)
-                .putInt("download_defaults_version", 2)
+                .putInt("download_defaults_version", 3)
                 .apply()
         }
     }
@@ -168,7 +169,7 @@ private fun MusicMetaApp() {
     var flacPlatform by remember { mutableStateOf(folderPreferences.getString("source_platform", "wyy") ?: "wyy") }
     var selectedQuality by remember { mutableStateOf(folderPreferences.getString("quality", "320k") ?: "320k") }
     var showDownloadSettings by remember { mutableStateOf(false) }
-    var namingFormat by remember { mutableStateOf(folderPreferences.getString("naming_format", "source_original") ?: "source_original") }
+    var namingFormat by remember { mutableStateOf(folderPreferences.getString("naming_format", "song_artist") ?: "song_artist") }
     var downloadLyrics by remember { mutableStateOf(folderPreferences.getBoolean("download_lyrics", false)) }
     var writeAudioTags by remember { mutableStateOf(folderPreferences.getBoolean("write_audio_tags", true)) }
     var saveTranslatedLyrics by remember { mutableStateOf(folderPreferences.getBoolean("save_translated_lyrics", true)) }
@@ -360,35 +361,31 @@ private fun MusicMetaApp() {
                         } else {
                             safeAssets.translatedLyrics
                         }
+                        val translationToInclude = matchingTranslation.trim().takeIf {
+                            saveTranslatedLyrics &&
+                                it.isNotBlank() &&
+                                shouldAppendTranslation(primaryLyrics, it)
+                        }.orEmpty()
+                        val baseLyrics = combineLyricsWithoutLabels(
+                            original = primaryLyrics,
+                            translation = translationToInclude,
+                            preferWordByWord = usingWordByWordLyrics,
+                        )
                         val chosenLyrics = buildString {
-                            if (primaryLyrics.isNotBlank()) append(primaryLyrics.trim())
-                            if (
-                                saveTranslatedLyrics &&
-                                matchingTranslation.isNotBlank() &&
-                                shouldAppendTranslation(primaryLyrics, matchingTranslation)
-                            ) {
-                                if (isNotEmpty()) append("\n\n")
-                                append(matchingTranslation.trim())
-                            }
+                            if (baseLyrics.isNotBlank()) append(baseLyrics)
                             if (saveRomanizationLyrics && safeAssets.romanizationLyrics.isNotBlank()) {
-                                if (isNotEmpty()) append("\n\n")
+                                if (isNotEmpty()) append("\n")
                                 append(safeAssets.romanizationLyrics.trim())
                             }
                         }.trim()
-                        sidecarLyrics = if (chosenLyrics.isNotBlank()) {
-                            buildString {
-                                append("[ti:").append(track.title).append("]\n")
-                                append("[ar:").append(track.artists).append("]\n")
-                                if (track.album.isNotBlank()) append("[al:").append(track.album).append("]\n")
-                                append("\n").append(chosenLyrics)
-                            }
-                        } else ""
+                        // Store the lyric body as-is: no app-added [ti:], [ar:] or [al:] labels.
+                        sidecarLyrics = chosenLyrics
                         coverAvailable = writeAudioTags && safeAssets.coverBytes != null && safeAssets.coverBytes.isNotEmpty()
                         lyricSummary = when {
                             chosenLyrics.isBlank() -> "暂无歌词"
                             downloadLyrics -> "歌词已准备保存为 .lrc"
                             saveTranslatedLyrics && matchingTranslation.isNotBlank() &&
-                                shouldAppendTranslation(primaryLyrics, matchingTranslation) -> "原文 + 翻译"
+                                shouldAppendTranslation(primaryLyrics, matchingTranslation) -> "原文及可用翻译"
                             else -> "已找到歌词"
                         }
                         if (writeAudioTags) {
@@ -486,6 +483,7 @@ private fun MusicMetaApp() {
                             painter = painterResource(id = R.drawable.musicmeta_cover),
                             contentDescription = "音笺应用封面",
                             modifier = Modifier.size(34.dp).clip(RoundedCornerShape(9.dp)),
+                            contentScale = ContentScale.Crop,
                         )
                         Column(horizontalAlignment = Alignment.Start) {
                             Text("音笺", fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
@@ -1076,8 +1074,7 @@ private fun MusicMetaApp() {
                     ) { Text("选择下载目录") }
                     Text("文件命名", fontWeight = FontWeight.SemiBold, color = Ink)
                     listOf(
-                        "source_original" to "音乐源原始文件名（默认）",
-                        "song_artist" to "歌曲名 - 艺术家",
+                        "song_artist" to "歌曲名 - 艺术家（默认）",
                         "artist_song" to "艺术家 - 歌曲名",
                         "song_artist_quality" to "歌曲名 - 艺术家 [音质]",
                         "artist_song_quality" to "艺术家 - 歌曲名 [音质]",
@@ -1278,6 +1275,28 @@ private fun shouldAppendTranslation(original: String, translated: String): Boole
     val likelyChinese = han >= 8 && han.toDouble() / letters >= 0.28 &&
         kana.toDouble() / letters < 0.035
     return !likelyChinese
+}
+
+private fun combineLyricsWithoutLabels(
+    original: String,
+    translation: String,
+    preferWordByWord: Boolean,
+): String {
+    val source = original.trim()
+    val translated = translation.trim()
+    if (source.isBlank()) return translated
+    if (translated.isBlank()) return source
+
+    val lrcTimestamp = Regex("^\\s*\\[\\d{1,3}:\\d{2}(?:[.:]\\d{1,3})?]")
+    val originalIsTimedLrc = source.lineSequence().any { lrcTimestamp.containsMatchIn(it) }
+    val translationIsTimedLrc = translated.lineSequence().any { lrcTimestamp.containsMatchIn(it) }
+
+    // Ordinary LRC should interleave source and translation at matching timestamps.
+    // Word-by-word YRC has a different timestamp format, so preserve its own lines.
+    if (!preferWordByWord && originalIsTimedLrc && translationIsTimedLrc) {
+        return LrcMerger.merge(source, translated)
+    }
+    return listOf(source, translated).filter { it.isNotBlank() }.joinToString("\\n")
 }
 
 @Composable
