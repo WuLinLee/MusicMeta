@@ -78,6 +78,7 @@ private fun MusicMetaApp() {
     val scope = rememberCoroutineScope()
     val playlistProvider = remember { PublicPlaylistProvider() }
     val metadataProvider = remember { MetadataProvider() }
+    val flacProvider = remember { FlacMusicProvider() }
 
     var tab by remember { mutableStateOf(0) }
     var playlistInput by remember { mutableStateOf("") }
@@ -86,6 +87,10 @@ private fun MusicMetaApp() {
     var isSyncing by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("输入网易云公开歌单 ID 或链接即可同步，不需要登录账号。") }
     var selectedTrack by remember { mutableStateOf<MusicTrack?>(null) }
+    var flacQuery by remember { mutableStateOf("") }
+    var flacPlatform by remember { mutableStateOf("kuwo") }
+    var flacResults by remember { mutableStateOf<List<FlacSiteSong>>(emptyList()) }
+    var isSearchingFlac by remember { mutableStateOf(false) }
     var address by remember { mutableStateOf(DEFAULT_SOURCE) }
     var browser by remember { mutableStateOf<WebView?>(null) }
     var isDownloading by remember { mutableStateOf(false) }
@@ -147,6 +152,34 @@ private fun MusicMetaApp() {
         }
     }
     val latestDownloadAction by rememberUpdatedState(downloadAction)
+
+    val searchFlac: () -> Unit = {
+        val query = flacQuery.trim()
+        if (query.isBlank()) {
+            status = "请输入要搜索的歌名或歌手。"
+        } else if (isSearchingFlac || isDownloading) {
+            status = "当前已有任务正在运行。"
+        } else {
+            isSearchingFlac = true
+            flacResults = emptyList()
+            status = "正在通过下载站 API 搜索歌曲……"
+            scope.launch {
+                try {
+                    val cookie = CookieManager.getInstance().getCookie(DEFAULT_SOURCE)
+                    val userAgent = browser?.settings?.userAgentString.orEmpty()
+                    val results = withContext(Dispatchers.IO) {
+                        flacProvider.search(query, flacPlatform, cookie, userAgent)
+                    }
+                    flacResults = results
+                    status = "下载站找到 ${results.size} 首候选歌曲；请核对版本后下载。"
+                } catch (error: Exception) {
+                    status = "下载站 API 搜索失败：${error.message ?: "未知错误"}"
+                } finally {
+                    isSearchingFlac = false
+                }
+            }
+        }
+    }
 
     Scaffold(
         topBar = { TopAppBar(title = { Text("音笺 MusicMeta") }) },
@@ -238,6 +271,8 @@ private fun MusicMetaApp() {
                                     }
                                     OutlinedButton(onClick = {
                                         selectedTrack = track
+                                        flacQuery = "${track.title} ${track.artists}"
+                                        flacResults = emptyList()
                                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                         clipboard.setPrimaryClip(ClipData.newPlainText("歌曲搜索", "${track.title} ${track.artists}"))
                                         address = DEFAULT_SOURCE
@@ -252,6 +287,95 @@ private fun MusicMetaApp() {
                 }
             } else {
                 Column(Modifier.fillMaxSize()) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        OutlinedTextField(
+                            value = flacQuery,
+                            onValueChange = { flacQuery = it },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            label = { Text("直接搜索下载站音源") },
+                            placeholder = { Text("输入歌名或歌手") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Search),
+                        )
+                        Button(
+                            onClick = searchFlac,
+                            enabled = !isSearchingFlac && !isDownloading && flacQuery.isNotBlank(),
+                        ) {
+                            if (isSearchingFlac) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                            else Text("API 搜索")
+                        }
+                    }
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text("音源")
+                        TextButton(onClick = { flacPlatform = "kuwo"; flacResults = emptyList() }) {
+                            Text(if (flacPlatform == "kuwo") "✓ 酷我" else "酷我")
+                        }
+                        TextButton(onClick = { flacPlatform = "wyy"; flacResults = emptyList() }) {
+                            Text(if (flacPlatform == "wyy") "✓ 网易云" else "网易云")
+                        }
+                        Text("直接 API 下载后会转为 MP3", style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (flacResults.isNotEmpty()) {
+                        Column(
+                            Modifier.fillMaxWidth().heightIn(max = 190.dp).verticalScroll(rememberScrollState()).padding(horizontal = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            flacResults.forEach { song ->
+                                OutlinedCard(Modifier.fillMaxWidth()) {
+                                    Row(
+                                        Modifier.fillMaxWidth().padding(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                            Text(song.title, style = MaterialTheme.typography.titleSmall)
+                                            Text(song.artist, style = MaterialTheme.typography.bodySmall)
+                                            if (song.album.isNotBlank()) Text(song.album, style = MaterialTheme.typography.bodySmall)
+                                        }
+                                        OutlinedButton(
+                                            onClick = {
+                                                if (isDownloading) {
+                                                    status = "已有下载任务正在运行。"
+                                                } else {
+                                                    scope.launch {
+                                                        try {
+                                                            status = "正在解析《${song.title}》的下载地址……"
+                                                            val cookie = CookieManager.getInstance().getCookie(DEFAULT_SOURCE)
+                                                            val userAgent = browser?.settings?.userAgentString.orEmpty()
+                                                            val directUrl = withContext(Dispatchers.IO) {
+                                                                flacProvider.resolveDownloadUrl(
+                                                                    song, "flac", "2000", cookie, userAgent,
+                                                                )
+                                                            }
+                                                            latestDownloadAction(
+                                                                directUrl,
+                                                                userAgent,
+                                                                "attachment; filename=\"${song.title}.flac\"",
+                                                                "audio/flac",
+                                                                DEFAULT_SOURCE,
+                                                                null,
+                                                            )
+                                                        } catch (error: Exception) {
+                                                            status = "下载站解析失败：${error.message ?: "未知错误"}"
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            enabled = !isDownloading,
+                                        ) { Text("下载并转 MP3") }
+                                    }
+                                }
+                            }
+                        }
+                    }
                     Row(
                         Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
