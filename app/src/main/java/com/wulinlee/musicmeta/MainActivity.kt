@@ -296,7 +296,8 @@ private fun MusicMetaApp() {
                         status = "正在获取《" + track.title + "》的封面和歌词……"
                         val assets = try {
                             metadataProvider.fetchAssets(track)
-                        } catch (_: Exception) {
+                        } catch (error: Exception) {
+                            captureError("获取封面或歌词", error)
                             null
                         }
                         val safeAssets = assets ?: TrackAssets(
