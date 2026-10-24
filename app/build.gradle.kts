@@ -42,6 +42,5 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("net.jthink:jaudiotagger:3.0.1")
-    implementation("dev.ffmpegkit-maintained:ffmpeg-kit-audio:8.1.9")
     testImplementation("junit:junit:4.13.2")
 }
