@@ -106,9 +106,16 @@ private fun MusicMetaApp() {
                 isDownloading = true
                 status = "正在下载音频……"
                 try {
-                    val file = withContext(Dispatchers.IO) {
+                    tagAssets = null
+                    taggedTrack = null
+                    val sourceFile = withContext(Dispatchers.IO) {
                         AudioDownloader.download(context, url, userAgent, cookie, disposition, mime, referer)
                     }
+                    downloadedFile = sourceFile
+                    if (!sourceFile.extension.equals("mp3", ignoreCase = true)) {
+                        status = "音频下载完成，正在转换为 MP3……"
+                    }
+                    val file = withContext(Dispatchers.IO) { AudioConverter.toMp3(sourceFile) }
                     downloadedFile = file
                     val selected = selectedTrack
                     if (selected == null) {
