@@ -80,7 +80,30 @@ object AudioDownloader {
                 file.delete()
                 throw IOException("下载到的音频文件为空。")
             }
+            if (!hasAudioSignature(file, finalExtension)) {
+                file.delete()
+                throw IOException("下载站返回的内容不是有效的 \${finalExtension.uppercase()} 音频（文件头校验失败）。请重试或切换音源，避免保存无法播放的文件。")
+            }
             file
+        }
+    }
+
+    private fun hasAudioSignature(file: File, extension: String): Boolean {
+        val head = ByteArray(16)
+        val count = file.inputStream().use { it.read(head) }
+        if (count < 4) return false
+        return when (extension.lowercase()) {
+            "mp3" -> (count >= 3 && head[0] == 0x49.toByte() && head[1] == 0x44.toByte() && head[2] == 0x33.toByte()) ||
+                (head[0] == 0xff.toByte() && (head[1].toInt() and 0xe0) == 0xe0)
+            "flac" -> head.copyOfRange(0, 4).contentEquals(byteArrayOf(0x66, 0x4c, 0x61, 0x43))
+            "m4a", "aac" -> (count >= 8 && String(head, 4, 4, Charsets.US_ASCII) == "ftyp") ||
+                (head[0] == 0xff.toByte() && (head[1].toInt() and 0xf6) == 0xf0)
+            "ogg", "opus" -> String(head, 0, 4, Charsets.US_ASCII) == "OggS"
+            "wav" -> String(head, 0, 4, Charsets.US_ASCII) == "RIFF" &&
+                String(head, 8, 4, Charsets.US_ASCII) == "WAVE"
+            "wma" -> head[0] == 0x30.toByte() && head[1] == 0x26.toByte() &&
+                head[2] == 0xb2.toByte() && head[3] == 0x75.toByte()
+            else -> true
         }
     }
 
@@ -89,15 +112,16 @@ object AudioDownloader {
 
 
 object AudioConverter {
-    fun toMp3(input: File): File {
+    fun toMp3(input: File, bitrate: String = "320k"): File {
         if (input.extension.equals("mp3", ignoreCase = true)) return input
+        val safeBitrate = bitrate.takeIf { it in setOf("128k", "320k") } ?: "320k"
         val output = File(input.parentFile, input.nameWithoutExtension + "-converted.mp3")
         output.delete()
-        val command = "-y -i \"${input.absolutePath}\" -vn -map_metadata 0 -codec:a libmp3lame -q:a 2 \"${output.absolutePath}\""
+        val command = "-y -i \"\${input.absolutePath}\" -vn -map_metadata 0 -codec:a libmp3lame -b:a $safeBitrate \"\${output.absolutePath}\""
         val session = FFmpegKit.execute(command)
         if (!ReturnCode.isSuccess(session.returnCode) || !output.isFile || output.length() == 0L) {
             output.delete()
-            throw IOException("MP3 转码失败。原始下载文件仍保留，可选择仅保存原文件。")
+            throw IOException("MP3 转码失败。原始下载文件仍保留，请切换音质或音源重试。")
         }
         if (input.absolutePath != output.absolutePath) input.delete()
         return output
