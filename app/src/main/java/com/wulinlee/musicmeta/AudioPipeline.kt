@@ -68,11 +68,17 @@ object AudioDownloader {
                 inferred in allowed -> inferred
                 else -> throw IOException("无法识别音频格式（${mime.ifBlank { "未知类型" }}）。")
             }
-            val base = (if (extension in allowed) filename.substringBeforeLast('.') else filename)
+            val base = (if (filename.contains('.')) filename.substringBeforeLast('.') else filename)
                 .replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().trimEnd('.').take(150)
-                .ifBlank { "music-${System.currentTimeMillis()}" }
+                .ifBlank { "music" }
             val folder = File(context.cacheDir, "incoming-audio").apply { mkdirs() }
-            val file = File(folder, "$base-${System.currentTimeMillis()}.$finalExtension")
+            var file = File(folder, "$base.$finalExtension")
+            var suffix = 1
+            while (file.exists()) {
+                file = File(folder, "$base ($suffix).$finalExtension")
+                suffix++
+                if (suffix > 1000) throw IOException("下载缓存中存在过多同名文件。")
+            }
             body.byteStream().use { input -> file.outputStream().buffered().use { output -> input.copyTo(output) } }
             if (!file.isFile || file.length() == 0L) {
                 file.delete()
@@ -117,7 +123,7 @@ object AudioFileNamer {
         namingFormat: String = "song_artist",
         quality: String = "320k",
     ): File {
-        if (track == null) return file
+        if (track == null || namingFormat == "source_original") return file
         val qualityLabel = when (quality) {
             "FLAC" -> "FLAC"
             "128k" -> "128k"
@@ -249,8 +255,8 @@ object MediaPublisher {
                 put(MediaStore.Audio.Media.ALBUM, track.album)
             }
         }
-        val uri = context.contentResolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, values)
-            ?: throw IOException("无法创建手机音乐文件。")
+        val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            ?: throw IOException("无法创建 Download 下载文件。")
         try {
             val output = context.contentResolver.openOutputStream(uri, "w") ?: throw IOException("无法写入音乐目录。")
             output.use { out -> file.inputStream().buffered().use { input -> input.copyTo(out) } }
@@ -378,7 +384,7 @@ object MediaPublisher {
     }
 
     private fun relativeMusicPath(folderName: String?): String {
-        val parts = listOf("Music", "MusicMeta") + listOfNotNull(
+        val parts = listOf("Download", "MusicMeta") + listOfNotNull(
             folderName?.takeIf { it.isNotBlank() }?.let(AudioFileNamer::sanitizeComponent)
         )
         return parts.joinToString("/") + "/"
