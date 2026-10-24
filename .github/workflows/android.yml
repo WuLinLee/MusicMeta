@@ -4,6 +4,15 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      release_type:
+        description: "发布渠道；默认预览版，正式版需要明确选择"
+        required: true
+        type: choice
+        default: preview
+        options:
+          - preview
+          - formal
 
 permissions:
   contents: write
@@ -41,18 +50,40 @@ jobs:
       - name: Run tests and build APK
         run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
       - name: Align and explicitly sign APK
+        env:
+          MUSICMETA_KEYSTORE_BASE64: ${{ secrets.MUSICMETA_KEYSTORE_BASE64 }}
+          MUSICMETA_STORE_PASSWORD: ${{ secrets.MUSICMETA_STORE_PASSWORD }}
+          MUSICMETA_KEY_ALIAS: ${{ secrets.MUSICMETA_KEY_ALIAS }}
+          MUSICMETA_KEY_PASSWORD: ${{ secrets.MUSICMETA_KEY_PASSWORD }}
         run: |
           BUILD_TOOLS="$ANDROID_HOME/build-tools/35.0.0"
           "$BUILD_TOOLS/zipalign" -f -p 4 app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/app-debug-aligned.apk
-          keytool -genkeypair -noprompt \
-            -keystore "$RUNNER_TEMP/musicmeta-debug.keystore" \
-            -storepass android -keypass android \
-            -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
-            -dname "CN=Android Debug,O=Android,C=US"
+
+          if [[ -n "$MUSICMETA_KEYSTORE_BASE64" && -n "$MUSICMETA_STORE_PASSWORD" && -n "$MUSICMETA_KEY_ALIAS" && -n "$MUSICMETA_KEY_PASSWORD" ]]; then
+            echo "Using the persistent MusicMeta signing key from GitHub Actions secrets."
+            KEYSTORE_PATH="$RUNNER_TEMP/musicmeta-signing.keystore"
+            printf '%s' "$MUSICMETA_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+            STORE_PASSWORD="$MUSICMETA_STORE_PASSWORD"
+            KEY_ALIAS="$MUSICMETA_KEY_ALIAS"
+            KEY_PASSWORD="$MUSICMETA_KEY_PASSWORD"
+          else
+            echo "::warning::Persistent signing secrets are not configured. This preview uses a one-run key and may not install as an in-place update of a previous APK. Configure MUSICMETA_KEYSTORE_BASE64, MUSICMETA_STORE_PASSWORD, MUSICMETA_KEY_ALIAS, and MUSICMETA_KEY_PASSWORD in repository Actions secrets to make future updates signature-stable."
+            KEYSTORE_PATH="$RUNNER_TEMP/musicmeta-temporary.keystore"
+            STORE_PASSWORD="android"
+            KEY_ALIAS="androiddebugkey"
+            KEY_PASSWORD="android"
+            keytool -genkeypair -noprompt \
+              -keystore "$KEYSTORE_PATH" \
+              -storepass "$STORE_PASSWORD" -keypass "$KEY_PASSWORD" \
+              -alias "$KEY_ALIAS" -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=MusicMeta Preview,O=MusicMeta,C=US"
+          fi
+
           "$BUILD_TOOLS/apksigner" sign \
-            --ks "$RUNNER_TEMP/musicmeta-debug.keystore" \
-            --ks-pass pass:android \
-            --key-pass pass:android \
+            --ks "$KEYSTORE_PATH" \
+            --ks-pass "pass:$STORE_PASSWORD" \
+            --key-pass "pass:$KEY_PASSWORD" \
+            --ks-key-alias "$KEY_ALIAS" \
             --out MusicMeta-v0.1.0-debug.apk \
             app/build/outputs/apk/debug/app-debug-aligned.apk
           "$BUILD_TOOLS/apksigner" verify --verbose --print-certs MusicMeta-v0.1.0-debug.apk
@@ -69,15 +100,40 @@ jobs:
           path: MusicMeta-v0.1.0-debug.apk
           if-no-files-found: error
           retention-days: 30
-      - name: Create preview release
+      - name: Publish preview or explicitly requested formal release
         if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
+          REQUESTED_RELEASE_TYPE: ${{ github.event.inputs.release_type || 'auto' }}
         run: |
-          TAG="preview-$(git rev-parse --short "$GITHUB_SHA")"
-          gh release create "$TAG" MusicMeta-v0.1.0-debug.apk \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "音笺 MusicMeta 预览版 $TAG" \
-            --notes-file RELEASE_NOTES.md \
-            --prerelease \
-            --target "$GITHUB_SHA"
+          RELEASE_TYPE="$REQUESTED_RELEASE_TYPE"
+          if [[ "$RELEASE_TYPE" == "auto" ]]; then
+            COMMIT_SUBJECT="$(git log -1 --format=%s)"
+            if [[ "$COMMIT_SUBJECT" == release:* ]]; then
+              RELEASE_TYPE="formal"
+            else
+              RELEASE_TYPE="preview"
+            fi
+          fi
+
+          if [[ "$RELEASE_TYPE" == "formal" ]]; then
+            VERSION="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n 1)"
+            if [[ -z "$VERSION" ]]; then
+              echo "Could not determine Android versionName." >&2
+              exit 1
+            fi
+            TAG="v$VERSION"
+            gh release create "$TAG" MusicMeta-v0.1.0-debug.apk \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "音笺 MusicMeta v$VERSION" \
+              --notes-file RELEASE_NOTES.md \
+              --target "$GITHUB_SHA"
+          else
+            TAG="preview-$(git rev-parse --short "$GITHUB_SHA")"
+            gh release create "$TAG" MusicMeta-v0.1.0-debug.apk \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "音笺 MusicMeta 预览版 $TAG" \
+              --notes-file RELEASE_NOTES.md \
+              --prerelease \
+              --target "$GITHUB_SHA"
+          fi
