@@ -131,6 +131,7 @@ private fun MusicMetaApp() {
     var status by remember { mutableStateOf("输入公开歌单 ID 或链接开始。无需登录网易云账号。") }
     var selectedTrack by remember { mutableStateOf<MusicTrack?>(null) }
     var flacPlatform by remember { mutableStateOf("kuwo") }
+    var selectedQuality by remember { mutableStateOf("320k") }
     var flacResults by remember { mutableStateOf<List<FlacSiteSong>>(emptyList()) }
     var isSearchingFlac by remember { mutableStateOf(false) }
     var isResolvingUrl by remember { mutableStateOf(false) }
@@ -266,12 +267,23 @@ private fun MusicMetaApp() {
                         )
                     }
                     downloaded = sourceFile
-                    status = if (sourceFile.extension.equals("mp3", ignoreCase = true)) {
+                    status = if (selectedQuality == "FLAC") {
+                        "下载完成，正在处理无损音频标签……"
+                    } else if (sourceFile.extension.equals("mp3", ignoreCase = true)) {
                         "下载完成，正在处理歌曲信息……"
                     } else {
-                        "音频已下载，正在真正转码为 MP3……"
+                        "音频已下载，正在转码为 \${selectedQuality} MP3……"
                     }
-                    val outputFile = withContext(Dispatchers.IO) { AudioConverter.toMp3(sourceFile) }
+                    val outputFile = withContext(Dispatchers.IO) {
+                        if (selectedQuality == "FLAC") {
+                            if (!sourceFile.extension.equals("flac", ignoreCase = true)) {
+                                throw IOException("网站没有返回 FLAC 无损文件，请切换到 320k MP3 后重试。")
+                            }
+                            sourceFile
+                        } else {
+                            AudioConverter.toMp3(sourceFile, selectedQuality)
+                        }
+                    }
                     mp3File = outputFile
 
                     var coverAvailable = false
@@ -604,6 +616,32 @@ private fun MusicMetaApp() {
                                         )
                                     }
                                 }
+                                Text("下载音质", fontWeight = FontWeight.Medium, fontSize = 12.sp, color = SubInk)
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    FilterChip(
+                                        selected = selectedQuality == "128k",
+                                        onClick = { selectedQuality = "128k" },
+                                        enabled = !isDownloading && !isResolvingUrl,
+                                        label = { Text("标准 128k") },
+                                    )
+                                    FilterChip(
+                                        selected = selectedQuality == "320k",
+                                        onClick = { selectedQuality = "320k" },
+                                        enabled = !isDownloading && !isResolvingUrl,
+                                        label = { Text("高品质 320k") },
+                                    )
+                                    FilterChip(
+                                        selected = selectedQuality == "FLAC",
+                                        onClick = { selectedQuality = "FLAC" },
+                                        enabled = !isDownloading && !isResolvingUrl,
+                                        label = { Text("无损 FLAC") },
+                                    )
+                                }
+                                Text(
+                                    if (selectedQuality == "FLAC") "保存无损 FLAC 文件" else "保存 MP3 · \${selectedQuality}",
+                                    color = SubInk,
+                                    fontSize = 11.sp,
+                                )
                                 flacResults.forEach { song ->
                                     Row(
                                         modifier = Modifier
@@ -652,8 +690,12 @@ private fun MusicMetaApp() {
                                                             val directUrl = withContext(Dispatchers.IO) {
                                                                 flacProvider.resolveDownloadUrl(
                                                                     song = song,
-                                                                    format = "flac",
-                                                                    bitrate = "2000",
+                                                                    format = if (selectedQuality == "FLAC") "flac" else "mp3",
+                                                                    bitrate = when (selectedQuality) {
+                                                                        "128k" -> "128"
+                                                                        "320k" -> "320"
+                                                                        else -> "2000"
+                                                                    },
                                                                     cookie = cookie,
                                                                     userAgent = fallbackUserAgent,
                                                                 )
@@ -662,8 +704,8 @@ private fun MusicMetaApp() {
                                                             latestDownloadAndSave(
                                                                 directUrl,
                                                                 fallbackUserAgent,
-                                                                "attachment; filename=\"audio.flac\"",
-                                                                "audio/flac",
+                                                                if (selectedQuality == "FLAC") "attachment; filename=\"audio.flac\"" else "attachment; filename=\"audio.mp3\"",
+                                                                if (selectedQuality == "FLAC") "audio/flac" else "audio/mpeg",
                                                                 DEFAULT_SOURCE,
                                                                 cookie,
                                                                 selectedTrack,
