@@ -13,38 +13,58 @@ import java.util.concurrent.TimeUnit
 class MetadataProvider {
     private val client = OkHttpClient.Builder().callTimeout(25, TimeUnit.SECONDS).build()
 
+    private data class LyricsPayload(
+        val original: String = "",
+        val translated: String = "",
+        val romanization: String = "",
+        val wordByWord: String = "",
+    )
+
     suspend fun fetchAssets(track: MusicTrack): TrackAssets = withContext(Dispatchers.IO) {
         val cover = downloadCover(track.coverUrl)
-        val lyrics = getLyrics(track.id)
-        var original = lyrics.first
-        var translated = lyrics.second
-        if (original.isBlank()) {
+        var lyrics = getLyrics(track.id)
+        if (lyrics.original.isBlank()) {
             val fallback = getLrclibLyrics(track)
-            original = fallback.first
-            if (translated.isBlank()) translated = fallback.second
+            lyrics = lyrics.copy(
+                original = fallback.first,
+                translated = lyrics.translated.ifBlank { fallback.second },
+            )
         }
         TrackAssets(
             coverBytes = cover?.first,
             coverMimeType = cover?.second,
-            originalLyrics = original,
-            translatedLyrics = translated,
-            bilingualLyrics = LrcMerger.merge(original, translated),
+            originalLyrics = lyrics.original,
+            translatedLyrics = lyrics.translated,
+            bilingualLyrics = LrcMerger.merge(lyrics.original, lyrics.translated),
+            romanizationLyrics = lyrics.romanization,
+            wordByWordLyrics = lyrics.wordByWord,
         )
     }
 
-    private fun getLyrics(id: Long): Pair<String, String> {
+    private fun getLyrics(id: Long): LyricsPayload {
         val url = HttpUrl.Builder()
             .scheme("https").host("music.163.com").addPathSegments("api/song/lyric")
             .addQueryParameter("id", id.toString())
-            .addQueryParameter("lv", "-1").addQueryParameter("kv", "-1").addQueryParameter("tv", "-1")
+            .addQueryParameter("lv", "-1")
+            .addQueryParameter("kv", "-1")
+            .addQueryParameter("tv", "-1")
+            .addQueryParameter("yv", "-1")
             .build()
         return try {
             val json = JSONObject(get(url.toString(), "https://music.163.com/"))
-            if (json.optInt("code") != 200) return "" to ""
-            json.optJSONObject("lrc")?.optString("lyric").orEmpty() to
-                json.optJSONObject("tlyric")?.optString("lyric").orEmpty()
+            if (json.optInt("code") != 200) return LyricsPayload()
+            val translated = json.optJSONObject("ytlrc")?.optString("lyric").orEmpty()
+                .ifBlank { json.optJSONObject("tlyric")?.optString("lyric").orEmpty() }
+            val romanization = json.optJSONObject("yromalrc")?.optString("lyric").orEmpty()
+                .ifBlank { json.optJSONObject("romalrc")?.optString("lyric").orEmpty() }
+            LyricsPayload(
+                original = json.optJSONObject("lrc")?.optString("lyric").orEmpty(),
+                translated = translated,
+                romanization = romanization,
+                wordByWord = json.optJSONObject("yrc")?.optString("lyric").orEmpty(),
+            )
         } catch (_: Exception) {
-            "" to ""
+            LyricsPayload()
         }
     }
 
