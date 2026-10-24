@@ -43,13 +43,17 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
-      - name: Verify uploaded app cover is preserved at its original dimensions
+      - name: Verify uploaded cover 3 transparency and preserve original pixels
         run: |
           python3 -m pip install --quiet Pillow
           python3 - <<'PY'
           from PIL import Image
-          image = Image.open("app/src/main/res/drawable/musicmeta_cover.jpg")
-          print(f"Using cover 2 unchanged: {image.width}x{image.height}, {image.format}")
+          image = Image.open("app/src/main/res/drawable/musicmeta_cover.png")
+          print(f"Using cover 3 unchanged: {image.width}x{image.height}, {image.format}, mode={image.mode}")
+          if image.mode not in ("RGBA", "LA") and "transparency" not in image.info:
+              raise SystemExit("Cover 3 must retain its transparent background.")
+          if "A" in image.getbands() and image.getchannel("A").getextrema()[0] == 255:
+              raise SystemExit("Cover 3 alpha channel is fully opaque; expected transparent cutout.")
           PY
       - name: Read app version
         run: |
@@ -150,8 +154,8 @@ jobs:
               --target "$GITHUB_SHA"
 
             # Replace the previous formal release only after both new assets exist.
-            if gh release view "v0.1.1" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              gh release delete "v0.1.1" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
+            if gh release view "v0.1.2" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              gh release delete "v0.1.2" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
             fi
           else
             TAG="preview-$(git rev-parse --short "$GITHUB_SHA")"
