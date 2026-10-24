@@ -34,6 +34,10 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
+      - name: Crop whitespace from the uploaded app cover
+        run: |
+          python3 -m pip install --quiet Pillow
+          python3 tools/crop_cover.py
       - name: Run tests and build APK
         run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
       - name: Align and explicitly sign APK
