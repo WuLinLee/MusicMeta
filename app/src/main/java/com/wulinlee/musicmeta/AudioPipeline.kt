@@ -82,7 +82,7 @@ object AudioDownloader {
             }
             if (!hasAudioSignature(file, finalExtension)) {
                 file.delete()
-                throw IOException("下载站返回的内容不是有效的 \${finalExtension.uppercase()} 音频（文件头校验失败）。请重试或切换音源，避免保存无法播放的文件。")
+                throw IOException("下载站返回的内容不是有效的 ${finalExtension.uppercase()} 音频（文件头校验失败）。请重试或切换音源，避免保存无法播放的文件。")
             }
             file
         }
@@ -117,7 +117,7 @@ object AudioConverter {
         val safeBitrate = bitrate.takeIf { it in setOf("128k", "320k") } ?: "320k"
         val output = File(input.parentFile, input.nameWithoutExtension + "-converted.mp3")
         output.delete()
-        val command = "-y -i \"\${input.absolutePath}\" -vn -map_metadata 0 -codec:a libmp3lame -b:a $safeBitrate \"\${output.absolutePath}\""
+        val command = "-y -i \"${input.absolutePath}\" -vn -map_metadata 0 -codec:a libmp3lame -b:a $safeBitrate \"${output.absolutePath}\""
         val session = FFmpegKit.execute(command)
         if (!ReturnCode.isSuccess(session.returnCode) || !output.isFile || output.length() == 0L) {
             output.delete()
