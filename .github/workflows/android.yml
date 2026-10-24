@@ -1,0 +1,53 @@
+name: Android build and preview release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install SDK 35
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+      - name: Run tests and build APK
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+      - name: Rename APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk MusicMeta-v0.1.0-debug.apk
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MusicMeta-v0.1.0-debug
+          path: MusicMeta-v0.1.0-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+      - name: Create preview release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="preview-$(git rev-parse --short "$GITHUB_SHA")"
+          gh release create "$TAG" MusicMeta-v0.1.0-debug.apk \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "音笺 MusicMeta 预览版 $TAG" \
+            --notes-file RELEASE_NOTES.md \
+            --prerelease \
+            --target "$GITHUB_SHA"
