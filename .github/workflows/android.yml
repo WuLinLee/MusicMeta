@@ -55,17 +55,6 @@ jobs:
           if "A" in image.getbands() and image.getchannel("A").getextrema()[0] == 255:
               raise SystemExit("Cover 3 alpha channel is fully opaque; expected transparent cutout.")
           PY
-      - name: Require persistent signing secrets
-        env:
-          MUSICMETA_KEYSTORE_BASE64: ${{ secrets.MUSICMETA_KEYSTORE_BASE64 }}
-          MUSICMETA_STORE_PASSWORD: ${{ secrets.MUSICMETA_STORE_PASSWORD }}
-          MUSICMETA_KEY_ALIAS: ${{ secrets.MUSICMETA_KEY_ALIAS }}
-          MUSICMETA_KEY_PASSWORD: ${{ secrets.MUSICMETA_KEY_PASSWORD }}
-        run: |
-          if [[ -z "$MUSICMETA_KEYSTORE_BASE64" || -z "$MUSICMETA_STORE_PASSWORD" || -z "$MUSICMETA_KEY_ALIAS" || -z "$MUSICMETA_KEY_PASSWORD" ]]; then
-            echo "::error::Fixed signing key is not configured. Add all four MUSICMETA_* repository Actions secrets before building a release."
-            exit 1
-          fi
       - name: Read app version
         run: |
           VERSION_NAME="$(grep 'versionName = "' app/build.gradle.kts | sed -E 's/.*versionName = "([^"]+)".*/\1/' | head -n 1)"
@@ -77,26 +66,30 @@ jobs:
           echo "MUSICMETA_APK=MusicMeta-v$VERSION_NAME.apk" >> "$GITHUB_ENV"
       - name: Run tests and build release APK
         run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease
-      - name: Align and sign APK with the persistent key
-        env:
-          MUSICMETA_KEYSTORE_BASE64: ${{ secrets.MUSICMETA_KEYSTORE_BASE64 }}
-          MUSICMETA_STORE_PASSWORD: ${{ secrets.MUSICMETA_STORE_PASSWORD }}
-          MUSICMETA_KEY_ALIAS: ${{ secrets.MUSICMETA_KEY_ALIAS }}
-          MUSICMETA_KEY_PASSWORD: ${{ secrets.MUSICMETA_KEY_PASSWORD }}
+      - name: Align and sign APK with a one-run random key
         run: |
           BUILD_TOOLS="$ANDROID_HOME/build-tools/35.0.0"
           RELEASE_UNSIGNED="app/build/outputs/apk/release/app-release-unsigned.apk"
           test -s "$RELEASE_UNSIGNED"
           "$BUILD_TOOLS/zipalign" -f -p 4 "$RELEASE_UNSIGNED" "$RUNNER_TEMP/musicmeta-release-aligned.apk"
-          KEYSTORE_PATH="$RUNNER_TEMP/musicmeta-signing.keystore"
-          printf '%s' "$MUSICMETA_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
-          test -s "$KEYSTORE_PATH"
-          keytool -list -keystore "$KEYSTORE_PATH" -storepass "$MUSICMETA_STORE_PASSWORD" -alias "$MUSICMETA_KEY_ALIAS" >/dev/null
+
+          # A fresh random signing key is generated for this build only.
+          # Users should uninstall the previous app before installing each new APK.
+          KEYSTORE_PATH="$RUNNER_TEMP/musicmeta-temporary.keystore"
+          STORE_PASSWORD="$(openssl rand -hex 24)"
+          KEY_PASSWORD="$STORE_PASSWORD"
+          KEY_ALIAS="musicmeta-release"
+          keytool -genkeypair -noprompt \
+            -keystore "$KEYSTORE_PATH" \
+            -storepass "$STORE_PASSWORD" -keypass "$KEY_PASSWORD" \
+            -alias "$KEY_ALIAS" -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=MusicMeta Build,O=MusicMeta,C=US"
+
           "$BUILD_TOOLS/apksigner" sign \
             --ks "$KEYSTORE_PATH" \
-            --ks-pass "pass:$MUSICMETA_STORE_PASSWORD" \
-            --key-pass "pass:$MUSICMETA_KEY_PASSWORD" \
-            --ks-key-alias "$MUSICMETA_KEY_ALIAS" \
+            --ks-pass "pass:$STORE_PASSWORD" \
+            --key-pass "pass:$KEY_PASSWORD" \
+            --ks-key-alias "$KEY_ALIAS" \
             --out "$MUSICMETA_APK" \
             "$RUNNER_TEMP/musicmeta-release-aligned.apk"
           "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$MUSICMETA_APK"
