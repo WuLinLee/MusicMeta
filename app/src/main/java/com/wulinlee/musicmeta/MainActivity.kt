@@ -349,27 +349,37 @@ private fun MusicMetaApp() {
                             translatedLyrics = "",
                             bilingualLyrics = "",
                         )
-                        val usingWordByWordLyrics =
-                            saveWordByWordLyrics && safeAssets.wordByWordLyrics.isNotBlank()
-                        val primaryLyrics = if (usingWordByWordLyrics) {
-                            safeAssets.wordByWordLyrics
+                        val normalizedWordByWordLyrics = if (saveWordByWordLyrics) {
+                            LrcMerger.normalizeWordByWordToLrc(safeAssets.wordByWordLyrics)
                         } else {
-                            safeAssets.originalLyrics
+                            ""
+                        }
+                        val usingWordByWordLyrics = normalizedWordByWordLyrics.isNotBlank()
+                        // Convert YRC to line-timed LRC before writing it into ordinary audio tags.
+                        val primaryLyrics = if (usingWordByWordLyrics) {
+                            normalizedWordByWordLyrics
+                        } else {
+                            safeAssets.originalLyrics.trim()
+                        }
+                        val normalizedWordByWordTranslation = if (usingWordByWordLyrics) {
+                            LrcMerger.normalizeWordByWordToLrc(safeAssets.wordByWordTranslatedLyrics)
+                        } else {
+                            ""
                         }
                         val matchingTranslation = if (usingWordByWordLyrics) {
-                            safeAssets.wordByWordTranslatedLyrics.ifBlank { safeAssets.translatedLyrics }
+                            normalizedWordByWordTranslation.ifBlank { safeAssets.translatedLyrics }
                         } else {
                             safeAssets.translatedLyrics
                         }
                         val translationToInclude = matchingTranslation.trim().takeIf {
-                            saveTranslatedLyrics &&
+                            primaryLyrics.isNotBlank() &&
+                                saveTranslatedLyrics &&
                                 it.isNotBlank() &&
                                 shouldAppendTranslation(primaryLyrics, it)
                         }.orEmpty()
                         val baseLyrics = combineLyricsWithoutLabels(
                             original = primaryLyrics,
                             translation = translationToInclude,
-                            preferWordByWord = usingWordByWordLyrics,
                         )
                         val chosenLyrics = buildString {
                             if (baseLyrics.isNotBlank()) append(baseLyrics)
@@ -1267,7 +1277,7 @@ private fun resolveDownloadFolder(rule: String, playlist: PublicPlaylist?, track
 
 private fun shouldAppendTranslation(original: String, translated: String): Boolean {
     if (translated.isBlank()) return false
-    if (original.isBlank()) return true
+    if (original.isBlank()) return false
     val cleaned = original.replace(Regex("\\[[^]]*]"), " ")
     val letters = cleaned.count { it.isLetter() }
     if (letters == 0) return true
@@ -1281,23 +1291,20 @@ private fun shouldAppendTranslation(original: String, translated: String): Boole
 private fun combineLyricsWithoutLabels(
     original: String,
     translation: String,
-    preferWordByWord: Boolean,
 ): String {
     val source = original.trim()
     val translated = translation.trim()
-    if (source.isBlank()) return translated
+    if (source.isBlank()) return ""
     if (translated.isBlank()) return source
 
     val lrcTimestamp = Regex("^\\s*\\[\\d{1,3}:\\d{2}(?:[.:]\\d{1,3})?]")
     val originalIsTimedLrc = source.lineSequence().any { lrcTimestamp.containsMatchIn(it) }
     val translationIsTimedLrc = translated.lineSequence().any { lrcTimestamp.containsMatchIn(it) }
 
-    // Ordinary LRC should interleave source and translation at matching timestamps.
-    // Word-by-word YRC has a different timestamp format, so preserve its own lines.
-    if (!preferWordByWord && originalIsTimedLrc && translationIsTimedLrc) {
+    if (originalIsTimedLrc && translationIsTimedLrc) {
         return LrcMerger.merge(source, translated)
     }
-    return listOf(source, translated).filter { it.isNotBlank() }.joinToString("\\n")
+    return listOf(source, translated).filter { it.isNotBlank() }.joinToString("\n")
 }
 
 @Composable

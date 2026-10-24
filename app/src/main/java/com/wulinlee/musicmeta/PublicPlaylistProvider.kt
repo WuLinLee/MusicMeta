@@ -164,10 +164,16 @@ class PublicPlaylistProvider {
                 }
             }.joinToString(" / ")
         }
-        val cover = albumObject?.optString("picUrl").orEmpty()
-            .ifBlank { albumObject?.optString("pic_url").orEmpty() }
-            .ifBlank { song.optString("pic_url") }
-            .ifBlank { song.optString("cover") }
+        val otherAlbum = song.optJSONObject("album")
+        val cover = listOf(
+            albumObject?.optString("picUrl"), albumObject?.optString("pic_url"),
+            albumObject?.optString("coverUrl"), albumObject?.optString("cover"),
+            otherAlbum?.optString("picUrl"), otherAlbum?.optString("pic_url"),
+            otherAlbum?.optString("coverUrl"), song.optString("picUrl"),
+            song.optString("pic_url"), song.optString("coverUrl"), song.optString("cover")
+        ).mapNotNull { it?.trim() }
+            .firstOrNull { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+            .orEmpty()
 
         return MusicTrack(
             id = id,

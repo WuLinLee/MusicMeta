@@ -4,9 +4,34 @@ import java.util.Locale
 
 object LrcMerger {
     private val timestampRegex = Regex("\\[(\\d{1,3}):(\\d{2})(?:[.:](\\d{1,3}))?\\]")
+    private val yrcLineRegex = Regex("^\\s*\\[(\\d+),(\\d+)](.*)$")
+    private val yrcWordTimingRegex = Regex("\\(\\d+,\\d+,\\d+\\)")
+
+    /**
+     * Convert NetEase word-by-word YRC timing into standard line-timed LRC,
+     * which is understood by more audio players and tag readers.
+     */
+    fun normalizeWordByWordToLrc(text: String): String {
+        val source = text.trim()
+        if (source.isBlank()) return ""
+
+        val converted = source.lineSequence().mapNotNull { line ->
+            val match = yrcLineRegex.matchEntire(line) ?: return@mapNotNull null
+            val startMs = match.groupValues[1].toLongOrNull() ?: return@mapNotNull null
+            val lyricText = yrcWordTimingRegex.replace(match.groupValues[3], "").trim()
+            if (lyricText.isBlank()) return@mapNotNull null
+            format(startMs) + lyricText
+        }.toList()
+
+        if (converted.isNotEmpty()) return converted.joinToString("\n")
+        return source.takeIf { value ->
+            value.lineSequence().any { line -> timestampRegex.containsMatchIn(line) }
+        }.orEmpty()
+    }
 
     fun merge(original: String, translated: String): String {
-        if (original.isBlank()) return translated.trim()
+        // Translation is supplementary, never a substitute for a missing original.
+        if (original.isBlank()) return ""
         if (translated.isBlank()) return original.trim()
         val originalMap = parse(original)
         val translatedMap = parse(translated)

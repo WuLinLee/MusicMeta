@@ -47,8 +47,17 @@ jobs:
         run: |
           python3 -m pip install --quiet Pillow
           python3 tools/crop_cover.py
-      - name: Run tests and build APK
-        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+      - name: Read app version
+        run: |
+          VERSION_NAME="$(grep 'versionName = "' app/build.gradle.kts | sed -E 's/.*versionName = "([^"]+)".*/\\1/' | head -n 1)"
+          if [[ -z "$VERSION_NAME" ]]; then
+            echo "Could not determine Android versionName." >&2
+            exit 1
+          fi
+          echo "MUSICMETA_VERSION=$VERSION_NAME" >> "$GITHUB_ENV"
+          echo "MUSICMETA_APK=MusicMeta-v$VERSION_NAME.apk" >> "$GITHUB_ENV"
+      - name: Run tests and build release APK
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease
       - name: Align and explicitly sign APK
         env:
           MUSICMETA_KEYSTORE_BASE64: ${{ secrets.MUSICMETA_KEYSTORE_BASE64 }}
@@ -57,7 +66,9 @@ jobs:
           MUSICMETA_KEY_PASSWORD: ${{ secrets.MUSICMETA_KEY_PASSWORD }}
         run: |
           BUILD_TOOLS="$ANDROID_HOME/build-tools/35.0.0"
-          "$BUILD_TOOLS/zipalign" -f -p 4 app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/app-debug-aligned.apk
+          RELEASE_UNSIGNED="app/build/outputs/apk/release/app-release-unsigned.apk"
+          test -s "$RELEASE_UNSIGNED"
+          "$BUILD_TOOLS/zipalign" -f -p 4 "$RELEASE_UNSIGNED" "$RUNNER_TEMP/musicmeta-release-aligned.apk"
 
           if [[ -n "$MUSICMETA_KEYSTORE_BASE64" && -n "$MUSICMETA_STORE_PASSWORD" && -n "$MUSICMETA_KEY_ALIAS" && -n "$MUSICMETA_KEY_PASSWORD" ]]; then
             echo "Using the persistent MusicMeta signing key from GitHub Actions secrets."
@@ -67,7 +78,7 @@ jobs:
             KEY_ALIAS="$MUSICMETA_KEY_ALIAS"
             KEY_PASSWORD="$MUSICMETA_KEY_PASSWORD"
           else
-            echo "::warning::Persistent signing secrets are not configured. This preview uses a one-run key and may not install as an in-place update of a previous APK. Configure MUSICMETA_KEYSTORE_BASE64, MUSICMETA_STORE_PASSWORD, MUSICMETA_KEY_ALIAS, and MUSICMETA_KEY_PASSWORD in repository Actions secrets to make future updates signature-stable."
+            echo "::warning::Persistent signing secrets are not configured. This build uses a one-run key and may not install as an in-place update of a previous APK. Configure MUSICMETA_KEYSTORE_BASE64, MUSICMETA_STORE_PASSWORD, MUSICMETA_KEY_ALIAS, and MUSICMETA_KEY_PASSWORD in repository Actions secrets to make future updates signature-stable."
             KEYSTORE_PATH="$RUNNER_TEMP/musicmeta-temporary.keystore"
             STORE_PASSWORD="android"
             KEY_ALIAS="androiddebugkey"
@@ -76,7 +87,7 @@ jobs:
               -keystore "$KEYSTORE_PATH" \
               -storepass "$STORE_PASSWORD" -keypass "$KEY_PASSWORD" \
               -alias "$KEY_ALIAS" -keyalg RSA -keysize 2048 -validity 10000 \
-              -dname "CN=MusicMeta Preview,O=MusicMeta,C=US"
+              -dname "CN=MusicMeta Build,O=MusicMeta,C=US"
           fi
 
           "$BUILD_TOOLS/apksigner" sign \
@@ -84,20 +95,20 @@ jobs:
             --ks-pass "pass:$STORE_PASSWORD" \
             --key-pass "pass:$KEY_PASSWORD" \
             --ks-key-alias "$KEY_ALIAS" \
-            --out MusicMeta-v0.1.0-debug.apk \
-            app/build/outputs/apk/debug/app-debug-aligned.apk
-          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs MusicMeta-v0.1.0-debug.apk
-          "$BUILD_TOOLS/aapt" dump badging MusicMeta-v0.1.0-debug.apk | head -n 5
+            --out "$MUSICMETA_APK" \
+            "$RUNNER_TEMP/musicmeta-release-aligned.apk"
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$MUSICMETA_APK"
+          "$BUILD_TOOLS/aapt" dump badging "$MUSICMETA_APK" | head -n 5
       - name: Check APK package metadata
         run: |
-          test -s MusicMeta-v0.1.0-debug.apk
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging MusicMeta-v0.1.0-debug.apk | grep -q "package: name='com.wulinlee.musicmeta.debug'"
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify MusicMeta-v0.1.0-debug.apk
+          test -s "$MUSICMETA_APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$MUSICMETA_APK" | grep -q "package: name='com.wulinlee.musicmeta'"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify "$MUSICMETA_APK"
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MusicMeta-v0.1.0-debug
-          path: MusicMeta-v0.1.0-debug.apk
+          name: MusicMeta-v${{ env.MUSICMETA_VERSION }}
+          path: ${{ env.MUSICMETA_APK }}
           if-no-files-found: error
           retention-days: 30
       - name: Publish preview or explicitly requested formal release
@@ -116,14 +127,32 @@ jobs:
               exit 1
             fi
             TAG="v$VERSION"
-            gh release create "$TAG" MusicMeta-v0.1.0-debug.apk \
+            if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
+            fi
+            sed 's/预览版/正式版/g' RELEASE_NOTES.md > "$RUNNER_TEMP/formal-release-notes.md"
+            gh release create "$TAG" "$MUSICMETA_APK" \
               --repo "$GITHUB_REPOSITORY" \
               --title "音笺 MusicMeta v$VERSION" \
-              --notes-file RELEASE_NOTES.md \
+              --notes-file "$RUNNER_TEMP/formal-release-notes.md" \
               --target "$GITHUB_SHA"
+
+            PREVIEW_TAG="preview-$(git rev-parse --short "$GITHUB_SHA")"
+            gh release create "$PREVIEW_TAG" "$MUSICMETA_APK" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "音笺 MusicMeta 预览备份 $PREVIEW_TAG" \
+              --notes-file RELEASE_NOTES.md \
+              --prerelease \
+              --target "$GITHUB_SHA"
+
+            # Delete the old formal v0.1.0 debug APK only after the new formal
+            # release and the preview backup have both been created.
+            if gh release view "v0.1.0" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              gh release delete "v0.1.0" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
+            fi
           else
             TAG="preview-$(git rev-parse --short "$GITHUB_SHA")"
-            gh release create "$TAG" MusicMeta-v0.1.0-debug.apk \
+            gh release create "$TAG" "$MUSICMETA_APK" \
               --repo "$GITHUB_REPOSITORY" \
               --title "音笺 MusicMeta 预览版 $TAG" \
               --notes-file RELEASE_NOTES.md \

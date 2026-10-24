@@ -38,11 +38,13 @@
 
 需要 JDK 17、Android SDK 35 与 Gradle 8.9：
 
+测试并构建正式变体（本地输出仍是未签名 APK）：
+
 ```bash
-gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease
 ```
 
-APK 输出：`app/build/outputs/apk/debug/app-debug.apk`
+APK 输出：`app/build/outputs/apk/release/app-release-unsigned.apk`。GitHub Actions 会再对正式变体进行对齐和签名。
 
 ## 许可与声明
 

@@ -3,6 +3,7 @@ package com.wulinlee.musicmeta
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.FormBody
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -23,6 +24,9 @@ class MetadataProvider {
 
     suspend fun fetchAssets(track: MusicTrack): TrackAssets = withContext(Dispatchers.IO) {
         val cover = downloadCover(track.coverUrl)
+            ?: resolveCoverUrlFromSongDetail(track.id)?.let(::downloadCover)
+            ?: resolveCoverUrlFromGdStudio(track)?.let(::downloadCover)
+            ?: resolveCoverUrlFromItunes(track)?.let(::downloadCover)
         var lyrics = getLyrics(track.id)
         if (lyrics.original.isBlank()) {
             val fallback = getLrclibLyrics(track)
@@ -92,23 +96,148 @@ class MetadataProvider {
         }
     }
 
+    private fun resolveCoverUrlFromSongDetail(id: Long): String? {
+        if (id <= 0L) return null
+        return try {
+            val url = HttpUrl.Builder().scheme("https").host("music.163.com")
+                .addPathSegments("api/v3/song/detail").build()
+            val payload = JSONArray().put(JSONObject().put("id", id)).toString()
+            val request = Request.Builder().url(url)
+                .header("Referer", "https://music.163.com/")
+                .header("User-Agent", userAgent)
+                .post(FormBody.Builder().add("c", payload).build()).build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@use null
+                val root = JSONObject(response.body?.string().orEmpty())
+                val song = root.optJSONArray("songs")?.optJSONObject(0) ?: return@use null
+                val album = song.optJSONObject("al") ?: song.optJSONObject("album")
+                listOf(
+                    album?.optString("picUrl"), album?.optString("pic_url"),
+                    album?.optString("coverUrl"), album?.optString("cover"),
+                    song.optString("picUrl"), song.optString("pic_url"),
+                    song.optString("coverUrl"), song.optString("cover")
+                ).mapNotNull { it?.trim() }
+                    .firstOrNull { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+            }
+        } catch (_: Exception) { null }
+    }
+
+    private fun resolveCoverUrlFromGdStudio(track: MusicTrack): String? {
+        return try {
+            val searchUrl = HttpUrl.Builder().scheme("https").host("music-api.gdstudio.xyz")
+                .addPathSegments("api.php")
+                .addQueryParameter("types", "search")
+                .addQueryParameter("source", "netease")
+                .addQueryParameter("name", track.title + " " + track.artists.substringBefore(" / "))
+                .addQueryParameter("count", "10").addQueryParameter("pages", "1").build()
+            val searchRequest = Request.Builder().url(searchUrl)
+                .header("Referer", "https://music.gdstudio.xyz/")
+                .header("User-Agent", userAgent).get().build()
+            val body = client.newCall(searchRequest).execute().use { response ->
+                if (!response.isSuccessful) return@use null
+                response.body?.string()
+            } ?: return null
+            val root = runCatching { JSONObject(body) }.getOrNull()
+            val results = if (body.trimStart().startsWith("[")) {
+                runCatching { JSONArray(body) }.getOrNull()
+            } else {
+                root?.optJSONArray("data") ?: root?.optJSONArray("result")
+                    ?: root?.optJSONArray("list") ?: root?.optJSONArray("songs")
+            } ?: return null
+            val normalize: (String) -> String = { value ->
+                value.lowercase().replace(Regex("[^\\p{L}\\p{N}]"), "")
+            }
+            val title = normalize(track.title)
+            val artist = normalize(track.artists.substringBefore(" / "))
+            val match = (0 until results.length()).mapNotNull { results.optJSONObject(it) }
+                .firstOrNull { item ->
+                    val name = normalize(item.optString("name").ifBlank { item.optString("title") })
+                    val artistValue = item.opt("artist")
+                    val artists = when (artistValue) {
+                        is JSONArray -> (0 until artistValue.length()).joinToString(" ") { artistValue.optString(it) }
+                        is JSONObject -> artistValue.optString("name")
+                        else -> artistValue?.toString().orEmpty()
+                    }.let(normalize)
+                    name == title && (artist.isBlank() || artists.contains(artist) || artist.contains(artists))
+                } ?: return null
+            val picId = match.optString("pic_id").ifBlank { match.optString("picId") }
+                .ifBlank { match.optString("pic") }
+            if (picId.isBlank() || picId == "0") return null
+            val picUrl = HttpUrl.Builder().scheme("https").host("music-api.gdstudio.xyz")
+                .addPathSegments("api.php").addQueryParameter("types", "pic")
+                .addQueryParameter("source", "netease").addQueryParameter("id", picId)
+                .addQueryParameter("size", "500").build()
+            val picRequest = Request.Builder().url(picUrl)
+                .header("Referer", "https://music.gdstudio.xyz/")
+                .header("User-Agent", userAgent).get().build()
+            client.newCall(picRequest).execute().use { response ->
+                if (!response.isSuccessful) return@use null
+                val value = response.body?.string().orEmpty().trim()
+                if (value.startsWith("http://") || value.startsWith("https://")) return@use value
+                val json = runCatching { JSONObject(value) }.getOrNull() ?: return@use null
+                json.optString("url").ifBlank { json.optJSONObject("data")?.optString("url").orEmpty() }
+                    .takeIf { it.startsWith("http://") || it.startsWith("https://") }
+            }
+        } catch (_: Exception) { null }
+    }
+
+    private fun resolveCoverUrlFromItunes(track: MusicTrack): String? {
+        return try {
+            val url = HttpUrl.Builder().scheme("https").host("itunes.apple.com")
+                .addPathSegments("search")
+                .addQueryParameter("term", track.title + " " + track.artists.substringBefore(" / "))
+                .addQueryParameter("entity", "song").addQueryParameter("limit", "10").build()
+            val request = Request.Builder().url(url).header("User-Agent", userAgent).get().build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@use null
+                val results = JSONObject(response.body?.string().orEmpty()).optJSONArray("results") ?: return@use null
+                val norm: (String) -> String = { it.trim().lowercase().replace(Regex("\\s+"), " ") }
+                val title = norm(track.title)
+                val artist = norm(track.artists.substringBefore(" / "))
+                val match = (0 until results.length()).mapNotNull { results.optJSONObject(it) }
+                    .firstOrNull { item ->
+                        norm(item.optString("trackName")) == title &&
+                            (artist.isBlank() || norm(item.optString("artistName")).contains(artist))
+                    } ?: return@use null
+                match.optString("artworkUrl100").replace("100x100bb", "600x600bb")
+                    .takeIf { it.startsWith("http://") || it.startsWith("https://") }
+            }
+        } catch (_: Exception) { null }
+    }
+
     private fun downloadCover(url: String): Pair<ByteArray, String>? {
         if (url.isBlank()) return null
         val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return null
         if (uri.scheme?.lowercase() !in setOf("http", "https") || uri.host.isNullOrBlank()) return null
+        val requestUrl = if (uri.scheme.equals("http", true) &&
+            uri.host.orEmpty().endsWith(".music.126.net", true)) {
+            url.replaceFirst(Regex("^http://", RegexOption.IGNORE_CASE), "https://")
+        } else url
         return try {
-            val request = Request.Builder().url(url).header("User-Agent", userAgent).get().build()
+            val request = Request.Builder().url(requestUrl)
+                .header("Referer", "https://music.163.com/")
+                .header("User-Agent", userAgent).get().build()
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@use null
                 val body = response.body ?: return@use null
                 if (body.contentLength() > 12_000_000L) return@use null
-                val mime = body.contentType()?.toString()?.substringBefore(';') ?: "image/jpeg"
+                val reportedMime = body.contentType()?.toString()?.substringBefore(';').orEmpty()
+                if (reportedMime.isNotBlank() && !reportedMime.startsWith("image/") &&
+                    reportedMime != "application/octet-stream") return@use null
                 val bytes = body.bytes()
-                if (bytes.size < 8) null else bytes to mime
+                val isJpeg = bytes.size >= 3 && bytes[0] == 0xff.toByte() && bytes[1] == 0xd8.toByte()
+                val isPng = bytes.size >= 8 && bytes.copyOfRange(0, 8).contentEquals(
+                    byteArrayOf(0x89.toByte(),0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a))
+                val isWebp = bytes.size >= 12 && String(bytes.copyOfRange(0,4), Charsets.US_ASCII) == "RIFF" &&
+                    String(bytes.copyOfRange(8,12), Charsets.US_ASCII) == "WEBP"
+                val isGif = bytes.size >= 6 && String(bytes.copyOfRange(0,3), Charsets.US_ASCII) == "GIF"
+                if (!isJpeg && !isPng && !isWebp && !isGif) return@use null
+                val mime = reportedMime.ifBlank {
+                    when { isJpeg -> "image/jpeg"; isWebp -> "image/webp"; isGif -> "image/gif"; else -> "image/png" }
+                }
+                bytes to mime
             }
-        } catch (_: Exception) {
-            null
-        }
+        } catch (_: Exception) { null }
     }
 
     private fun get(url: String, referer: String? = null): String {

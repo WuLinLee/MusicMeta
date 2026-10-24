@@ -2,8 +2,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:allowBackup="false"
-        android:icon="@drawable/musicmeta_cover"
-        android:roundIcon="@drawable/musicmeta_cover"
+        android:icon="@mipmap/musicmeta_icon"
+        android:roundIcon="@mipmap/musicmeta_icon"
         android:label="音笺 MusicMeta"
         android:supportsRtl="true"
         android:usesCleartextTraffic="false"
