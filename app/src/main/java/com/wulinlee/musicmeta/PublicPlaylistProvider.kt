@@ -98,7 +98,7 @@ class PublicPlaylistProvider {
     private fun parsePlaylistId(input: String): Long {
         val value = input.trim()
         if (value.matches(Regex("\\d{4,20}"))) return value.toLong()
-        val id = Regex("(?:[?&]|/)(?:id=)?(\\d{4,20})(?:[&#/]|$)").findAll(value).lastOrNull()
+        val id = Regex("(?:[?&]|/)(?:id=)?(\\d{4,20})(?:[&#/]|\\z)").findAll(value).lastOrNull()
             ?.groupValues?.getOrNull(1)?.toLongOrNull()
         return id ?: throw IOException("请输入网易云歌单 ID（纯数字）或完整歌单链接。")
     }
