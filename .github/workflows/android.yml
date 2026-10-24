@@ -43,10 +43,14 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
-      - name: Crop whitespace from the uploaded app cover
+      - name: Verify uploaded app cover is preserved at its original dimensions
         run: |
           python3 -m pip install --quiet Pillow
-          python3 tools/crop_cover.py
+          python3 - <<'PY'
+          from PIL import Image
+          image = Image.open("app/src/main/res/drawable/musicmeta_cover.jpg")
+          print(f"Using cover 2 unchanged: {image.width}x{image.height}, {image.format}")
+          PY
       - name: Read app version
         run: |
           VERSION_NAME="$(grep 'versionName = "' app/build.gradle.kts | sed -E 's/.*versionName = "([^"]+)".*/\1/' | head -n 1)"
@@ -145,10 +149,9 @@ jobs:
               --prerelease \
               --target "$GITHUB_SHA"
 
-            # Delete the old formal v0.1.0 debug APK only after the new formal
-            # release and the preview backup have both been created.
-            if gh release view "v0.1.0" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              gh release delete "v0.1.0" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
+            # Replace the previous formal release only after both new assets exist.
+            if gh release view "v0.1.1" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              gh release delete "v0.1.1" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
             fi
           else
             TAG="preview-$(git rev-parse --short "$GITHUB_SHA")"

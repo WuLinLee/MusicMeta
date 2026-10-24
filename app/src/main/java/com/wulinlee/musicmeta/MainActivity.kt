@@ -155,10 +155,25 @@ private fun MusicMetaApp() {
     val flacProvider = remember { FlacMusicProvider() }
     val listState = rememberLazyListState()
 
-    var playlistInput by remember { mutableStateOf("") }
     var inputMode by remember { mutableStateOf("playlist") }
-    var playlist by remember { mutableStateOf<PublicPlaylist?>(null) }
-    var filterText by remember { mutableStateOf("") }
+    // Keep the two sources independent: a public playlist ID is not the same as
+    // the user ID used to fetch a liked-song list, and both lists remain cached.
+    var publicPlaylistInput by remember { mutableStateOf("") }
+    var likedUserIdInput by remember { mutableStateOf("") }
+    var publicPlaylist by remember { mutableStateOf<PublicPlaylist?>(null) }
+    var likedPlaylist by remember { mutableStateOf<PublicPlaylist?>(null) }
+    var publicFilterText by remember { mutableStateOf("") }
+    var likedFilterText by remember { mutableStateOf("") }
+    val playlistInput = if (inputMode == "liked") likedUserIdInput else publicPlaylistInput
+    val playlist = if (inputMode == "liked") likedPlaylist else publicPlaylist
+    val filterText = if (inputMode == "liked") likedFilterText else publicFilterText
+    val setPlaylistInput: (String) -> Unit = { value ->
+        if (inputMode == "liked") likedUserIdInput = value.filter { it.isDigit() }
+        else publicPlaylistInput = value
+    }
+    val setFilterText: (String) -> Unit = { value ->
+        if (inputMode == "liked") likedFilterText = value else publicFilterText = value
+    }
     var isSyncing by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("输入公开歌单 ID 或链接开始。无需登录网易云账号。") }
     var lastErrorReport by remember { mutableStateOf<String?>(null) }
@@ -228,10 +243,10 @@ private fun MusicMetaApp() {
                     val loaded = withTimeout(28_000L) {
                         withContext(Dispatchers.IO) { playlistProvider.load(input, likedByUserId = inputMode == "liked") }
                     }
-                    playlist = loaded
+                    if (inputMode == "liked") likedPlaylist = loaded else publicPlaylist = loaded
                     selectedTrack = null
                     flacResults = emptyList()
-                    filterText = ""
+                    setFilterText("")
                     status = "已同步 " + loaded.tracks.size + " 首歌曲。点歌曲右侧“找音源”继续。"
                 } catch (error: Exception) {
                     val detail = error.message?.takeIf { it.isNotBlank() } ?: "网络或接口暂不可用"
@@ -605,7 +620,11 @@ private fun MusicMetaApp() {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             FilterChip(
                                 selected = inputMode == "playlist",
-                                onClick = { inputMode = "playlist" },
+                                onClick = {
+                                    inputMode = "playlist"
+                                    selectedTrack = null
+                                    flacResults = emptyList()
+                                },
                                 enabled = !busy,
                                 label = { Text("公开歌单") },
                             )
@@ -613,7 +632,8 @@ private fun MusicMetaApp() {
                                 selected = inputMode == "liked",
                                 onClick = {
                                     inputMode = "liked"
-                                    playlistInput = playlistInput.filter { it.isDigit() }
+                                    selectedTrack = null
+                                    flacResults = emptyList()
                                 },
                                 enabled = !busy,
                                 label = { Text("我的红心歌单") },
@@ -621,7 +641,7 @@ private fun MusicMetaApp() {
                         }
                         OutlinedTextField(
                             value = playlistInput,
-                            onValueChange = { playlistInput = it },
+                            onValueChange = setPlaylistInput,
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
                             label = { Text(if (inputMode == "liked") "网易云用户 ID" else "网易云歌单链接或 ID") },
@@ -650,7 +670,7 @@ private fun MusicMetaApp() {
                                 Spacer(Modifier.size(9.dp))
                                 Text("正在同步")
                             } else {
-                                Text("同步公开歌单", fontWeight = FontWeight.SemiBold)
+                                Text(if (inputMode == "liked") "同步我的红心歌单" else "同步公开歌单", fontWeight = FontWeight.SemiBold)
                             }
                         }
                     }
@@ -974,7 +994,7 @@ private fun MusicMetaApp() {
                 item(key = "track-filter") {
                     OutlinedTextField(
                         value = filterText,
-                        onValueChange = { filterText = it },
+                        onValueChange = setFilterText,
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         label = { Text("筛选歌曲") },
