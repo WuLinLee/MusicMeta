@@ -23,12 +23,15 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -37,6 +40,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -65,6 +69,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -92,6 +97,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -100,9 +106,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.semantics.contentDescription
@@ -119,6 +127,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.io.IOException
+import kotlin.math.roundToInt
 
 private const val DEFAULT_SOURCE = "https://flac.music.hi.cn/"
 private val PageBackground = Color(0xFF0D1210)
@@ -299,6 +308,10 @@ private fun MusicMetaApp() {
     var isPreviewLoading by remember { mutableStateOf(false) }
     var isPreviewPlaying by remember { mutableStateOf(false) }
     var isPreviewLyricsLoading by remember { mutableStateOf(false) }
+    var showPreviewDetails by remember { mutableStateOf(false) }
+    var previewPositionMs by remember { mutableStateOf(0) }
+    var previewDurationMs by remember { mutableStateOf(0) }
+    var miniPlayerOffset by remember { mutableStateOf(Offset.Zero) }
     val previewPlayer = remember { mutableStateOf<MediaPlayer?>(null) }
 
     DisposableEffect(Unit) {
@@ -702,6 +715,10 @@ private fun MusicMetaApp() {
         isPreviewLoading = false
         isPreviewPlaying = false
         isPreviewLyricsLoading = false
+        showPreviewDetails = false
+        previewPositionMs = 0
+        previewDurationMs = 0
+        miniPlayerOffset = Offset.Zero
     }
     val playPreview: (FlacSiteSong) -> Unit = { song ->
         val songKey = sourceSongKey(song)
@@ -712,10 +729,13 @@ private fun MusicMetaApp() {
                     if (player.isPlaying) {
                         player.pause()
                         isPreviewPlaying = false
+                        previewPositionMs = runCatching { player.currentPosition }.getOrDefault(previewPositionMs)
                         status = "试听已暂停。"
                     } else {
                         player.start()
                         isPreviewPlaying = true
+                        previewPositionMs = runCatching { player.currentPosition }.getOrDefault(previewPositionMs)
+                        previewDurationMs = runCatching { player.duration }.getOrDefault(previewDurationMs).coerceAtLeast(0)
                         status = "正在试听《" + song.title + "》。"
                     }
                 }.onFailure { error ->
@@ -730,6 +750,10 @@ private fun MusicMetaApp() {
             previewSong = song
             previewCoverUrl = song.coverUrl
             previewLyrics = ""
+            previewPositionMs = 0
+            previewDurationMs = 0
+            showPreviewDetails = false
+            miniPlayerOffset = Offset.Zero
             isPreviewPlaying = false
             isPreviewLoading = true
             isPreviewLyricsLoading = true
@@ -772,6 +796,8 @@ private fun MusicMetaApp() {
                     )
                     player.setOnPreparedListener { prepared ->
                         if (previewSong?.let(sourceSongKey) == songKey) {
+                            previewDurationMs = runCatching { prepared.duration }.getOrDefault(0).coerceAtLeast(0)
+                            previewPositionMs = runCatching { prepared.currentPosition }.getOrDefault(0).coerceAtLeast(0)
                             runCatching { prepared.start() }
                                 .onSuccess {
                                     isPreviewPlaying = true
@@ -794,6 +820,7 @@ private fun MusicMetaApp() {
                     player.setOnCompletionListener { completed ->
                         isPreviewPlaying = false
                         isPreviewLoading = false
+                        previewPositionMs = previewDurationMs
                         status = "试听结束：《" + song.title + "》。"
                         runCatching { completed.release() }
                         if (previewPlayer.value === completed) previewPlayer.value = null
@@ -842,6 +869,20 @@ private fun MusicMetaApp() {
                     }
                 }
             }
+        }
+    }
+
+    LaunchedEffect(previewSong, isPreviewPlaying) {
+        while (isPreviewPlaying) {
+            val player = previewPlayer.value
+            if (player != null) {
+                runCatching {
+                    val duration = player.duration
+                    if (duration > 0) previewDurationMs = duration
+                    previewPositionMs = player.currentPosition.coerceAtLeast(0)
+                }
+            }
+            delay(350)
         }
     }
 
@@ -1079,31 +1120,20 @@ private fun MusicMetaApp() {
         topBar = {
             CenterAlignedTopAppBar(
                 navigationIcon = {
-                    IconButton(
-                        onClick = {
-                            focusManager.clearFocus()
-                            scope.launch { listState.animateScrollToItem(0) }
-                        },
-                        modifier = Modifier.size(38.dp).semantics { contentDescription = "回到顶部" },
-                    ) {
-                        HomeGlyph()
-                    }
+                    Image(
+                        painter = painterResource(id = R.drawable.musicmeta_cover),
+                        contentDescription = "音笺应用标志",
+                        modifier = Modifier.padding(start = 10.dp).size(36.dp).clip(RoundedCornerShape(9.dp)),
+                        contentScale = ContentScale.Crop,
+                    )
                 },
                 title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(1.dp),
                     ) {
-                        Image(
-                            painter = painterResource(id = R.drawable.musicmeta_cover),
-                            contentDescription = "音笺应用封面",
-                            modifier = Modifier.size(44.dp).clip(RoundedCornerShape(9.dp)),
-                            contentScale = ContentScale.Crop,
-                        )
-                        Column(horizontalAlignment = Alignment.Start) {
-                            Text("音笺", fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
-                            Text("MUSIC META", color = SubInk, fontSize = 9.sp, letterSpacing = 2.sp)
-                        }
+                        Text("音笺", fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
+                        Text("MUSIC META", color = SubInk, fontSize = 9.sp, letterSpacing = 2.sp)
                     }
                 },
                 actions = {
@@ -1942,104 +1972,205 @@ private fun MusicMetaApp() {
             }
         }
 
-        }
-    }
+        if (previewSong != null) {
+            val activePreviewSong = previewSong!!
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val density = LocalDensity.current
+                val maxDragX = with(density) { (maxWidth - 76.dp).toPx().coerceAtLeast(0f) }
+                val maxDragY = with(density) { (maxHeight - 76.dp).toPx().coerceAtLeast(0f) }
 
-    if (previewSong != null) {
-        val activePreviewSong = previewSong!!
-        AlertDialog(
-            onDismissRequest = stopPreview,
-            title = { Text("试听预览", fontWeight = FontWeight.SemiBold) },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(9.dp),
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        AsyncImage(
-                            model = previewCoverUrl.takeIf { it.isNotBlank() },
-                            contentDescription = "正在试听的歌曲封面",
-                            placeholder = painterResource(id = R.drawable.musicmeta_cover),
-                            error = painterResource(id = R.drawable.musicmeta_cover),
-                            modifier = Modifier.size(76.dp).clip(RoundedCornerShape(14.dp)).background(SoftAccent),
-                            contentScale = ContentScale.Crop,
-                        )
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            Text(
-                                activePreviewSong.title,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 15.sp,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Text(
-                                activePreviewSong.artist,
-                                color = SubInk,
-                                fontSize = 12.sp,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Text(
-                                if (activePreviewSong.platform.startsWith("gd:")) "GD Studio 音源"
-                                else if (activePreviewSong.platform == "kuwo") "酷我音源" else "网易云音源",
-                                color = Accent,
-                                fontSize = 10.sp,
-                            )
-                        }
-                    }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        if (isPreviewLoading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                color = Accent,
-                                strokeWidth = 2.dp,
-                            )
-                            Text("正在连接并播放…", color = SubInk, fontSize = 11.sp)
-                        } else {
-                            Text(
-                                if (isPreviewPlaying) "正在播放" else "播放已暂停",
-                                color = Accent,
-                                fontSize = 11.sp,
-                            )
-                        }
-                    }
-                    Text("歌词", color = Ink, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                    Column(
+                if (showPreviewDetails) {
+                    Card(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 230.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(PageBackground)
-                            .verticalScroll(rememberScrollState())
-                            .padding(11.dp),
+                            .align(Alignment.BottomEnd)
+                            .padding(end = 12.dp, bottom = 82.dp)
+                            .fillMaxWidth(0.94f)
+                            .widthIn(max = 340.dp),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = SurfaceColor),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 12.dp),
                     ) {
-                        Text(
-                            when {
-                                isPreviewLyricsLoading -> "正在查找歌词…"
-                                previewLyrics.isBlank() -> "暂未找到可用歌词。"
-                                else -> formatPreviewLyrics(previewLyrics)
-                            },
-                            color = if (previewLyrics.isBlank()) SubInk else Ink,
-                            fontSize = 12.sp,
-                            lineHeight = 19.sp,
-                        )
+                        Column(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+                                .heightIn(max = 250.dp),
+                            verticalArrangement = Arrangement.spacedBy(5.dp),
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(9.dp),
+                            ) {
+                                AsyncImage(
+                                    model = previewCoverUrl.ifBlank { activePreviewSong.coverUrl }.takeIf { it.isNotBlank() },
+                                    contentDescription = "正在试听的歌曲封面",
+                                    placeholder = painterResource(id = R.drawable.musicmeta_cover),
+                                    error = painterResource(id = R.drawable.musicmeta_cover),
+                                    modifier = Modifier.size(42.dp).clip(RoundedCornerShape(9.dp)).background(SoftAccent),
+                                    contentScale = ContentScale.Crop,
+                                )
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                                ) {
+                                    Text(activePreviewSong.title, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(activePreviewSong.artist, color = SubInk, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(
+                                        if (activePreviewSong.platform.startsWith("gd:")) "GD Studio 音源"
+                                        else if (activePreviewSong.platform == "kuwo") "酷我音源" else "网易云音源",
+                                        color = Accent,
+                                        fontSize = 10.sp,
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { showPreviewDetails = false },
+                                    modifier = Modifier.size(28.dp).semantics { contentDescription = "收起播放详情" },
+                                ) {
+                                    Text("⌄", color = Ink, fontSize = 20.sp)
+                                }
+                            }
+                            Slider(
+                                value = previewPositionMs.coerceIn(0, previewDurationMs.coerceAtLeast(0)).toFloat(),
+                                onValueChange = { value ->
+                                    val target = value.toInt().coerceAtLeast(0)
+                                    previewPositionMs = target
+                                    runCatching { previewPlayer.value?.seekTo(target) }
+                                },
+                                valueRange = 0f..previewDurationMs.coerceAtLeast(1).toFloat(),
+                                enabled = previewDurationMs > 0 && previewPlayer.value != null && !isPreviewLoading,
+                                modifier = Modifier.fillMaxWidth().height(22.dp),
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(formatPreviewTime(previewPositionMs), color = SubInk, fontSize = 10.sp)
+                                Text(formatPreviewTime(previewDurationMs), color = SubInk, fontSize = 10.sp)
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                IconButton(
+                                    onClick = { playPreview(activePreviewSong) },
+                                    enabled = !isPreviewLoading,
+                                    modifier = Modifier.size(34.dp).semantics {
+                                        contentDescription = if (isPreviewPlaying) "暂停试听" else "继续试听"
+                                    },
+                                ) {
+                                    PlayGlyph(isPlaying = isPreviewPlaying, isLoading = isPreviewLoading)
+                                }
+                                Text(
+                                    if (isPreviewLoading) "正在连接…" else if (isPreviewPlaying) "正在播放" else "已暂停",
+                                    color = SubInk,
+                                    fontSize = 10.sp,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                TextButton(
+                                    onClick = stopPreview,
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                ) {
+                                    Text("停止", color = SubInk, fontSize = 11.sp)
+                                }
+                            }
+                            Text("歌词", color = Ink, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 68.dp)
+                                    .clip(RoundedCornerShape(9.dp))
+                                    .background(PageBackground)
+                                    .verticalScroll(rememberScrollState())
+                                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                            ) {
+                                Text(
+                                    when {
+                                        isPreviewLyricsLoading -> "正在找歌词…"
+                                        previewLyrics.isBlank() -> "暂未找到可用歌词"
+                                        else -> formatPreviewLyrics(previewLyrics)
+                                    },
+                                    color = if (previewLyrics.isBlank()) SubInk else Ink,
+                                    fontSize = 11.sp,
+                                    lineHeight = 15.sp,
+                                )
+                            }
+                        }
                     }
                 }
-            },
-            confirmButton = {
-                TextButton(onClick = stopPreview) { Text("停止并关闭", color = Accent) }
-            },
-            containerColor = SurfaceColor,
-        )
+
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 12.dp, bottom = 12.dp)
+                        .offset {
+                            IntOffset(
+                                miniPlayerOffset.x.coerceIn(-maxDragX, 0f).roundToInt(),
+                                miniPlayerOffset.y.coerceIn(-maxDragY, 0f).roundToInt(),
+                            )
+                        }
+                        .size(64.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(SurfaceColor)
+                        .border(1.dp, Hairline, RoundedCornerShape(18.dp))
+                        .pointerInput(activePreviewSong, maxDragX, maxDragY) {
+                            detectDragGestures { change, dragAmount ->
+                                change.consume()
+                                miniPlayerOffset = Offset(
+                                    (miniPlayerOffset.x + dragAmount.x).coerceIn(-maxDragX, 0f),
+                                    (miniPlayerOffset.y + dragAmount.y).coerceIn(-maxDragY, 0f),
+                                )
+                            }
+                        },
+                ) {
+                    AsyncImage(
+                        model = previewCoverUrl.ifBlank { activePreviewSong.coverUrl }.takeIf { it.isNotBlank() },
+                        contentDescription = "轻点封面暂停或继续播放，拖动可移动迷你播放器",
+                        placeholder = painterResource(id = R.drawable.musicmeta_cover),
+                        error = painterResource(id = R.drawable.musicmeta_cover),
+                        modifier = Modifier.fillMaxSize().clickable { playPreview(activePreviewSong) },
+                        contentScale = ContentScale.Crop,
+                    )
+                    if (isPreviewLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.align(Alignment.Center).size(22.dp),
+                            color = Accent,
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        Surface(
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(4.dp)
+                                .size(23.dp)
+                                .clickable { playPreview(activePreviewSong) },
+                            color = Color(0xD90D1210),
+                            contentColor = Accent,
+                            shape = CircleShape,
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                PlayGlyph(isPlaying = isPreviewPlaying, isLoading = false)
+                            }
+                        }
+                    }
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(3.dp)
+                            .size(20.dp)
+                            .clickable { showPreviewDetails = !showPreviewDetails },
+                        color = Color(0xD90D1210),
+                        contentColor = Ink,
+                        shape = CircleShape,
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(if (showPreviewDetails) "⌄" else "↗", fontSize = 12.sp, color = Ink)
+                        }
+                    }
+                }
+            }
+        }
+
+        }
     }
 
     if (showDownloadSettings) {
@@ -2425,6 +2556,11 @@ private fun formatPreviewLyrics(raw: String): String {
         .filter { it.isNotBlank() }
         .joinToString("\n")
         .ifBlank { raw.trim() }
+}
+
+private fun formatPreviewTime(milliseconds: Int): String {
+    val totalSeconds = milliseconds.coerceAtLeast(0) / 1000
+    return (totalSeconds / 60).toString() + ":" + (totalSeconds % 60).toString().padStart(2, '0')
 }
 
 @Composable
