@@ -802,6 +802,32 @@ private fun MusicMetaApp() {
                             }
                         }
                     }
+                    if (playlist == null || pageItemCount <= 0) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                            horizontalArrangement = Arrangement.End,
+                        ) {
+                            TextButton(
+                                onClick = {
+                                    val report = lastErrorReport
+                                    if (report != null) {
+                                        runCatching {
+                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                            clipboard.setPrimaryClip(ClipData.newPlainText("MusicMeta error report", report))
+                                        }.onSuccess {
+                                            status = "错误报告已复制到剪贴板，请粘贴发送给助手。"
+                                        }.onFailure { error ->
+                                            status = "复制失败：" + (error.message ?: "请重试")
+                                        }
+                                    }
+                                },
+                                enabled = lastErrorReport != null,
+                                contentPadding = PaddingValues(horizontal = 3.dp, vertical = 0.dp),
+                            ) {
+                                Text("复制错误报告", color = if (lastErrorReport != null) Accent else SubInk, fontSize = 9.sp)
+                            }
+                        }
+                    }
                     if (busy) {
                         LinearProgressIndicator(
                             modifier = Modifier.fillMaxWidth(),
