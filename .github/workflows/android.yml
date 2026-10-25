@@ -131,7 +131,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REQUESTED_RELEASE_TYPE: ${{ github.event_name == 'workflow_dispatch' && inputs.release_type || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release:') && 'formal') || 'preview' }}
-          REFRESH_EXISTING_RELEASE: ${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release: refresh v') }}
+          REFRESH_EXISTING_RELEASE: "${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release: refresh v') }}"
         run: |
           RELEASE_TYPE="$REQUESTED_RELEASE_TYPE"
           if [[ "$RELEASE_TYPE" == "formal" ]]; then
