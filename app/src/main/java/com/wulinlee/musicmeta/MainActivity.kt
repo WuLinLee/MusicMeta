@@ -1185,7 +1185,7 @@ private fun MusicMetaApp() {
                     previewPositionMs = player.currentPosition.coerceAtLeast(0)
                 }
             }
-            delay(350)
+            delay(250)
         }
     }
 
@@ -2629,7 +2629,7 @@ private fun MusicMetaApp() {
                                     Box(
                                         modifier = Modifier.size(28.dp).clip(CircleShape)
                                             .clickable { playAdjacentPreview(-1) }
-                                            .semantics { contentDescription = "上一首，播放歌单上一首的首个匹配音源" },
+                                            .semantics { contentDescription = "按当前播放队列播放上一首" },
                                         contentAlignment = Alignment.Center,
                                     ) { MiniPlayerSkipGlyph(previous = true) }
                                     Box(
@@ -2658,7 +2658,7 @@ private fun MusicMetaApp() {
                                     Box(
                                         modifier = Modifier.size(28.dp).clip(CircleShape)
                                             .clickable { playAdjacentPreview(1) }
-                                            .semantics { contentDescription = "下一首，播放歌单下一首的首个匹配音源" },
+                                            .semantics { contentDescription = "按当前播放队列播放下一首" },
                                         contentAlignment = Alignment.Center,
                                     ) { MiniPlayerSkipGlyph(previous = false) }
                                 }
