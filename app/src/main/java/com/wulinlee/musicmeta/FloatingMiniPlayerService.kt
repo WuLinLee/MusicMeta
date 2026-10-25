@@ -24,7 +24,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -77,8 +76,48 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
+import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
+
+private fun Modifier.overlayDragGesture(
+    onDrag: (Float, Float) -> Unit,
+    onCircularDrag: () -> Unit,
+): Modifier = pointerInput(onDrag, onCircularDrag) {
+    val minimumCircularDistance = 160.dp.toPx()
+    var previousAngle = Float.NaN
+    var accumulatedRotation = 0f
+    var totalDistance = 0f
+    var triggered = false
+    detectDragGestures(
+        onDragStart = {
+            previousAngle = Float.NaN
+            accumulatedRotation = 0f
+            totalDistance = 0f
+            triggered = false
+        },
+        onDrag = { change, dragAmount ->
+            change.consume()
+            totalDistance += sqrt(dragAmount.x * dragAmount.x + dragAmount.y * dragAmount.y)
+            if (dragAmount.x * dragAmount.x + dragAmount.y * dragAmount.y >= 4f) {
+                val angle = atan2(dragAmount.y, dragAmount.x)
+                if (previousAngle.isFinite()) {
+                    var deltaAngle = angle - previousAngle
+                    if (deltaAngle > 3.14159265f) deltaAngle -= 6.2831853f
+                    if (deltaAngle < -3.14159265f) deltaAngle += 6.2831853f
+                    accumulatedRotation += deltaAngle
+                }
+                previousAngle = angle
+            }
+            onDrag(dragAmount.x, dragAmount.y)
+            if (!triggered && totalDistance >= minimumCircularDistance && abs(accumulatedRotation) >= 5.4f) {
+                triggered = true
+                onCircularDrag()
+            }
+        },
+    )
+}
 
 private class FloatingOverlayViewTreeOwner : LifecycleOwner, SavedStateRegistryOwner {
     private val lifecycleRegistry = LifecycleRegistry(this)
@@ -251,11 +290,10 @@ class FloatingMiniPlayerService : LifecycleService() {
                 stopSelf()
                 return
             }
-            if (isPlaying && durationMs > 0) {
-                positionMs = (positionMs + 300).coerceAtMost(durationMs)
-                if (positionMs >= durationMs) isPlaying = false
-            }
-            if (coverView != null) mainHandler.postDelayed(this, 300L)
+            // MainActivity is the source of truth for playback position (ACTION_PROGRESS).
+            // Do not advance a second, drifting clock here: it could move lyric selection
+            // backwards and forwards across a line boundary, causing visible flicker.
+            if (coverView != null) mainHandler.postDelayed(this, 1000L)
         }
     }
 
@@ -286,11 +324,17 @@ class FloatingMiniPlayerService : LifecycleService() {
             }
             return START_NOT_STICKY
         }
+        val coverWasMissing = coverView == null
+        val wasExpanded = expanded
         if (intent?.action == ACTION_UPDATE) applyUpdate(intent)
         startAsForegroundService()
         ensureCoverWindow()
-        syncLyricsWindow()
-        updateWindowPositions()
+        // Only touch WindowManager when attachment/visibility actually changes. State changes
+        // to lyrics text or language should recompose the existing ComposeView without relayout.
+        if (coverWasMissing || wasExpanded != expanded || (expanded && lyricsView == null)) {
+            syncLyricsWindow()
+        }
+        if (coverWasMissing || wasExpanded != expanded) updateWindowPositions()
         return START_NOT_STICKY
     }
 
@@ -529,6 +573,8 @@ class FloatingMiniPlayerService : LifecycleService() {
                         },
                         onPrevious = { sendCommand(this@FloatingMiniPlayerService, COMMAND_PREVIOUS) },
                         onNext = { sendCommand(this@FloatingMiniPlayerService, COMMAND_NEXT) },
+                        onDrag = { dx, dy -> moveBy(dx, dy) },
+                        onCircularDrag = { openAppAndLocateSong() },
                     )
                 }
             }
@@ -561,11 +607,14 @@ class FloatingMiniPlayerService : LifecycleService() {
             params.y = coverY
             coverView?.let { view -> runCatching { wm.updateViewLayout(view, params) } }
         }
-        lyricsParams?.let { params ->
-            params.x = coverX - dp(14) - lyricsWidthPx()
-            params.y = coverY + dp(2)
-            params.width = lyricsWidthPx()
-            lyricsView?.let { view -> runCatching { wm.updateViewLayout(view, params) } }
+        if (expanded) {
+            lyricsParams?.let { params ->
+                params.x = coverX - dp(14) - lyricsWidthPx()
+                params.y = coverY + dp(2)
+                params.width = lyricsWidthPx()
+                params.height = dp(64)
+                lyricsView?.let { view -> runCatching { wm.updateViewLayout(view, params) } }
+            }
         }
     }
 
@@ -632,12 +681,10 @@ private fun OverlayCoverUi(
                 .clip(RoundedCornerShape(18.dp))
                 .background(Color(0xFF171E1A))
                 .border(1.dp, Color(0xFF2B3730), RoundedCornerShape(18.dp))
-                .pointerInput(Unit) {
-                    detectDragGestures { change, dragAmount ->
-                        change.consume()
-                        onDrag(dragAmount.x, dragAmount.y)
-                    }
-                }
+                .overlayDragGesture(
+                    onDrag = onDrag,
+                    onCircularDrag = onOpenApp,
+                )
                 .pointerInput(Unit) {
                     detectTapGestures(
                         onTap = { onTogglePlay() },
@@ -645,33 +692,10 @@ private fun OverlayCoverUi(
                         onLongPress = { onLongPress() },
                     )
                 }
-                .pointerInput(Unit) {
-                    awaitEachGesture {
-                        var initialDistance = 0f
-                        var hasOpened = false
-                        do {
-                            val event = awaitPointerEvent()
-                            val pressed = event.changes.filter { it.pressed }
-                            if (pressed.size >= 2) {
-                                val first = pressed[0].position
-                                val second = pressed[1].position
-                                val dx = first.x - second.x
-                                val dy = first.y - second.y
-                                val distance = sqrt(dx * dx + dy * dy)
-                                if (initialDistance == 0f) initialDistance = distance.coerceAtLeast(1f)
-                                if (!hasOpened && distance >= initialDistance * 1.24f) {
-                                    hasOpened = true
-                                    onOpenApp()
-                                }
-                                event.changes.forEach { it.consume() }
-                            }
-                        } while (event.changes.any { it.pressed })
-                    }
-                },
         ) {
             AsyncImage(
                 model = coverUrl.takeIf { it.isNotBlank() },
-                contentDescription = "单击播放 / 暂停，双击关闭悬浮窗，长按展开 / 收起歌词，拖动移动播放器",
+                contentDescription = "单击播放 / 暂停，双击关闭悬浮窗，长按展开 / 收起歌词，拖动移动；画圈拖动打开应用并定位歌曲",
                 placeholder = painterResource(id = R.drawable.musicmeta_cover),
                 error = painterResource(id = R.drawable.musicmeta_cover),
                 modifier = Modifier.fillMaxSize(),
@@ -745,6 +769,8 @@ private fun OverlayLyricsUi(
     onSeek: (Int) -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
+    onDrag: (Float, Float) -> Unit,
+    onCircularDrag: () -> Unit,
 ) {
     val activeText = if (showTranslation && translatedLyrics.isNotBlank()) translatedLyrics else originalLyrics
     val currentLyric = when {
@@ -753,7 +779,10 @@ private fun OverlayLyricsUi(
     }
     val progress = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
     Card(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().overlayDragGesture(
+            onDrag = onDrag,
+            onCircularDrag = onCircularDrag,
+        ),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF17211F)),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
