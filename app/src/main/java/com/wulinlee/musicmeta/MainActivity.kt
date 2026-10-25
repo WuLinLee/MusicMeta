@@ -399,12 +399,17 @@ private fun MusicMetaApp() {
         else status = "未授予读取音频权限；仍可在设置中选择一个音乐文件夹扫描。"
     }
     val scanLocalMusic: () -> Unit = {
-        if (localMusicFolderUri != null || Build.VERSION.SDK_INT < 33 ||
-            ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_MEDIA_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        val audioPermission = if (Build.VERSION.SDK_INT >= 33) {
+            android.Manifest.permission.READ_MEDIA_AUDIO
+        } else {
+            android.Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+        if (localMusicFolderUri != null ||
+            ContextCompat.checkSelfPermission(context, audioPermission) == android.content.pm.PackageManager.PERMISSION_GRANTED
         ) {
             startLocalMusicScan()
         } else {
-            localAudioPermissionLauncher.launch(android.Manifest.permission.READ_MEDIA_AUDIO)
+            localAudioPermissionLauncher.launch(audioPermission)
         }
     }
     val overlayPermissionLauncher = rememberLauncherForActivityResult(
