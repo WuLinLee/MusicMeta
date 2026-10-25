@@ -500,6 +500,7 @@ private fun MusicMetaApp() {
             isDownloading = true
             scope.launch {
                 var downloaded: File? = null
+                var processedFile: File? = null
                 try {
                     status = "正在下载 " + (track?.title ?: "音频") + "……"
                     val sourceFile = withContext(Dispatchers.IO) {
@@ -525,6 +526,7 @@ private fun MusicMetaApp() {
                         }
                         AudioFileNamer.renameForTrack(sourceFile, track, namingFormat, selectedQuality)
                     }
+                    processedFile = outputFile
 
                     var coverAvailable = false
                     var lyricSummary = "未匹配歌单歌曲"
@@ -674,6 +676,9 @@ private fun MusicMetaApp() {
                     status = "下载或保存失败：" + detail
                     captureError("下载或保存歌曲", error)
                 } finally {
+                    // Always clean cache artifacts, including failures during tagging or publishing.
+                    processedFile?.delete()
+                    downloaded?.delete()
                     isDownloading = false
                 }
             }
