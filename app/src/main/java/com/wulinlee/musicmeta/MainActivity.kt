@@ -80,6 +80,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
@@ -276,7 +278,7 @@ private fun MusicMetaApp() {
     val destinationFolderName = remember(destinationTreeUri) {
         destinationTreeUri?.let { uri ->
             runCatching { DocumentFile.fromTreeUri(context, uri)?.name }.getOrNull()
-        } ?: "Download/MusicMeta（默认）"
+        } ?: "下载/-07-MusicMeta（默认）"
     }
 
     val busy = isSyncing || isLoadingPage || isSearchingFlac || isResolvingUrl || isDownloading
@@ -818,12 +820,15 @@ private fun MusicMetaApp() {
                     }
                 },
                 actions = {
-                    TextButton(onClick = { showDownloadSettings = true }, enabled = !busy) {
-                        Text("下载设置", color = Accent, fontSize = 12.sp)
-                    }
-                    TextButton(onClick = { verificationOpen = true }) {
-                        Text("下载站验证", color = Accent, fontSize = 12.sp)
-                    }
+                    IconButton(
+                        onClick = { showDownloadSettings = true },
+                        enabled = !busy,
+                        modifier = Modifier.size(38.dp).semantics { contentDescription = "下载设置" },
+                    ) { SettingsGlyph() }
+                    IconButton(
+                        onClick = { verificationOpen = true },
+                        modifier = Modifier.size(38.dp).semantics { contentDescription = "下载站验证" },
+                    ) { WebpageGlyph() }
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
                     containerColor = PageBackground,
@@ -899,6 +904,8 @@ private fun MusicMetaApp() {
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(1.dp),
                         ) {
+                            Text("${currentPage}/${pageCount}页", color = Accent, fontSize = 9.sp, maxLines = 1)
+                            Spacer(Modifier.size(3.dp))
                             Text("每页", color = SubInk, fontSize = 9.sp)
                             listOf(25, 50, 100).forEach { count ->
                                 TextButton(
@@ -974,31 +981,32 @@ private fun MusicMetaApp() {
                                 EnterGlyph()
                             }
                             if (lastErrorReport != null) {
-                                TextButton(
+                                IconButton(
                                     onClick = {
-                                        val report = lastErrorReport ?: return@TextButton
-                                        runCatching {
-                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                            clipboard.setPrimaryClip(ClipData.newPlainText("MusicMeta error report", report))
-                                        }.onSuccess {
-                                            status = "错误报告已复制到剪贴板，请粘贴发送给助手。"
-                                        }.onFailure { error ->
-                                            status = "复制失败：" + (error.message ?: "请重试")
+                                        val report = lastErrorReport
+                                        if (report != null) {
+                                            runCatching {
+                                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                                clipboard.setPrimaryClip(ClipData.newPlainText("MusicMeta error report", report))
+                                            }.onSuccess {
+                                                status = "错误报告已复制到剪贴板，请粘贴发送给助手。"
+                                            }.onFailure { error ->
+                                                status = "复制失败：" + (error.message ?: "请重试")
+                                            }
                                         }
                                     },
-                                    contentPadding = PaddingValues(horizontal = 3.dp, vertical = 0.dp),
-                                ) {
-                                    Text("复制报告", color = Accent, fontSize = 9.sp, maxLines = 1)
-                                }
+                                    modifier = Modifier.size(28.dp).semantics { contentDescription = "复制错误报告" },
+                                ) { CopyGlyph() }
                             }
                         }
                     }
                     if ((playlist == null || pageItemCount <= 0) && lastErrorReport != null) {
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                            modifier = Modifier.fillMaxWidth().height(28.dp).padding(horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.End,
                         ) {
-                            TextButton(
+                            IconButton(
                                 onClick = {
                                     val report = lastErrorReport
                                     if (report != null) {
@@ -1012,11 +1020,8 @@ private fun MusicMetaApp() {
                                         }
                                     }
                                 },
-                                enabled = lastErrorReport != null,
-                                contentPadding = PaddingValues(horizontal = 3.dp, vertical = 0.dp),
-                            ) {
-                                Text("复制错误报告", color = if (lastErrorReport != null) Accent else SubInk, fontSize = 9.sp)
-                            }
+                                modifier = Modifier.size(28.dp).semantics { contentDescription = "复制错误报告" },
+                            ) { CopyGlyph() }
                         }
                     }
                     if (busy) {
@@ -1080,12 +1085,33 @@ private fun MusicMetaApp() {
                         letterSpacing = 2.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
-                    Text(
-                        "把喜欢的歌，存进音乐库",
-                        color = Ink,
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.SemiBold,
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            "把喜欢的歌，存进音乐库",
+                            modifier = Modifier.weight(1f),
+                            color = Ink,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        IconButton(
+                            onClick = {
+                                runCatching {
+                                    context.startActivity(
+                                        Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/WuLinLee/MusicMeta"))
+                                    )
+                                }.onFailure {
+                                    status = "无法打开 GitHub 项目主页，请检查浏览器是否可用。"
+                                }
+                            },
+                            modifier = Modifier.size(32.dp).semantics { contentDescription = "打开 GitHub 项目主页" },
+                        ) { GitHubGlyph() }
+                    }
                     Text(
                         "公开歌单免登录 · 保留所选音质与格式 · 封面歌词写入文件",
                         color = SubInk,
@@ -1261,7 +1287,7 @@ private fun MusicMetaApp() {
                                     onClick = {
                                         folderPreferences.edit().remove("destination_tree_uri").apply()
                                         destinationTreeUri = null
-                                        status = "已恢复默认目录：Download/MusicMeta"
+                                        status = "已恢复默认目录：下载/-07-MusicMeta"
                                     },
                                     enabled = !busy,
                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
@@ -2114,6 +2140,84 @@ private fun PageArrowGlyph(pointsLeft: Boolean, tint: Color) {
             strokeWidth = stroke,
             cap = StrokeCap.Round,
         )
+    }
+}
+
+@Composable
+private fun GitHubGlyph() {
+    Canvas(modifier = Modifier.size(22.dp)) {
+        val cx = size.width / 2f
+        val cy = size.height / 2f
+        val r = size.minDimension * 0.34f
+        val cat = Path().apply {
+            moveTo(cx - r * 0.70f, cy - r * 0.18f)
+            lineTo(cx - r * 0.94f, cy - r * 0.98f)
+            lineTo(cx - r * 0.30f, cy - r * 0.70f)
+            quadraticTo(cx, cy - r * 0.83f, cx + r * 0.30f, cy - r * 0.70f)
+            lineTo(cx + r * 0.94f, cy - r * 0.98f)
+            lineTo(cx + r * 0.70f, cy - r * 0.18f)
+            cubicTo(cx + r * 1.05f, cy + r * 0.70f, cx + r * 0.50f, cy + r * 1.02f, cx + r * 0.15f, cy + r * 0.82f)
+            lineTo(cx + r * 0.15f, cy + r * 1.15f)
+            lineTo(cx - r * 0.15f, cy + r * 1.15f)
+            lineTo(cx - r * 0.15f, cy + r * 0.82f)
+            cubicTo(cx - r * 0.50f, cy + r * 1.02f, cx - r * 1.05f, cy + r * 0.70f, cx - r * 0.70f, cy - r * 0.18f)
+            close()
+        }
+        drawPath(cat, Accent)
+        drawCircle(PageBackground, radius = r * 0.10f, center = Offset(cx - r * 0.34f, cy - r * 0.05f))
+        drawCircle(PageBackground, radius = r * 0.10f, center = Offset(cx + r * 0.34f, cy - r * 0.05f))
+        drawLine(PageBackground, Offset(cx - r * 0.18f, cy + r * 0.36f), Offset(cx + r * 0.18f, cy + r * 0.36f), r * 0.08f, cap = StrokeCap.Round)
+    }
+}
+
+@Composable
+private fun SettingsGlyph() {
+    Canvas(modifier = Modifier.size(22.dp)) {
+        val cx = size.width / 2f
+        val cy = size.height / 2f
+        val radius = size.minDimension * 0.31f
+        val stroke = 1.8.dp.toPx()
+        for (i in 0 until 8) {
+            val angle = i * Math.PI / 4.0
+            val dx = kotlin.math.cos(angle).toFloat()
+            val dy = kotlin.math.sin(angle).toFloat()
+            drawLine(Accent, Offset(cx + dx * radius * 0.78f, cy + dy * radius * 0.78f),
+                Offset(cx + dx * radius * 1.30f, cy + dy * radius * 1.30f), stroke, cap = StrokeCap.Round)
+        }
+        drawCircle(Accent, radius = radius * 0.90f, center = Offset(cx, cy), style = Stroke(strokeWidth = stroke))
+        drawCircle(Accent, radius = radius * 0.30f, center = Offset(cx, cy))
+    }
+}
+
+@Composable
+private fun WebpageGlyph() {
+    Canvas(modifier = Modifier.size(22.dp)) {
+        val stroke = 1.8.dp.toPx()
+        val left = size.width * 0.16f
+        val right = size.width * 0.84f
+        val top = size.height * 0.12f
+        val bottom = size.height * 0.88f
+        drawRoundRect(color = Accent, topLeft = Offset(left, top),
+            size = androidx.compose.ui.geometry.Size(right - left, bottom - top),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx()), style = Stroke(strokeWidth = stroke))
+        drawLine(Accent, Offset(left, size.height * 0.34f), Offset(right, size.height * 0.34f), stroke, cap = StrokeCap.Round)
+        drawCircle(Accent, radius = 1.dp.toPx(), center = Offset(size.width * 0.28f, size.height * 0.23f))
+        drawCircle(Accent, radius = 1.dp.toPx(), center = Offset(size.width * 0.39f, size.height * 0.23f))
+        drawLine(Accent, Offset(size.width * 0.30f, size.height * 0.51f), Offset(size.width * 0.70f, size.height * 0.51f), stroke, cap = StrokeCap.Round)
+        drawLine(Accent, Offset(size.width * 0.30f, size.height * 0.67f), Offset(size.width * 0.62f, size.height * 0.67f), stroke, cap = StrokeCap.Round)
+    }
+}
+
+@Composable
+private fun CopyGlyph() {
+    Canvas(modifier = Modifier.size(19.dp)) {
+        val stroke = 1.7.dp.toPx()
+        drawRoundRect(color = SubInk, topLeft = Offset(size.width * 0.30f, size.height * 0.12f),
+            size = androidx.compose.ui.geometry.Size(size.width * 0.56f, size.height * 0.62f),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()), style = Stroke(strokeWidth = stroke))
+        drawRoundRect(color = Accent, topLeft = Offset(size.width * 0.12f, size.height * 0.30f),
+            size = androidx.compose.ui.geometry.Size(size.width * 0.56f, size.height * 0.62f),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()), style = Stroke(strokeWidth = stroke))
     }
 }
 
