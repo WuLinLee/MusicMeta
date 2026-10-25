@@ -121,6 +121,7 @@ class FloatingMiniPlayerService : LifecycleService() {
         const val EXTRA_IS_LOADING = "is_loading"
         const val EXTRA_EXPANDED = "expanded"
         const val EXTRA_SHOW_TRANSLATION = "show_translation"
+        const val EXTRA_PLAYBACK_MODE = "playback_mode"
         const val EXTRA_COMMAND = "command"
 
         const val COMMAND_TOGGLE_PLAY = "toggle_play"
@@ -149,6 +150,7 @@ class FloatingMiniPlayerService : LifecycleService() {
             isLoading: Boolean,
             expanded: Boolean,
             showTranslation: Boolean,
+            playbackMode: Int,
         ) {
             if (!Settings.canDrawOverlays(context)) return
             val intent = Intent(context, FloatingMiniPlayerService::class.java)
@@ -164,6 +166,7 @@ class FloatingMiniPlayerService : LifecycleService() {
                 .putExtra(EXTRA_IS_LOADING, isLoading)
                 .putExtra(EXTRA_EXPANDED, expanded)
                 .putExtra(EXTRA_SHOW_TRANSLATION, showTranslation)
+                .putExtra(EXTRA_PLAYBACK_MODE, playbackMode.coerceIn(0, 2))
             if (serviceAlive) {
                 context.startService(intent)
             } else {
@@ -203,6 +206,7 @@ class FloatingMiniPlayerService : LifecycleService() {
     private var isLoading by mutableStateOf(false)
     private var expanded by mutableStateOf(false)
     private var showTranslation by mutableStateOf(false)
+    private var playbackMode by mutableIntStateOf(0)
 
     private var coverX = 0
     private var coverY = 0
@@ -285,6 +289,9 @@ class FloatingMiniPlayerService : LifecycleService() {
         if (intent.hasExtra(EXTRA_EXPANDED)) expanded = intent.getBooleanExtra(EXTRA_EXPANDED, expanded)
         if (intent.hasExtra(EXTRA_SHOW_TRANSLATION)) {
             showTranslation = intent.getBooleanExtra(EXTRA_SHOW_TRANSLATION, showTranslation)
+        }
+        if (intent.hasExtra(EXTRA_PLAYBACK_MODE)) {
+            playbackMode = intent.getIntExtra(EXTRA_PLAYBACK_MODE, playbackMode).coerceIn(0, 2)
         }
     }
 
@@ -431,6 +438,7 @@ class FloatingMiniPlayerService : LifecycleService() {
                     onLongPress = { toggleExpanded() },
                     onClose = { closePlayer() },
                     onTogglePlaybackMode = { sendCommand(this@FloatingMiniPlayerService, COMMAND_TOGGLE_PLAYBACK_MODE) },
+                    playbackMode = playbackMode,
                     onDrag = { dx, dy -> moveBy(dx, dy) },
                 )
             }
@@ -542,6 +550,7 @@ private fun OverlayCoverUi(
     onLongPress: () -> Unit,
     onClose: () -> Unit,
     onTogglePlaybackMode: () -> Unit,
+    playbackMode: Int,
     onDrag: (Float, Float) -> Unit,
 ) {
     Column(
@@ -589,6 +598,14 @@ private fun OverlayCoverUi(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
+            Box(
+                modifier = Modifier.size(18.dp)
+                    .clickable { onTogglePlaybackMode() }
+                    .semantics {
+                        contentDescription = "当前播放模式：" + listOf("顺序播放", "乱序播放", "单曲循环")[playbackMode] + "，点击切换"
+                    },
+                contentAlignment = Alignment.Center,
+            ) { OverlayPlaybackModeGlyph(playbackMode) }
             Text(
                 text = formatMiniTime(positionMs) + "/" + formatMiniTime(durationMs),
                 modifier = Modifier.weight(1f),
@@ -603,21 +620,46 @@ private fun OverlayCoverUi(
                 modifier = Modifier.size(22.dp)
                     .clickable { onTogglePlay() }
                     .semantics {
-                        contentDescription = if (isPlaying) "暂停试听" else "继续试听"
+                        contentDescription = if (isPlaying) "暂停播放" else "继续播放"
                     },
                 contentAlignment = Alignment.Center,
             ) {
                 OverlayPlayGlyph(isPlaying = isPlaying, isLoading = isLoading)
             }
         }
-        Box(modifier = Modifier.size(18.dp).clickable { onTogglePlaybackMode() }.semantics { contentDescription = "切换顺序、乱序、单曲循环" }, contentAlignment = Alignment.Center) {
-            Canvas(Modifier.size(15.dp)) {
-                val stroke = 1.6.dp.toPx()
-                drawArc(Color(0xFF9FF0C9), 205f, 250f, false, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke))
-                drawLine(Color(0xFF9FF0C9), Offset(size.width * .68f, size.height * .22f), Offset(size.width * .88f, size.height * .25f), stroke)
-                drawLine(Color(0xFF9FF0C9), Offset(size.width * .88f, size.height * .25f), Offset(size.width * .80f, size.height * .43f), stroke)
+    }
+}
+
+@Composable
+private fun OverlayPlaybackModeGlyph(mode: Int) {
+    Box(modifier = Modifier.size(18.dp), contentAlignment = Alignment.Center) {
+        Canvas(modifier = Modifier.size(15.dp)) {
+            val tint = Color(0xFF9FF0C9)
+            val stroke = 1.5.dp.toPx()
+            when (mode) {
+                1 -> {
+                    drawLine(tint, Offset(size.width * 0.12f, size.height * 0.25f), Offset(size.width * 0.82f, size.height * 0.75f), stroke, cap = StrokeCap.Round)
+                    drawLine(tint, Offset(size.width * 0.12f, size.height * 0.75f), Offset(size.width * 0.82f, size.height * 0.25f), stroke, cap = StrokeCap.Round)
+                    drawLine(tint, Offset(size.width * 0.62f, size.height * 0.24f), Offset(size.width * 0.83f, size.height * 0.25f), stroke, cap = StrokeCap.Round)
+                    drawLine(tint, Offset(size.width * 0.82f, size.height * 0.25f), Offset(size.width * 0.77f, size.height * 0.45f), stroke, cap = StrokeCap.Round)
+                    drawLine(tint, Offset(size.width * 0.62f, size.height * 0.76f), Offset(size.width * 0.83f, size.height * 0.75f), stroke, cap = StrokeCap.Round)
+                    drawLine(tint, Offset(size.width * 0.82f, size.height * 0.75f), Offset(size.width * 0.77f, size.height * 0.55f), stroke, cap = StrokeCap.Round)
+                }
+                2 -> {
+                    drawArc(tint, 35f, 285f, false, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke))
+                    drawLine(tint, Offset(size.width * 0.77f, size.height * 0.12f), Offset(size.width * 0.90f, size.height * 0.34f), stroke, cap = StrokeCap.Round)
+                    drawLine(tint, Offset(size.width * 0.90f, size.height * 0.34f), Offset(size.width * 0.66f, size.height * 0.32f), stroke, cap = StrokeCap.Round)
+                }
+                else -> {
+                    drawLine(tint, Offset(size.width * 0.12f, size.height * 0.25f), Offset(size.width * 0.58f, size.height * 0.25f), stroke, cap = StrokeCap.Round)
+                    drawLine(tint, Offset(size.width * 0.12f, size.height * 0.50f), Offset(size.width * 0.58f, size.height * 0.50f), stroke, cap = StrokeCap.Round)
+                    drawLine(tint, Offset(size.width * 0.12f, size.height * 0.75f), Offset(size.width * 0.58f, size.height * 0.75f), stroke, cap = StrokeCap.Round)
+                    drawLine(tint, Offset(size.width * 0.58f, size.height * 0.25f), Offset(size.width * 0.85f, size.height * 0.50f), stroke, cap = StrokeCap.Round)
+                    drawLine(tint, Offset(size.width * 0.85f, size.height * 0.50f), Offset(size.width * 0.58f, size.height * 0.75f), stroke, cap = StrokeCap.Round)
+                }
             }
         }
+        if (mode == 2) Text("1", color = Color(0xFF9FF0C9), fontSize = 8.sp, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -633,9 +675,8 @@ private fun OverlayLyricsUi(
     onPrevious: () -> Unit,
     onNext: () -> Unit,
 ) {
-    val activeText = if (showTranslation) translatedLyrics else originalLyrics
+    val activeText = if (showTranslation && translatedLyrics.isNotBlank()) translatedLyrics else originalLyrics
     val currentLyric = when {
-        activeText.isBlank() && showTranslation -> "这首歌暂无译文"
         activeText.isBlank() -> "正在等待歌词…"
         else -> findMiniLyric(activeText, positionMs)
     }
