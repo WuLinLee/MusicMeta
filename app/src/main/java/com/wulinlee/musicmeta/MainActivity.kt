@@ -561,10 +561,13 @@ private fun MusicMetaApp() {
                 available: Offset,
                 source: NestedScrollSource,
             ): Offset {
-                if (source != NestedScrollSource.UserInput || !latestPagingAvailable.value) {
+                if (!latestPagingAvailable.value) {
                     pullDistance.value = 0f
                     return Offset.Zero
                 }
+                // Keep the last drag distance through the fling callback so the
+                // release can still trigger a page change at the boundary.
+                if (source != NestedScrollSource.UserInput) return Offset.Zero
                 val deltaY = available.y
                 if (deltaY == 0f) return Offset.Zero
                 val page = latestPage.value
