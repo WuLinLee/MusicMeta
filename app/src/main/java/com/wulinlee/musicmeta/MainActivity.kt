@@ -684,9 +684,9 @@ private fun MusicMetaApp() {
     val latestWebsiteDownload by rememberUpdatedState(onWebsiteDownload)
 
     val resolveSourceCoverUrl: suspend (FlacSiteSong) -> String = { song ->
-        flacProvider.resolveCoverUrl(song).ifBlank {
-            metadataProvider.resolveSourceCoverUrl(song)
-        }
+        val sourceCover = runCatching { flacProvider.resolveCoverUrl(song) }.getOrDefault("")
+        if (sourceCover.isNotBlank()) sourceCover
+        else runCatching { metadataProvider.resolveSourceCoverUrl(song) }.getOrDefault("")
     }
     val sourceSongKey: (FlacSiteSong) -> String = { song -> song.platform + ":" + song.id }
     val stopPreview: () -> Unit = {
