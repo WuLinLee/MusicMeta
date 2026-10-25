@@ -96,6 +96,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -1188,7 +1189,9 @@ private fun MusicMetaApp() {
         previewLyrics,
         previewTranslatedLyrics,
         previewDurationMs,
-        previewPositionMs,
+        previewCurrentTrack?.id,
+        previewCurrentPlaylistId,
+        likedPlaylist?.id,
         playbackMode,
         isPreviewPlaying,
         isPreviewLoading,
@@ -1211,9 +1214,25 @@ private fun MusicMetaApp() {
                 expanded = showPreviewDetails,
                 showTranslation = showTranslatedPreviewLyric,
                 playbackMode = playbackMode,
+                openMode = when {
+                    song.platform == "local" -> "local"
+                    previewCurrentPlaylistId != null && likedPlaylist?.id == previewCurrentPlaylistId -> "liked"
+                    previewCurrentPlaylistId != null -> "playlist"
+                    else -> "search"
+                },
+                openTrackId = if (song.platform == "local") song.id else previewCurrentTrack?.id?.toString().orEmpty(),
+                openPlaylistId = previewCurrentPlaylistId ?: 0L,
             )
         } else {
             FloatingMiniPlayerService.stop(context)
+        }
+    }
+
+    LaunchedEffect(floatingOverlayEnabled, previewSong?.id, previewPositionMs) {
+        val song = previewSong
+        if (floatingOverlayEnabled && song != null && Settings.canDrawOverlays(context)) {
+            // Progress uses a lightweight service action, not a foreground-service restart.
+            FloatingMiniPlayerService.updatePosition(context, previewPositionMs)
         }
     }
 
