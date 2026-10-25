@@ -2170,7 +2170,7 @@ private fun MusicMetaApp() {
                                         val expanding = !showPreviewDetails
                                         if (expanding) {
                                             val expandedMaxDragX = with(density) {
-                                                (playerAreaWidth - 142.dp).toPx().coerceAtLeast(0f)
+                                                (playerAreaWidth - 356.dp).toPx().coerceAtLeast(0f)
                                             }
                                             miniPlayerOffset = Offset(
                                                 miniPlayerOffset.x.coerceIn(-expandedMaxDragX, 0f),
