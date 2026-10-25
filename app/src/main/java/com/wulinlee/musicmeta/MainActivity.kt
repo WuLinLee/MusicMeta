@@ -1613,7 +1613,7 @@ private fun MusicMetaApp() {
                         ) {
                             Text("每页", color = SubInk, fontSize = 9.sp)
                             Text(
-                                "$currentPage/$pageCount页",
+                                "${currentPage}/${pageCount}页",
                                 modifier = Modifier.padding(start = 3.dp, end = 2.dp),
                                 color = Accent,
                                 fontSize = 9.sp,
