@@ -1339,7 +1339,20 @@ private fun MusicMetaApp() {
             it.album.contains(filterText.trim(), ignoreCase = true)
     }
     val navigatePlaylistPreview: (Int) -> Unit = remember(
-        knownTracks, filteredKnownTracks, playlist?.id, inputMode, filterText, pageSize, pageCache, playbackMode,
+        knownTracks,
+        filteredKnownTracks,
+        playlist?.id,
+        inputMode,
+        filterText,
+        pageSize,
+        pageCache,
+        playbackMode,
+        previewCurrentTrack?.id,
+        previewCurrentPlaylistId,
+        isSearchingFlac,
+        isResolvingUrl,
+        isDownloading,
+        isPreviewLoading,
     ) {
         { direction ->
             if (isSearchingFlac || isResolvingUrl || isDownloading || isPreviewLoading) {
