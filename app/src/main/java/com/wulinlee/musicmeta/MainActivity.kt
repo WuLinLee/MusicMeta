@@ -2087,7 +2087,9 @@ private fun MusicMetaApp() {
                             )
                         }
                     }
-                }                Column(
+                }
+
+                Column(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .padding(end = 12.dp, bottom = 12.dp)
@@ -2166,12 +2168,14 @@ private fun MusicMetaApp() {
                             maxLines = 1,
                             overflow = TextOverflow.Clip,
                         )
-                        IconButton(
-                            onClick = { playPreview(activePreviewSong) },
-                            enabled = !isPreviewLoading,
-                            modifier = Modifier.size(22.dp).semantics {
-                                contentDescription = if (isPreviewPlaying) "暂停播放" else "继续播放"
-                            },
+                        Box(
+                            modifier = Modifier
+                                .size(22.dp)
+                                .clickable(enabled = !isPreviewLoading) { playPreview(activePreviewSong) }
+                                .semantics {
+                                    contentDescription = if (isPreviewPlaying) "暂停播放" else "继续播放"
+                                },
+                            contentAlignment = Alignment.Center,
                         ) {
                             PlayGlyph(isPlaying = isPreviewPlaying, isLoading = isPreviewLoading)
                         }
