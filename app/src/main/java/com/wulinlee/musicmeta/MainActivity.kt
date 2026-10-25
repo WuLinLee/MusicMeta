@@ -935,6 +935,70 @@ private fun MusicMetaApp() {
         }
     }
 
+    SideEffect {
+        FloatingMiniPlayerBridge.onCommand = { command, seekPosition ->
+            when (command) {
+                FloatingMiniPlayerService.COMMAND_TOGGLE_PLAY -> previewSong?.let { playPreview(it) }
+                FloatingMiniPlayerService.COMMAND_TOGGLE_DETAILS -> showPreviewDetails = !showPreviewDetails
+                FloatingMiniPlayerService.COMMAND_TOGGLE_TRANSLATION -> showTranslatedPreviewLyric = !showTranslatedPreviewLyric
+                FloatingMiniPlayerService.COMMAND_SEEK -> {
+                    val target = seekPosition.coerceAtLeast(0)
+                    previewPositionMs = target
+                    runCatching { previewPlayer.value?.seekTo(target) }
+                }
+                FloatingMiniPlayerService.COMMAND_CLOSE -> {
+                    stopPreview()
+                    floatingOverlayEnabled = false
+                    folderPreferences.edit().putBoolean("floating_overlay_enabled", false).apply()
+                }
+            }
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose { FloatingMiniPlayerBridge.onCommand = null }
+    }
+
+    LaunchedEffect(
+        floatingOverlayEnabled,
+        previewSong?.platform,
+        previewSong?.id,
+        previewCoverUrl,
+        previewLyrics,
+        previewTranslatedLyrics,
+        previewDurationMs,
+        isPreviewPlaying,
+        isPreviewLoading,
+        showPreviewDetails,
+        showTranslatedPreviewLyric,
+    ) {
+        val song = previewSong
+        if (floatingOverlayEnabled && song != null && Settings.canDrawOverlays(context)) {
+            FloatingMiniPlayerService.showOrUpdate(
+                context = context,
+                coverUrl = previewCoverUrl.ifBlank { song.coverUrl },
+                title = song.title,
+                artist = song.artist,
+                originalLyrics = previewLyrics,
+                translatedLyrics = previewTranslatedLyrics,
+                durationMs = previewDurationMs,
+                positionMs = previewPositionMs,
+                isPlaying = isPreviewPlaying,
+                isLoading = isPreviewLoading,
+                expanded = showPreviewDetails,
+                showTranslation = showTranslatedPreviewLyric,
+            )
+        } else {
+            FloatingMiniPlayerService.stop(context)
+        }
+    }
+
+    LaunchedEffect(floatingOverlayEnabled) {
+        if (floatingOverlayEnabled && !Settings.canDrawOverlays(context)) {
+            floatingOverlayEnabled = false
+            folderPreferences.edit().putBoolean("floating_overlay_enabled", false).apply()
+        }
+    }
     val playAdjacentPreview: (Int) -> Unit = { direction ->
         val current = previewSong
         val currentIndex = if (current == null) -1 else
