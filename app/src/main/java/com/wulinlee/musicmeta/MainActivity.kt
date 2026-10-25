@@ -890,8 +890,8 @@ private fun MusicMetaApp() {
             miniPlayerOffset = Offset.Zero
             isPreviewPlaying = false
             isPreviewLoading = true
-            isPreviewLyricsLoading = true
-            status = "正在准备播放《" + song.title + "》的试听……"
+            isPreviewLyricsLoading = song.platform != "local"
+            status = if (song.platform == "local") "正在准备播放本地歌曲《" + song.title + "》……" else "正在准备播放《" + song.title + "》的试听……"
             scope.launch {
                 var newPlayer: MediaPlayer? = null
                 try {
