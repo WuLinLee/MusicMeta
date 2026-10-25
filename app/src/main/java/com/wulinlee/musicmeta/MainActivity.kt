@@ -26,8 +26,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -83,7 +81,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -101,7 +98,6 @@ import androidx.compose.ui.window.Dialog
 import androidx.documentfile.provider.DocumentFile
 import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -147,29 +143,10 @@ class MainActivity : ComponentActivity() {
 private fun MusicMetaApp() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val focusManager = LocalFocusManager.current
-    val imeVisible = WindowInsets.isImeVisible
+    // Keep focus state only for the compact paging/search controls.
     var jumpFieldFocused by remember { mutableStateOf(false) }
     var filterFieldFocused by remember { mutableStateOf(false) }
     var sourceQueryFieldFocused by remember { mutableStateOf(false) }
-    LaunchedEffect(jumpFieldFocused, imeVisible) {
-        if (jumpFieldFocused && !imeVisible) {
-            delay(800L)
-            if (!WindowInsets.isImeVisible) focusManager.clearFocus()
-        }
-    }
-    LaunchedEffect(filterFieldFocused, imeVisible) {
-        if (filterFieldFocused && !imeVisible) {
-            delay(800L)
-            if (!WindowInsets.isImeVisible) focusManager.clearFocus()
-        }
-    }
-    LaunchedEffect(sourceQueryFieldFocused, imeVisible) {
-        if (sourceQueryFieldFocused && !imeVisible) {
-            delay(800L)
-            if (!WindowInsets.isImeVisible) focusManager.clearFocus()
-        }
-    }
     val folderPreferences = remember { context.getSharedPreferences("music_meta_settings", Context.MODE_PRIVATE) }
     remember(folderPreferences) {
         if (folderPreferences.getInt("download_defaults_version", 0) < 4) {
