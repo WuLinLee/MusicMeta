@@ -1109,7 +1109,13 @@ private fun MusicMetaApp() {
                                 }
                             },
                             modifier = Modifier.size(32.dp).semantics { contentDescription = "打开 GitHub 项目主页" },
-                        ) { GitHubGlyph() }
+                        ) {
+                            Image(
+                                painter = painterResource(id = R.drawable.github_logo),
+                                contentDescription = "GitHub 项目主页",
+                                modifier = Modifier.size(23.dp),
+                            )
+                        }
                     }
                     Text(
                         "公开歌单免登录 · 保留所选音质与格式 · 封面歌词写入文件",
@@ -2139,33 +2145,6 @@ private fun PageArrowGlyph(pointsLeft: Boolean, tint: Color) {
             strokeWidth = stroke,
             cap = StrokeCap.Round,
         )
-    }
-}
-
-@Composable
-private fun GitHubGlyph() {
-    Canvas(modifier = Modifier.size(22.dp)) {
-        val cx = size.width / 2f
-        val cy = size.height / 2f
-        val r = size.minDimension * 0.34f
-        val cat = Path().apply {
-            moveTo(cx - r * 0.70f, cy - r * 0.18f)
-            lineTo(cx - r * 0.94f, cy - r * 0.98f)
-            lineTo(cx - r * 0.30f, cy - r * 0.70f)
-            quadraticTo(cx, cy - r * 0.83f, cx + r * 0.30f, cy - r * 0.70f)
-            lineTo(cx + r * 0.94f, cy - r * 0.98f)
-            lineTo(cx + r * 0.70f, cy - r * 0.18f)
-            cubicTo(cx + r * 1.05f, cy + r * 0.70f, cx + r * 0.50f, cy + r * 1.02f, cx + r * 0.15f, cy + r * 0.82f)
-            lineTo(cx + r * 0.15f, cy + r * 1.15f)
-            lineTo(cx - r * 0.15f, cy + r * 1.15f)
-            lineTo(cx - r * 0.15f, cy + r * 0.82f)
-            cubicTo(cx - r * 0.50f, cy + r * 1.02f, cx - r * 1.05f, cy + r * 0.70f, cx - r * 0.70f, cy - r * 0.18f)
-            close()
-        }
-        drawPath(cat, Accent)
-        drawCircle(PageBackground, radius = r * 0.10f, center = Offset(cx - r * 0.34f, cy - r * 0.05f))
-        drawCircle(PageBackground, radius = r * 0.10f, center = Offset(cx + r * 0.34f, cy - r * 0.05f))
-        drawLine(PageBackground, Offset(cx - r * 0.18f, cy + r * 0.36f), Offset(cx + r * 0.18f, cy + r * 0.36f), r * 0.08f, cap = StrokeCap.Round)
     }
 }
 
