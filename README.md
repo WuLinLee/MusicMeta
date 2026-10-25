@@ -2,11 +2,11 @@
 
 **MusicMeta（音笺）** 是一个 Android 音乐整理工具：读取网易云公开歌单或可匿名访问的红心歌单，搜索并核对候选音源，下载音频，并尽可能补齐封面、歌词和音频标签。
 
-> **当前版本：1.10**（`versionCode = 14`；正式 APK 请以本次 GitHub Actions 成功结果和 Release 附件为准）  
+> **当前版本：1.11**（`versionCode = 15`；正式 APK 请以本次 GitHub Actions 成功结果和 Release 附件为准）  
 > 应用 ID：`com.wulinlee.musicmeta` · 最低 Android：10 / API 29 · 目标 SDK：35  
 > 技术栈：Kotlin、Jetpack Compose、Material 3、Coroutines、OkHttp、Coil、jaudiotagger。
 
-**交接时先看这里：** 仓库当前版本号、Git tag、Release 页面和 APK 必须视为四件不同的东西。发布前请确认 main 的最新提交、Actions 构建结果、`v1.10` tag 指向和 Release 附件都一致。不要只根据 README 上的版本号就声称 APK 已验证。
+**交接时先看这里：** 仓库当前版本号、Git tag、Release 页面和 APK 必须视为四件不同的东西。发布前请确认 main 的最新提交、Actions 构建结果、`v1.11` tag 指向和 Release 附件都一致。不要只根据 README 上的版本号就声称 APK 已验证。
 
 ## 目录
 
@@ -34,7 +34,7 @@
 - **下载格式**：MP3 128 kbps、MP3 320 kbps、FLAC。应用不进行格式转码，不应把低规格音频伪装为 FLAC 无损。
 - **歌曲整理**：补充可获得的封面、原文 / 翻译 / 罗马音 / 逐字歌词；将标签与封面写入音频；按设置另存 LRC 文件。
 - **文件保存**：支持默认 Download 子目录或用户通过 Android 文件夹选择器授权的目录，并按命名规则整理文件。
-- **迷你播放器（1.10）**：封面可拖动、单击播放 / 暂停、双击展开 / 收起；封面右上角为透明底的叉形关闭图标，封面下方保留极小的时间和播放控件。展开后左侧显示横向歌词条（约 278 dp 长、64 dp 高，与封面齐高），只显示当前歌词和进度条；点击歌词切换原文 / 译文，译文缺失时会明确提示。
+- **迷你播放器（1.11）**：主页面恢复应用图标；封面单击播放 / 暂停，长按或双击切换歌词栏；关闭 X 移到封面上方，时间与播放控件留在封面下方。封面和左侧歌词条作为一个整体居中，展开 / 收起时封面位置不变。开启系统悬浮窗后，可在其他 App 上方显示封面与歌词条（需在 Android 设置中授予“显示在其他应用上层”权限）。
 - **错误报告**：左上角复制图标复制最近一次捕获的错误报告；没有错误报告时按钮禁用。分页区 Home 图标仍是“回到歌曲列表顶部”，不能改成错误报告或播放器操作。
 - **站点验证**：嵌入式 WebView 供用户手动完成来源站要求的验证。不绕过验证码、登录限制或其他访问控制。
 
@@ -43,8 +43,8 @@
 - 私密歌单、受限内容或需要账号授权的资源不保证能读取。
 - 外部 API 会限流、改版、返回验证页或失效；不能保证某个音源永久可用。
 - 不凭空生成缺失的封面、歌词和翻译。候选匹配可能遇到同名翻唱、现场版或不同母带，最终应让用户确认。
-- 当前迷你封面是 **应用页面内的浮动控件**，不是显示在其他 App 上面的 Android 系统级悬浮窗。
-- 当前播放器是轻量试听流程，不是成熟的后台音乐播放器。它还没有 MediaSession、系统媒体通知、锁屏 / 蓝牙控制和独立播放服务。见[播放器现状和改造方向](#播放器现状和改造方向)。
+- **跨应用悬浮窗已实现**：顶部窗口图标可开启 / 关闭；首次开启会跳转到 Android 的悬浮窗权限设置。启用后使用独立 `WindowManager` 窗口和前台服务在其他 App 上方显示，通知栏会保留悬浮播放器运行通知。
+- 当前音频仍由 Activity 内的 `MediaPlayer` 负责，悬浮服务主要负责跨应用窗口与控制转发；尚未提供完整 MediaSession、标准系统媒体会话、锁屏 / 蓝牙控制或可靠的独立播放队列。Android 若彻底回收应用进程，悬浮窗与试听不会作为成熟音乐服务保证持续运行。见[播放器现状和改造方向](#播放器现状和改造方向)。
 
 ## 源码地图
 
@@ -53,6 +53,7 @@
 | 文件 | 职责 | 修改注意事项 |
 |---|---|---|
 | [MainActivity.kt](app/src/main/java/com/wulinlee/musicmeta/MainActivity.kt) | Compose UI、歌单状态与分页、搜索、下载编排、试听播放、歌词面板、WebView 验证和错误报告 | 约 3,000 行，状态耦合较多；按职责渐进拆分，不要一次性大改整页。 |
+| [FloatingMiniPlayerService.kt](app/src/main/java/com/wulinlee/musicmeta/FloatingMiniPlayerService.kt) | 跨应用悬浮窗、`WindowManager` 双窗口、拖动位置保存、前台通知与控件命令转发 | 需要用户授权 `SYSTEM_ALERT_WINDOW`；该服务目前并不拥有独立音频播放队列。 |
 | [MusicModels.kt](app/src/main/java/com/wulinlee/musicmeta/MusicModels.kt) | `MusicTrack`、`PublicPlaylist`、`TrackAssets` 数据模型 | 尽量保持为轻量数据类型；不要在模型里发请求或持有 UI 状态。 |
 | [PublicPlaylistProvider.kt](app/src/main/java/com/wulinlee/musicmeta/PublicPlaylistProvider.kt) | 歌单元信息、曲目列表和分页数据，带备用来源 | 检查 offset / limit、总曲目数、分页缓存和异步返回的竞态。 |
 | [FlacMusicProvider.kt](app/src/main/java/com/wulinlee/musicmeta/FlacMusicProvider.kt) | 候选搜索、下载 URL 解析、来源封面 / 歌词及备用音源 | Cookie 来自 WebView；不能把 Cookie 转发到无关域名，也不要尝试绕过验证。 |
@@ -114,7 +115,7 @@
 
 ### 当前迷你播放器交互
 
-当前播放入口仍在 `MainActivity.kt` 中，使用 Android `MediaPlayer` 播放已经解析的网络地址。播放器、歌词和进度状态由 Compose 层维护；封面控件通过 Compose 的拖动手势移动，双击可展开 / 收起封面左侧的横向歌词条。歌词条约 278 dp 长、64 dp 高，与 64 dp 封面齐高，只展示当前高亮歌词和进度条；点击歌词在原文和译文轨道间切换，关闭按钮使用无底色叉形图标，时间与播放控制位于封面下方。
+音频试听仍由 `MainActivity.kt` 中的 `MediaPlayer` 驱动。顶部的悬浮窗按钮会请求 `SYSTEM_ALERT_WINDOW` 权限；授予后 `FloatingMiniPlayerService` 用两个独立的 `WindowManager` 窗口显示封面和歌词栏，并通过前台服务保持窗口可见。封面长按或双击可展开 / 收起左侧横向歌词条；整组约 356 dp 宽，在屏幕水平方向整体居中，开关歌词栏不会改变封面坐标。封面上方是透明底叉形关闭按钮，下方是迷你时间和播放 / 暂停控件；歌词栏约 278 dp 长、64 dp 高，只显示当前歌词和进度条。
 
 它的队列来源只是启动播放时可用的候选音源列表，并非一个独立且可持久化的播放队列。离开页面、Activity 生命周期变化、网络地址变化和播放器释放等情况需要格外小心。
 
@@ -125,7 +126,7 @@
 - 音频焦点、来电 / 通知打断、拔耳机暂停及错误后的恢复策略。
 - 正式播放队列、队列增删 / 点击播放、上一首 / 下一首、随机播放、单曲 / 列表循环。
 - 稳定的播放状态模型和位置更新机制；防止异步搜索结果覆盖当前曲目状态。
-- 真正的系统级悬浮窗（若需求是“在其他 App 上方显示”）还需要 `SYSTEM_ALERT_WINDOW` 特殊权限及单独的窗口生命周期；它与当前 App 内悬浮控件是两项不同功能。
+- 跨应用窗口与权限请求已实现，但仍需在不同 Android 厂商、分屏 / 横屏、系统强制停止和权限撤销场景进行实机验收。悬浮窗服务不是 `MediaSessionService`，不要将窗口常驻等同于保证后台音频不被系统终止。
 
 ### 推荐参考实现，不要从零硬堆
 
@@ -143,7 +144,7 @@
 2. 用 MediaController 将播放器状态暴露给界面；播放服务拥有队列和实际播放状态。
 3. 添加标准媒体通知、音频焦点和耳机拔出处理，验证锁屏与切后台。
 4. 将目前迷你封面保留为 UI 组件，让它只消费播放器状态并调用播放控制接口。
-5. 有明确需求后，再做 Android 系统级悬浮窗；不要与 MediaSession 改造混成一次大改。
+5. 当前跨应用悬浮窗已由 `FloatingMiniPlayerService` 负责；后续可把 `MediaPlayer` 迁移到独立播放服务 / Media3，再让悬浮层仅消费播放器状态。
 
 ## 数据源与接口回退
 
@@ -203,8 +204,8 @@ app/build/outputs/apk/release/app-release-unsigned.apk
 
 版本定义在 [app/build.gradle.kts](app/build.gradle.kts)：
 
-- 当前 `versionName = "1.10"`
-- 当前 `versionCode = 12`
+- 当前 `versionName = "1.11"`
+- 当前 `versionCode = 15`
 
 下一版应提高 `versionCode`，同时更新 `versionName`、`RELEASE_NOTES.md` 和必要的 README 信息。
 
@@ -255,7 +256,7 @@ app/build/outputs/apk/release/app-release-unsigned.apk
 
 ### P3 — 产品体验
 
-- [ ] 若确实需要跨 App 显示封面，再单独设计系统悬浮窗权限、拖动边界、隐藏 / 关闭和生命周期。
+- [ ] 实机测试跨应用悬浮窗的权限撤销、屏幕旋转 / 横屏、厂商后台限制和系统回收；确保权限关闭后能平稳回退到应用内播放器。
 - [ ] 为元数据匹配增加候选来源与置信度提示，避免无提示地混合不同版本歌词。
 - [ ] 统一 README、Release Notes、版本号和用户可见的版本信息。
 
