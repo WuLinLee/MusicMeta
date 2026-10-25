@@ -2,11 +2,11 @@
 
 **MusicMeta（音笺）** 是一个 Android 音乐整理工具：读取网易云公开歌单或可匿名访问的红心歌单，搜索并核对候选音源，下载音频，并尽可能补齐封面、歌词和音频标签。
 
-> **当前版本：1.11**（`versionCode = 15`；正式 APK 请以本次 GitHub Actions 成功结果和 Release 附件为准）  
+> **当前版本：1.16**（`versionCode = 20`；正式 APK 请以本次 GitHub Actions 成功结果和 Release 附件为准）  
 > 应用 ID：`com.wulinlee.musicmeta` · 最低 Android：10 / API 29 · 目标 SDK：35  
 > 技术栈：Kotlin、Jetpack Compose、Material 3、Coroutines、OkHttp、Coil、jaudiotagger。
 
-**交接时先看这里：** 仓库当前版本号、Git tag、Release 页面和 APK 必须视为四件不同的东西。发布前请确认 main 的最新提交、Actions 构建结果、`v1.11` tag 指向和 Release 附件都一致。不要只根据 README 上的版本号就声称 APK 已验证。
+**交接时先看这里：** 仓库当前版本号、Git tag、Release 页面和 APK 必须视为四件不同的东西。发布前请确认 main 的最新提交、Actions 构建结果、`v1.16` tag 指向和 Release 附件都一致。不要只根据 README 上的版本号就声称 APK 已验证。
 
 ## 目录
 
@@ -30,11 +30,12 @@
 
 - **歌单入口**：同步网易云公开歌单；输入用户 ID 尝试读取“我喜欢的音乐”；独立“直接搜歌”入口。
 - **分页和筛选**：每页 25 / 50 / 100 首；按需加载歌曲详情；筛选已加载曲目；不同歌单页面保留各自状态。
+- **本地**：新增独立分页，默认扫描 `Download/-07-MusicMeta` 与 `Music`；可在设置中改选本地音乐文件夹，点击曲目后继续使用悬浮播放器，不打开全屏播放器。
 - **音源候选**：支持网易云、酷我候选搜索；下载前核对歌名、歌手、专辑和版本。
 - **下载格式**：MP3 128 kbps、MP3 320 kbps、FLAC。应用不进行格式转码，不应把低规格音频伪装为 FLAC 无损。
 - **歌曲整理**：补充可获得的封面、原文 / 翻译 / 罗马音 / 逐字歌词；将标签与封面写入音频；按设置另存 LRC 文件。
 - **文件保存**：支持默认 Download 子目录或用户通过 Android 文件夹选择器授权的目录，并按命名规则整理文件。
-- **迷你播放器（1.11）**：主页面恢复应用图标；封面单击播放 / 暂停，长按或双击切换歌词栏；关闭 X 移到封面上方，时间与播放控件留在封面下方。歌词栏左右新增上一首 / 下一首，按当前歌单顺序查找相邻曲目并直接播放第一个匹配音源；播放结束自动进入下一首。封面和左侧歌词条作为一个整体居中，展开 / 收起时封面位置不变。开启系统悬浮窗后，可在其他 App 上方显示同一套控件（需在 Android 设置中授予“显示在其他应用上层”权限）。
+- **迷你播放器（1.16）**：本地和在线曲目共用悬浮封面、歌词、进度、播放/暂停及播放模式；三合一模式按钮切换顺序、乱序、单曲循环，默认顺序播放。上一首 / 下一首按当前播放队列工作，歌单队列也会按乱序模式随机续播。歌词优先匹配网易云曲目并读取翻译；本地文件按曲名 / 歌手匹配，缺少译文时显示可用原文，不伪造译文。收起歌词栏后，封面可在屏幕内横向移动。开启系统悬浮窗后，可在其他 App 上方使用同一套控件（需授予“显示在其他应用上层”权限）。
 - **错误报告**：左上角复制图标复制最近一次捕获的错误报告；没有错误报告时按钮禁用。分页区 Home 图标仍是“回到歌曲列表顶部”，不能改成错误报告或播放器操作。
 - **站点验证**：嵌入式 WebView 供用户手动完成来源站要求的验证。不绕过验证码、登录限制或其他访问控制。
 
@@ -136,7 +137,7 @@
 - [Android Media3 文档](https://developer.android.com/media/media3)
 - [示例开源播放器：skaftab-in/android-music-player](https://github.com/skaftab-in/android-music-player) —— 仓库里将 `PlaybackService`（ExoPlayer + MediaSession）、`PlayerViewModel`（连接 MediaController 并暴露队列 / 播放状态）和 Compose 播放界面拆开，是可读的架构参考。
 
-当前项目是网络音源整理工具，不是纯本地曲库播放器；参考架构时应保留 `FlacMusicProvider` 的地址解析和用户核对版本流程，将得到的有效 URL 映射为 Media3 `MediaItem`，而不是直接照搬参考项目的本地 MediaStore 扫描和数据库。复制外部项目代码前，先核对其 LICENSE 和依赖版本。
+当前项目同时支持在线音源整理与本地曲库扫描，但音频播放仍由 Activity 内的 `MediaPlayer` 驱动，尚未拥有完整的独立播放服务 / MediaSession。参考架构时应保留 `FlacMusicProvider` 的地址解析和在线版本核对流程，并让本地 MediaStore 曲目与在线 URL 最终进入统一播放队列；不要把本地文件扫描和网络音源解析混成同一套资源解析逻辑。复制外部项目代码前，先核对其 LICENSE 和依赖版本。
 
 建议的演进顺序：
 
@@ -204,8 +205,8 @@ app/build/outputs/apk/release/app-release-unsigned.apk
 
 版本定义在 [app/build.gradle.kts](app/build.gradle.kts)：
 
-- 当前 `versionName = "1.11"`
-- 当前 `versionCode = 15`
+- 当前 `versionName = "1.16"`
+- 当前 `versionCode = 20`
 
 下一版应提高 `versionCode`，同时更新 `versionName`、`RELEASE_NOTES.md` 和必要的 README 信息。
 
