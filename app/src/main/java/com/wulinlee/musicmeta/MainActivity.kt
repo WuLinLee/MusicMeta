@@ -1685,6 +1685,7 @@ private fun MusicMetaApp() {
                             )
                             listOf(25, 50, 100).forEach { count ->
                                 TextButton(
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
                                     onClick = {
                                         if (!busy && pageSize != count) {
                                             pageSize = count
