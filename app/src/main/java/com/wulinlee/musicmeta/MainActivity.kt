@@ -2,10 +2,13 @@ package com.wulinlee.musicmeta
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 import android.content.ClipboardManager
 import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
+import android.provider.Settings
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.os.Bundle
@@ -20,6 +23,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -77,6 +81,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -139,8 +144,19 @@ private val SoftAccent = Color(0xFF203D30)
 private val Hairline = Color(0xFF2B3730)
 
 class MainActivity : ComponentActivity() {
+    private val floatingOverlayReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val command = intent?.getStringExtra(FloatingMiniPlayerService.EXTRA_COMMAND) ?: return
+            val position = intent.getIntExtra(FloatingMiniPlayerService.EXTRA_POSITION_MS, 0)
+            FloatingMiniPlayerBridge.onCommand?.invoke(command, position)
+        }
+    }
+    private var floatingOverlayReceiverRegistered = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ContextCompat.registerReceiver(this, floatingOverlayReceiver, IntentFilter(FloatingMiniPlayerService.ACTION_CONTROL), ContextCompat.RECEIVER_NOT_EXPORTED)
+        floatingOverlayReceiverRegistered = true
         setContent {
             MaterialTheme(
                 colorScheme = darkColorScheme(
@@ -159,6 +175,14 @@ class MainActivity : ComponentActivity() {
                 MusicMetaApp()
             }
         }
+    }
+
+    override fun onDestroy() {
+        if (floatingOverlayReceiverRegistered) {
+            runCatching { unregisterReceiver(floatingOverlayReceiver) }
+            floatingOverlayReceiverRegistered = false
+        }
+        super.onDestroy()
     }
 }
 
