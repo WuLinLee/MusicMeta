@@ -124,6 +124,8 @@ class FloatingMiniPlayerService : LifecycleService() {
         const val EXTRA_COMMAND = "command"
 
         const val COMMAND_TOGGLE_PLAY = "toggle_play"
+        const val COMMAND_PREVIOUS = "previous_track"
+        const val COMMAND_NEXT = "next_track"
         const val COMMAND_TOGGLE_DETAILS = "toggle_details"
         const val COMMAND_TOGGLE_TRANSLATION = "toggle_translation"
         const val COMMAND_SEEK = "seek"
@@ -469,6 +471,8 @@ class FloatingMiniPlayerService : LifecycleService() {
                             positionMs = seekMs.coerceIn(0, durationMs.coerceAtLeast(0))
                             sendCommand(this@FloatingMiniPlayerService, COMMAND_SEEK, positionMs)
                         },
+                        onPrevious = { sendCommand(this@FloatingMiniPlayerService, COMMAND_PREVIOUS) },
+                        onNext = { sendCommand(this@FloatingMiniPlayerService, COMMAND_NEXT) },
                     )
                 }
             }
@@ -628,6 +632,8 @@ private fun OverlayLyricsUi(
     durationMs: Int,
     onToggleTranslation: () -> Unit,
     onSeek: (Int) -> Unit,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
 ) {
     val activeText = if (showTranslation) translatedLyrics else originalLyrics
     val currentLyric = when {
@@ -647,31 +653,49 @@ private fun OverlayLyricsUi(
             verticalArrangement = Arrangement.spacedBy(0.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Box(
-                modifier = Modifier.fillMaxWidth().weight(1f)
-                    .clip(RoundedCornerShape(9.dp))
-                    .background(Color(0xFF243631))
-                    .clickable { onToggleTranslation() }
-                    .padding(horizontal = 8.dp, vertical = 2.dp)
-                    .semantics {
-                        contentDescription = if (translatedLyrics.isBlank()) {
-                            "歌词，当前歌曲没有已加载的译文，点击切换显示状态"
-                        } else {
-                            "歌词，点击切换原文或译文"
-                        }
-                    },
-                contentAlignment = Alignment.Center,
+            Row(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(3.dp),
             ) {
-                Text(
-                    currentLyric,
-                    color = Color(0xFF9FF0C9),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp,
-                    lineHeight = 15.sp,
-                    textAlign = TextAlign.Center,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Box(
+                    modifier = Modifier.size(28.dp).clip(CircleShape)
+                        .clickable { onPrevious() }
+                        .semantics { contentDescription = "上一首，播放上一首歌的首个匹配音源" },
+                    contentAlignment = Alignment.Center,
+                ) { OverlaySkipGlyph(previous = true) }
+                Box(
+                    modifier = Modifier.weight(1f).fillMaxSize()
+                        .clip(RoundedCornerShape(9.dp))
+                        .background(Color(0xFF243631))
+                        .clickable { onToggleTranslation() }
+                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                        .semantics {
+                            contentDescription = if (translatedLyrics.isBlank()) {
+                                "歌词，当前歌曲没有已加载的译文，点击切换显示状态"
+                            } else {
+                                "歌词，点击切换原文或译文"
+                            }
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        currentLyric,
+                        color = Color(0xFF9FF0C9),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        lineHeight = 15.sp,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Box(
+                    modifier = Modifier.size(28.dp).clip(CircleShape)
+                        .clickable { onNext() }
+                        .semantics { contentDescription = "下一首，播放下一首歌的首个匹配音源" },
+                    contentAlignment = Alignment.Center,
+                ) { OverlaySkipGlyph(previous = false) }
             }
             Box(
                 modifier = Modifier.fillMaxWidth().height(14.dp)
@@ -708,6 +732,31 @@ private fun OverlayLyricsUi(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun OverlaySkipGlyph(previous: Boolean) {
+    Canvas(modifier = Modifier.size(17.dp)) {
+        val tint = Color(0xFF9FF0C9)
+        val stroke = 1.8.dp.toPx()
+        val centerY = size.height / 2f
+        val edgeX = if (previous) size.width * 0.24f else size.width * 0.76f
+        val barX = if (previous) size.width * 0.34f else size.width * 0.66f
+        drawLine(tint, Offset(barX, size.height * 0.20f), Offset(barX, size.height * 0.80f), stroke, cap = StrokeCap.Round)
+        val path = androidx.compose.ui.graphics.Path().apply {
+            if (previous) {
+                moveTo(size.width * 0.76f, size.height * 0.20f)
+                lineTo(edgeX, centerY)
+                lineTo(size.width * 0.76f, size.height * 0.80f)
+            } else {
+                moveTo(size.width * 0.24f, size.height * 0.20f)
+                lineTo(edgeX, centerY)
+                lineTo(size.width * 0.24f, size.height * 0.80f)
+            }
+            close()
+        }
+        drawPath(path, tint)
     }
 }
 
