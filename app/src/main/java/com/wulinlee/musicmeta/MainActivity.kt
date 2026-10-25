@@ -2006,7 +2006,7 @@ private fun MusicMetaApp() {
             }
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val density = LocalDensity.current
-                val maxDragX = with(density) { (maxWidth - 76.dp).toPx().coerceAtLeast(0f) }
+                val maxDragX = with(density) { (maxWidth - (if (showPreviewDetails) 356.dp else 76.dp)).toPx().coerceAtLeast(0f) }
                 val maxDragY = with(density) { (maxHeight - 76.dp).toPx().coerceAtLeast(0f) }
 
                 if (showPreviewDetails) {
