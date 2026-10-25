@@ -58,6 +58,11 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlaylistPlay
+import androidx.compose.material.icons.filled.RepeatOne
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
@@ -1890,7 +1895,7 @@ private fun MusicMetaApp() {
                             ) { HomeGlyph() }
                         }
                     }
-                    if (playlist == null || pageItemCount <= 0) {
+                    if ((playlist == null && inputMode != "local") || pageItemCount <= 0) {
                         Row(
                             modifier = Modifier.fillMaxWidth().height(25.dp).padding(horizontal = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -1960,7 +1965,7 @@ private fun MusicMetaApp() {
             item(key = "intro") {
                 Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Text(
-                        "PLAYLIST",
+                        if (inputMode == "local") "LOCAL MUSIC" else "PLAYLIST",
                         color = Accent,
                         fontSize = 11.sp,
                         letterSpacing = 2.sp,
@@ -1972,7 +1977,7 @@ private fun MusicMetaApp() {
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         Text(
-                            "把喜欢的歌，存进音乐库",
+                            if (inputMode == "local") "管理本地音乐" else "把喜欢的歌，存进音乐库",
                             modifier = Modifier.weight(1f),
                             color = Ink,
                             style = MaterialTheme.typography.headlineSmall,
@@ -2000,7 +2005,7 @@ private fun MusicMetaApp() {
                         }
                     }
                     Text(
-                        "公开歌单免登录 · 保留所选音质与格式 · 封面歌词写入文件",
+                        if (inputMode == "local") "扫描已授权文件夹 · 使用同一悬浮播放器播放" else "公开歌单免登录 · 保留所选音质与格式 · 封面歌词写入文件",
                         color = SubInk,
                         fontSize = 12.sp,
                     )
@@ -2070,7 +2075,7 @@ private fun MusicMetaApp() {
                                     Text("搜索", fontSize = 12.sp)
                                 }
                             }
-                        } else {
+                        } else if (inputMode != "local") {
                             OutlinedTextField(
                                 value = playlistInput,
                                 onValueChange = setPlaylistInput,
@@ -2794,7 +2799,18 @@ private fun MusicMetaApp() {
                                 modifier = Modifier.size(14.dp).clickable { cyclePlaybackMode() }
                                     .semantics { contentDescription = "播放模式：" + listOf("顺序播放", "乱序播放", "单曲循环")[playbackMode] + "，点击切换" },
                                 contentAlignment = Alignment.Center,
-                            ) { MiniPlaybackModeGlyph(playbackMode) }
+                            ) {
+                                Icon(
+                                    imageVector = when (playbackMode) {
+                                        1 -> Icons.Filled.Shuffle
+                                        2 -> Icons.Filled.RepeatOne
+                                        else -> Icons.Filled.PlaylistPlay
+                                    },
+                                    contentDescription = null,
+                                    tint = Accent,
+                                    modifier = Modifier.size(14.dp),
+                                )
+                            }
                             Text(
                                 formatPreviewTime(previewPositionMs) + "/" + formatPreviewTime(previewDurationMs),
                                 modifier = Modifier.weight(1f),
@@ -3260,41 +3276,6 @@ private fun formatPreviewLyrics(raw: String): String {
 private fun formatPreviewTime(milliseconds: Int): String {
     val totalSeconds = milliseconds.coerceAtLeast(0) / 1000
     return (totalSeconds / 60).toString() + ":" + (totalSeconds % 60).toString().padStart(2, '0')
-}
-
-@Composable
-private fun MiniPlaybackModeGlyph(mode: Int) {
-    Box(modifier = Modifier.size(14.dp), contentAlignment = Alignment.Center) {
-        Canvas(modifier = Modifier.size(13.dp)) {
-            val tint = Accent
-            val stroke = 1.5.dp.toPx()
-            when (mode) {
-                1 -> {
-                    drawLine(tint, Offset(size.width * 0.12f, size.height * 0.25f), Offset(size.width * 0.82f, size.height * 0.75f), stroke, cap = StrokeCap.Round)
-                    drawLine(tint, Offset(size.width * 0.12f, size.height * 0.75f), Offset(size.width * 0.82f, size.height * 0.25f), stroke, cap = StrokeCap.Round)
-                    drawLine(tint, Offset(size.width * 0.62f, size.height * 0.24f), Offset(size.width * 0.83f, size.height * 0.25f), stroke, cap = StrokeCap.Round)
-                    drawLine(tint, Offset(size.width * 0.82f, size.height * 0.25f), Offset(size.width * 0.77f, size.height * 0.45f), stroke, cap = StrokeCap.Round)
-                    drawLine(tint, Offset(size.width * 0.62f, size.height * 0.76f), Offset(size.width * 0.83f, size.height * 0.75f), stroke, cap = StrokeCap.Round)
-                    drawLine(tint, Offset(size.width * 0.82f, size.height * 0.75f), Offset(size.width * 0.77f, size.height * 0.55f), stroke, cap = StrokeCap.Round)
-                }
-                2 -> {
-                    drawArc(tint, 35f, 285f, false, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke))
-                    drawLine(tint, Offset(size.width * 0.77f, size.height * 0.12f), Offset(size.width * 0.90f, size.height * 0.34f), stroke, cap = StrokeCap.Round)
-                    drawLine(tint, Offset(size.width * 0.90f, size.height * 0.34f), Offset(size.width * 0.66f, size.height * 0.32f), stroke, cap = StrokeCap.Round)
-                }
-                else -> {
-                    drawLine(tint, Offset(size.width * 0.12f, size.height * 0.25f), Offset(size.width * 0.58f, size.height * 0.25f), stroke, cap = StrokeCap.Round)
-                    drawLine(tint, Offset(size.width * 0.12f, size.height * 0.50f), Offset(size.width * 0.58f, size.height * 0.50f), stroke, cap = StrokeCap.Round)
-                    drawLine(tint, Offset(size.width * 0.12f, size.height * 0.75f), Offset(size.width * 0.58f, size.height * 0.75f), stroke, cap = StrokeCap.Round)
-                    drawLine(tint, Offset(size.width * 0.58f, size.height * 0.25f), Offset(size.width * 0.85f, size.height * 0.50f), stroke, cap = StrokeCap.Round)
-                    drawLine(tint, Offset(size.width * 0.85f, size.height * 0.50f), Offset(size.width * 0.58f, size.height * 0.75f), stroke, cap = StrokeCap.Round)
-                }
-            }
-        }
-        if (mode == 2) {
-            Text("1", color = Accent, fontSize = 7.sp, fontWeight = FontWeight.Bold)
-        }
-    }
 }
 
 @Composable
