@@ -326,6 +326,7 @@ private fun MusicMetaApp() {
     var isResolvingUrl by remember { mutableStateOf(false) }
     var isDownloading by remember { mutableStateOf(false) }
     var verificationOpen by remember { mutableStateOf(false) }
+    var floatingOverlayEnabled by remember { mutableStateOf(folderPreferences.getBoolean("floating_overlay_enabled", false)) }
     var previewSong by remember { mutableStateOf<FlacSiteSong?>(null) }
     var previewQueue by remember { mutableStateOf<List<FlacSiteSong>>(emptyList()) }
     var previewCoverUrl by remember { mutableStateOf("") }
@@ -340,6 +341,18 @@ private fun MusicMetaApp() {
     var previewDurationMs by remember { mutableStateOf(0) }
     var miniPlayerOffset by remember { mutableStateOf(Offset.Zero) }
     val previewPlayer = remember { mutableStateOf<MediaPlayer?>(null) }
+
+    val overlayPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) {
+        if (Settings.canDrawOverlays(context)) {
+            floatingOverlayEnabled = true
+            folderPreferences.edit().putBoolean("floating_overlay_enabled", true).apply()
+            Toast.makeText(context, "悬浮窗权限已开启；试听时会显示在其他应用上方。", Toast.LENGTH_LONG).show()
+        } else {
+            Toast.makeText(context, "未授予悬浮窗权限，播放器仍可在应用内使用。", Toast.LENGTH_LONG).show()
+        }
+    }
 
     DisposableEffect(Unit) {
         onDispose {
