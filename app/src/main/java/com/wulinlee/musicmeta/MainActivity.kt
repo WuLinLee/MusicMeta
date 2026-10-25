@@ -349,7 +349,7 @@ private fun MusicMetaApp() {
             scope.launch {
                 try {
                     val loaded = withTimeout(28_000L) {
-                        withContext(Dispatchers.IO) { playlistProvider.load(input, likedByUserId = inputMode == "liked", offset = 0, limit = pageSize) }
+                        withContext(Dispatchers.IO) { playlistProvider.load(input, likedByUserId = inputMode == "liked", offset = 0, limit = 100) }
                     }
                     if (inputMode == "liked") likedPlaylist = loaded else publicPlaylist = loaded
                     selectedTrack = null
@@ -954,9 +954,10 @@ private fun MusicMetaApp() {
                 val offset = (targetPage - 1) * pageSize
                 val needed = minOf(pageSize, maxOf(0, current.totalTrackCount - offset))
                 val key = pageCacheKey(inputMode, current.id.toString(), pageSize, targetPage)
-                val alreadyLoaded = offset + needed <= current.tracks.size
-                if (!alreadyLoaded && !pageCache.containsKey(key) && needed > 0) {
+                val alreadyLoaded = offset + needed <= current.tracks.size || pageCache.containsKey(key)
+                if (!alreadyLoaded && needed > 0) {
                     val targetMode = inputMode
+                    val batchOffset = (offset / 100) * 100
                     isLoadingPage = true
                     status = "正在加载第 " + targetPage + " 页……"
                     scope.launch {
@@ -966,15 +967,19 @@ private fun MusicMetaApp() {
                                     playlistProvider.load(
                                         input = current.id.toString(),
                                         likedByUserId = false,
-                                        offset = offset,
-                                        limit = pageSize,
+                                        offset = batchOffset,
+                                        limit = 100,
                                     )
                                 }
                             }
                             val activePlaylist = if (targetMode == "liked") likedPlaylist else publicPlaylist
                             if (inputMode == targetMode && activePlaylist?.id == current.id) {
-                                pageCache = pageCache + (key to loadedPage.tracks)
-                                status = "第 " + targetPage + " 页已加载。"
+                                val pageEntries = loadedPage.tracks.chunked(pageSize).mapIndexed { index, tracks ->
+                                    val pageNumber = batchOffset / pageSize + index + 1
+                                    pageCacheKey(targetMode, current.id.toString(), pageSize, pageNumber) to tracks
+                                }.toMap()
+                                pageCache = pageCache + pageEntries
+                                status = "第 " + targetPage + " 页已加载（每批读取100首）。"
                             }
                         } catch (error: Exception) {
                             val detail = error.message?.takeIf { it.isNotBlank() } ?: "网络或接口暂不可用"
