@@ -329,6 +329,7 @@ private fun MusicMetaApp() {
     var floatingOverlayEnabled by remember { mutableStateOf(folderPreferences.getBoolean("floating_overlay_enabled", false)) }
     var previewSong by remember { mutableStateOf<FlacSiteSong?>(null) }
     var previewCurrentTrack by remember { mutableStateOf<MusicTrack?>(null) }
+    var previewCurrentPlaylistId by remember { mutableStateOf<Long?>(null) }
     var previewNavigationHandler by remember { mutableStateOf<((Int) -> Unit)?>(null) }
     var previewQueue by remember { mutableStateOf<List<FlacSiteSong>>(emptyList()) }
     var previewCoverUrl by remember { mutableStateOf("") }
@@ -760,6 +761,7 @@ private fun MusicMetaApp() {
         previewPlayer.value = null
         previewSong = null
         previewCurrentTrack = null
+        previewCurrentPlaylistId = null
         previewQueue = emptyList()
         previewCoverUrl = ""
         previewLyrics = ""
@@ -802,6 +804,7 @@ private fun MusicMetaApp() {
             previewPlayer.value = null
             previewSong = song
             previewCurrentTrack = selectedTrack
+            previewCurrentPlaylistId = if (selectedTrack != null) playlist?.id else null
             previewQueue = when {
                 flacResults.any { sourceSongKey(it) == songKey } -> flacResults.toList()
                 previewQueue.any { sourceSongKey(it) == songKey } -> previewQueue
@@ -1100,6 +1103,167 @@ private fun MusicMetaApp() {
             it.title.contains(filterText.trim(), ignoreCase = true) ||
             it.artists.contains(filterText.trim(), ignoreCase = true) ||
             it.album.contains(filterText.trim(), ignoreCase = true)
+    }
+    val navigatePlaylistPreview: (Int) -> Unit = remember(
+        knownTracks, filteredKnownTracks, playlist?.id, inputMode, filterText, pageSize, pageCache,
+    ) {
+        { direction ->
+            if (isSearchingFlac || isResolvingUrl || isDownloading || isPreviewLoading) {
+                status = "正在准备当前试听，请稍候。"
+            } else {
+                val currentTrack = previewCurrentTrack
+                val currentPlaylist = playlist
+                val activePlaylistId = previewCurrentPlaylistId
+                if (currentTrack == null || currentPlaylist == null || activePlaylistId != currentPlaylist.id) {
+                    status = "上一首 / 下一首需要从当前歌单的曲目试听开始。"
+                } else {
+                    val modeAtRequest = inputMode
+                    val playlistIdAtRequest = currentPlaylist.id
+                    val expectedTrackId = currentTrack.id
+                    val targetPosition: Int? = if (filterText.isNotBlank()) {
+                        val queue = filteredKnownTracks
+                        val index = queue.indexOfFirst { it.id == expectedTrackId }
+                        if (index < 0) null else index + direction
+                    } else {
+                        val fromBase = currentPlaylist.tracks.indexOfFirst { it.id == expectedTrackId }
+                        if (fromBase >= 0) {
+                            fromBase
+                        } else {
+                            pageCache.entries.asSequence()
+                                .filter { it.key.startsWith("$modeAtRequest:$playlistIdAtRequest:") }
+                                .mapNotNull { entry ->
+                                    val parts = entry.key.split(":")
+                                    val cacheSize = parts.getOrNull(2)?.toIntOrNull() ?: return@mapNotNull null
+                                    val cachePage = parts.getOrNull(3)?.toIntOrNull() ?: return@mapNotNull null
+                                    val localIndex = entry.value.indexOfFirst { it.id == expectedTrackId }
+                                    if (localIndex < 0) null else (cachePage - 1) * cacheSize + localIndex
+                                }
+                                .minOrNull() ?: -1
+                        }.let { currentIndex -> if (currentIndex < 0) null else currentIndex + direction }
+                    }
+                    if (targetPosition == null) {
+                        status = "当前曲目不在已加载的歌单列表中，无法定位上一首 / 下一首。"
+                    } else if (filterText.isBlank() && targetPosition !in 0 until currentPlaylist.totalTrackCount) {
+                        status = if (direction < 0) "已经是歌单第一首。" else "已经是歌单最后一首。"
+                    } else if (filterText.isNotBlank() && targetPosition !in filteredKnownTracks.indices) {
+                        status = if (direction < 0) "已经是当前筛选结果的第一首。" else "已经是当前筛选结果的最后一首。"
+                    } else {
+                        val cachePrefix = "$modeAtRequest:$playlistIdAtRequest:"
+                        val targetFromLoaded = if (filterText.isNotBlank()) {
+                            filteredKnownTracks.getOrNull(targetPosition)
+                        } else {
+                            currentPlaylist.tracks.getOrNull(targetPosition) ?:
+                                pageCache.entries.asSequence()
+                                    .filter { it.key.startsWith(cachePrefix) }
+                                    .sortedBy { entry ->
+                                        val parts = entry.key.split(":")
+                                        if (parts.getOrNull(2)?.toIntOrNull() == pageSize) 0 else 1
+                                    }
+                                    .mapNotNull { entry ->
+                                        val parts = entry.key.split(":")
+                                        val cacheSize = parts.getOrNull(2)?.toIntOrNull() ?: return@mapNotNull null
+                                        val cachePage = parts.getOrNull(3)?.toIntOrNull() ?: return@mapNotNull null
+                                        val batchStart = (cachePage - 1) * cacheSize
+                                        val localTarget = targetPosition - batchStart
+                                        entry.value.getOrNull(localTarget)
+                                    }
+                                    .firstOrNull()
+                        }
+                        val searchAndPlay = { targetTrack: MusicTrack ->
+                            isSearchingFlac = true
+                            status = "正在为《${targetTrack.title}》查找第一个匹配音源……"
+                            scope.launch {
+                                try {
+                                    val cookie = CookieManager.getInstance().getCookie(DEFAULT_SOURCE)
+                                    val matches = withContext(Dispatchers.IO) {
+                                        flacProvider.search(
+                                            keyword = listOf(targetTrack.title, targetTrack.artists)
+                                                .filter { it.isNotBlank() }.joinToString(" "),
+                                            platform = flacPlatform,
+                                            cookie = cookie,
+                                            userAgent = fallbackUserAgent,
+                                        )
+                                    }.take(8)
+                                    if (inputMode != modeAtRequest || previewCurrentTrack?.id != expectedTrackId ||
+                                        previewCurrentPlaylistId != playlistIdAtRequest
+                                    ) {
+                                        isSearchingFlac = false
+                                        return@launch
+                                    }
+                                    if (matches.isEmpty()) {
+                                        isSearchingFlac = false
+                                        status = "《${targetTrack.title}》没有找到可用音源，保留当前试听。"
+                                    } else {
+                                        selectedTrack = targetTrack
+                                        previewCurrentTrack = targetTrack
+                                        previewCurrentPlaylistId = playlistIdAtRequest
+                                        flacResults = matches
+                                        manualSourceSearchActive = false
+                                        isSearchingFlac = false
+                                        status = "正在播放《${targetTrack.title}》的第一个匹配音源。"
+                                        playPreview(matches.first())
+                                    }
+                                } catch (error: Exception) {
+                                    if (inputMode == modeAtRequest && previewCurrentTrack?.id == expectedTrackId) {
+                                        isSearchingFlac = false
+                                        status = "查找下一首音源失败：" + (error.message?.takeIf { it.isNotBlank() } ?: "请重试")
+                                        captureError("上一首 / 下一首试听", error)
+                                    }
+                                }
+                            }
+                        }
+                        if (targetFromLoaded != null) {
+                            searchAndPlay(targetFromLoaded)
+                        } else if (filterText.isNotBlank()) {
+                            status = "目标曲目尚未加载，请先翻到对应页。"
+                        } else {
+                            isSearchingFlac = true
+                            status = "正在读取歌单中的下一首曲目……"
+                            scope.launch {
+                                try {
+                                    val batchOffset = (targetPosition / 100) * 100
+                                    val batchLimit = minOf(100, currentPlaylist.totalTrackCount - batchOffset)
+                                    val loadedPage = withContext(Dispatchers.IO) {
+                                        playlistProvider.load(
+                                            input = playlistIdAtRequest.toString(),
+                                            likedByUserId = false,
+                                            offset = batchOffset,
+                                            limit = batchLimit.coerceAtLeast(1),
+                                        )
+                                    }
+                                    if (inputMode != modeAtRequest || previewCurrentTrack?.id != expectedTrackId ||
+                                        previewCurrentPlaylistId != playlistIdAtRequest
+                                    ) {
+                                        isSearchingFlac = false
+                                        return@launch
+                                    }
+                                    val pageEntries = loadedPage.tracks.chunked(pageSize).mapIndexed { index, tracks ->
+                                        val pageNumber = batchOffset / pageSize + index + 1
+                                        pageCacheKey(modeAtRequest, playlistIdAtRequest.toString(), pageSize, pageNumber) to tracks
+                                    }.toMap()
+                                    pageCache = pageCache + pageEntries
+                                    val targetTrack = loadedPage.tracks.getOrNull(targetPosition - batchOffset)
+                                    isSearchingFlac = false
+                                    if (targetTrack != null) {
+                                        searchAndPlay(targetTrack)
+                                    } else {
+                                        status = "歌单未返回目标曲目，无法自动切换。"
+                                    }
+                                } catch (error: Exception) {
+                                    isSearchingFlac = false
+                                    status = "读取下一首曲目失败：" + (error.message?.takeIf { it.isNotBlank() } ?: "请重试")
+                                    captureError("读取相邻歌单曲目", error)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    SideEffect {
+        previewNavigationHandler = navigatePlaylistPreview
     }
     val pageItemCount = if (filterText.isBlank()) playlist?.totalTrackCount ?: 0 else filteredKnownTracks.size
     val pageCount = maxOf(1, (pageItemCount + pageSize - 1) / pageSize)
