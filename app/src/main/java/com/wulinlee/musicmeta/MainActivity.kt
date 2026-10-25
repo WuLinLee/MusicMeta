@@ -565,8 +565,10 @@ private fun MusicMetaApp() {
         if (current != null && !busy) {
             val maxPage = pageCount
             val targetPage = requestedPage.coerceIn(1, maxPage)
+            val pageChanged = targetPage != currentPage
             currentPage = targetPage
             jumpPageInput = targetPage.toString()
+            if (pageChanged) scope.launch { listState.animateScrollToItem(6) }
             selectedTrack = null
             flacResults = emptyList()
 
