@@ -328,6 +328,8 @@ private fun MusicMetaApp() {
     var verificationOpen by remember { mutableStateOf(false) }
     var floatingOverlayEnabled by remember { mutableStateOf(folderPreferences.getBoolean("floating_overlay_enabled", false)) }
     var previewSong by remember { mutableStateOf<FlacSiteSong?>(null) }
+    var previewCurrentTrack by remember { mutableStateOf<MusicTrack?>(null) }
+    var previewNavigationHandler by remember { mutableStateOf<((Int) -> Unit)?>(null) }
     var previewQueue by remember { mutableStateOf<List<FlacSiteSong>>(emptyList()) }
     var previewCoverUrl by remember { mutableStateOf("") }
     var previewLyrics by remember { mutableStateOf("") }
@@ -757,6 +759,7 @@ private fun MusicMetaApp() {
         }
         previewPlayer.value = null
         previewSong = null
+        previewCurrentTrack = null
         previewQueue = emptyList()
         previewCoverUrl = ""
         previewLyrics = ""
@@ -798,6 +801,7 @@ private fun MusicMetaApp() {
             runCatching { oldPlayer?.release() }
             previewPlayer.value = null
             previewSong = song
+            previewCurrentTrack = selectedTrack
             previewQueue = when {
                 flacResults.any { sourceSongKey(it) == songKey } -> flacResults.toList()
                 previewQueue.any { sourceSongKey(it) == songKey } -> previewQueue
@@ -878,9 +882,14 @@ private fun MusicMetaApp() {
                         isPreviewPlaying = false
                         isPreviewLoading = false
                         previewPositionMs = previewDurationMs
-                        status = "播放结束：《" + song.title + "》。"
                         runCatching { completed.release() }
                         if (previewPlayer.value === completed) previewPlayer.value = null
+                        if (previewCurrentTrack != null) {
+                            status = "《" + song.title + "》播放结束，正在准备下一首。"
+                            previewNavigationHandler?.invoke(1)
+                        } else {
+                            status = "播放结束：《" + song.title + "》。"
+                        }
                     }
                     player.setOnErrorListener { failed, what, extra ->
                         isPreviewPlaying = false
@@ -939,6 +948,8 @@ private fun MusicMetaApp() {
         FloatingMiniPlayerBridge.onCommand = { command, seekPosition ->
             when (command) {
                 FloatingMiniPlayerService.COMMAND_TOGGLE_PLAY -> previewSong?.let { playPreview(it) }
+                FloatingMiniPlayerService.COMMAND_PREVIOUS -> previewNavigationHandler?.invoke(-1)
+                FloatingMiniPlayerService.COMMAND_NEXT -> previewNavigationHandler?.invoke(1)
                 FloatingMiniPlayerService.COMMAND_TOGGLE_DETAILS -> showPreviewDetails = !showPreviewDetails
                 FloatingMiniPlayerService.COMMAND_TOGGLE_TRANSLATION -> showTranslatedPreviewLyric = !showTranslatedPreviewLyric
                 FloatingMiniPlayerService.COMMAND_SEEK -> {
@@ -1000,15 +1011,7 @@ private fun MusicMetaApp() {
         }
     }
     val playAdjacentPreview: (Int) -> Unit = { direction ->
-        val current = previewSong
-        val currentIndex = if (current == null) -1 else
-            previewQueue.indexOfFirst { sourceSongKey(it) == sourceSongKey(current) }
-        val targetIndex = currentIndex + direction
-        if (currentIndex >= 0 && targetIndex in previewQueue.indices) {
-            playPreview(previewQueue[targetIndex])
-        } else {
-            status = if (direction < 0) "已经是播放队列第一首。" else "已经是播放队列最后一首。"
-        }
+        previewNavigationHandler?.invoke(direction)
     }
 
     LaunchedEffect(previewSong, isPreviewPlaying) {
