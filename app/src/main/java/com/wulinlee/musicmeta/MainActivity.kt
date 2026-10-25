@@ -574,7 +574,7 @@ private fun MusicMetaApp() {
                     }
                     flacResults = results.take(8)
                     if (playFirstMatch && flacResults.isNotEmpty()) {
-                        playPreview(flacResults.first())
+                        playPreviewRef.value(flacResults.first())
                         status = "正在播放《" + track.title + "》的第一个匹配音源。"
                     } else {
                         status = if (flacResults.isEmpty()) {
@@ -2329,15 +2329,18 @@ private fun MusicMetaApp() {
                 val localPageSongs = localVisible.drop((currentPage - 1) * pageSize).take(pageSize)
                 if (localVisible.isEmpty()) item(key = "local-empty") { Text(if (isScanningLocalMusic) "正在扫描本地音乐…" else "没有找到歌曲。首次使用请点击扫描，或在下载设置中选择本地音乐文件夹。", color = SubInk, modifier = Modifier.fillMaxWidth().padding(16.dp)) }
                 items(localPageSongs, key = { "local-" + it.uri }) { track ->
-                    Card(Modifier.fillMaxWidth()
-                        .pointerInput(track.uri) {
-                            detectTapGestures(onLongPress = { copySongAndArtist(track.title, track.artist) })
-                        }
-                        .clickable {
-                        val song = FlacSiteSong(track.uri.toString(), "local", track.title, track.artist, track.album, "", track.durationMs.toString(), track.coverUri)
-                        previewQueue = localVisible.map { FlacSiteSong(it.uri.toString(), "local", it.title, it.artist, it.album, "", it.durationMs.toString(), it.coverUri) }
-                        previewCurrentTrack = null; previewCurrentPlaylistId = null; selectedTrack = null
-                        playPreview(song)
+                    Card(Modifier.fillMaxWidth().pointerInput(track.uri) {
+                        detectTapGestures(
+                            onTap = {
+                                val song = FlacSiteSong(track.uri.toString(), "local", track.title, track.artist, track.album, "", track.durationMs.toString(), track.coverUri)
+                                previewQueue = localVisible.map { FlacSiteSong(it.uri.toString(), "local", it.title, it.artist, it.album, "", it.durationMs.toString(), it.coverUri) }
+                                previewCurrentTrack = null
+                                previewCurrentPlaylistId = null
+                                selectedTrack = null
+                                playPreview(song)
+                            },
+                            onLongPress = { copySongAndArtist(track.title, track.artist) },
+                        )
                     }, colors = CardDefaults.cardColors(containerColor = SurfaceColor)) {
                         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             AsyncImage(model = track.coverUri.takeIf { it.isNotBlank() }, contentDescription = null, modifier = Modifier.size(46.dp).clip(RoundedCornerShape(10.dp)))
