@@ -16,6 +16,7 @@ import android.provider.Settings
 import android.util.DisplayMetrics
 import android.view.Gravity
 import android.view.WindowManager
+import android.view.View
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -23,6 +24,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,6 +38,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlaylistPlay
+import androidx.compose.material.icons.filled.RepeatOne
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Text
@@ -52,6 +59,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.awaitPointerEvent
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
@@ -75,6 +83,7 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 private class FloatingOverlayViewTreeOwner : LifecycleOwner, SavedStateRegistryOwner {
     private val lifecycleRegistry = LifecycleRegistry(this)
@@ -109,6 +118,7 @@ class FloatingMiniPlayerService : LifecycleService() {
         const val ACTION_UPDATE = "com.wulinlee.musicmeta.overlay.UPDATE"
         const val ACTION_CONTROL = "com.wulinlee.musicmeta.overlay.CONTROL"
         const val ACTION_STOP = "com.wulinlee.musicmeta.overlay.STOP"
+        const val ACTION_PROGRESS = "com.wulinlee.musicmeta.overlay.PROGRESS"
 
         const val EXTRA_COVER_URL = "cover_url"
         const val EXTRA_TITLE = "title"
@@ -122,6 +132,10 @@ class FloatingMiniPlayerService : LifecycleService() {
         const val EXTRA_EXPANDED = "expanded"
         const val EXTRA_SHOW_TRANSLATION = "show_translation"
         const val EXTRA_PLAYBACK_MODE = "playback_mode"
+        const val EXTRA_OPEN_APP_AND_LOCATE = "open_app_and_locate"
+        const val EXTRA_OPEN_MODE = "open_mode"
+        const val EXTRA_OPEN_TRACK_ID = "open_track_id"
+        const val EXTRA_OPEN_PLAYLIST_ID = "open_playlist_id"
         const val EXTRA_COMMAND = "command"
 
         const val COMMAND_TOGGLE_PLAY = "toggle_play"
@@ -151,6 +165,9 @@ class FloatingMiniPlayerService : LifecycleService() {
             expanded: Boolean,
             showTranslation: Boolean,
             playbackMode: Int,
+            openMode: String,
+            openTrackId: String,
+            openPlaylistId: Long,
         ) {
             if (!Settings.canDrawOverlays(context)) return
             val intent = Intent(context, FloatingMiniPlayerService::class.java)
@@ -167,11 +184,23 @@ class FloatingMiniPlayerService : LifecycleService() {
                 .putExtra(EXTRA_EXPANDED, expanded)
                 .putExtra(EXTRA_SHOW_TRANSLATION, showTranslation)
                 .putExtra(EXTRA_PLAYBACK_MODE, playbackMode.coerceIn(0, 2))
+                .putExtra(EXTRA_OPEN_MODE, openMode)
+                .putExtra(EXTRA_OPEN_TRACK_ID, openTrackId)
+                .putExtra(EXTRA_OPEN_PLAYLIST_ID, openPlaylistId)
             if (serviceAlive) {
                 context.startService(intent)
             } else {
                 ContextCompat.startForegroundService(context, intent)
             }
+        }
+
+        fun updatePosition(context: Context, positionMs: Int) {
+            if (!serviceAlive) return
+            context.startService(
+                Intent(context, FloatingMiniPlayerService::class.java)
+                    .setAction(ACTION_PROGRESS)
+                    .putExtra(EXTRA_POSITION_MS, positionMs.coerceAtLeast(0)),
+            )
         }
 
         fun stop(context: Context) {
@@ -207,6 +236,9 @@ class FloatingMiniPlayerService : LifecycleService() {
     private var expanded by mutableStateOf(false)
     private var showTranslation by mutableStateOf(false)
     private var playbackMode by mutableIntStateOf(0)
+    private var openMode by mutableStateOf("search")
+    private var openTrackId by mutableStateOf("")
+    private var openPlaylistId by mutableStateOf(0L)
 
     private var coverX = 0
     private var coverY = 0
@@ -253,6 +285,12 @@ class FloatingMiniPlayerService : LifecycleService() {
             return START_NOT_STICKY
         }
 
+        if (intent?.action == ACTION_PROGRESS) {
+            if (intent.hasExtra(EXTRA_POSITION_MS)) {
+                positionMs = intent.getIntExtra(EXTRA_POSITION_MS, positionMs).coerceAtLeast(0)
+            }
+            return START_NOT_STICKY
+        }
         if (intent?.action == ACTION_UPDATE) applyUpdate(intent)
         startAsForegroundService()
         ensureCoverWindow()
@@ -293,6 +331,9 @@ class FloatingMiniPlayerService : LifecycleService() {
         if (intent.hasExtra(EXTRA_PLAYBACK_MODE)) {
             playbackMode = intent.getIntExtra(EXTRA_PLAYBACK_MODE, playbackMode).coerceIn(0, 2)
         }
+        if (intent.hasExtra(EXTRA_OPEN_MODE)) openMode = intent.getStringExtra(EXTRA_OPEN_MODE).orEmpty()
+        if (intent.hasExtra(EXTRA_OPEN_TRACK_ID)) openTrackId = intent.getStringExtra(EXTRA_OPEN_TRACK_ID).orEmpty()
+        if (intent.hasExtra(EXTRA_OPEN_PLAYLIST_ID)) openPlaylistId = intent.getLongExtra(EXTRA_OPEN_PLAYLIST_ID, 0L)
     }
 
     private fun startAsForegroundService() {
@@ -439,6 +480,7 @@ class FloatingMiniPlayerService : LifecycleService() {
                     onClose = { closePlayer() },
                     onTogglePlaybackMode = { sendCommand(this@FloatingMiniPlayerService, COMMAND_TOGGLE_PLAYBACK_MODE) },
                     playbackMode = playbackMode,
+                    onOpenApp = { openAppAndLocateSong() },
                     onDrag = { dx, dy -> moveBy(dx, dy) },
                 )
             }
@@ -457,9 +499,18 @@ class FloatingMiniPlayerService : LifecycleService() {
     private fun syncLyricsWindow() {
         val wm = windowManager ?: return
         if (!expanded) {
-            lyricsView?.let { runCatching { wm.removeView(it) } }
-            lyricsView = null
-            lyricsParams = null
+            // Keep the ComposeView attached and composed while collapsed. Removing/re-adding the
+            // application overlay caused visible flashes during rapid state updates.
+            lyricsView?.let { view ->
+                view.visibility = View.GONE
+                lyricsParams?.let { params ->
+                    params.width = 1
+                    params.height = 1
+                    params.x = -dp(2)
+                    params.y = -dp(2)
+                    runCatching { wm.updateViewLayout(view, params) }
+                }
+            }
             return
         }
         if (lyricsView == null) {
@@ -474,7 +525,7 @@ class FloatingMiniPlayerService : LifecycleService() {
                         positionMs = positionMs,
                         durationMs = durationMs,
                         onToggleTranslation = {
-                            showTranslation = !showTranslation
+                            // Activity owns the selected lyric language; only send the request here.
                             sendCommand(this@FloatingMiniPlayerService, COMMAND_TOGGLE_TRANSLATION)
                         },
                         onSeek = { seekMs ->
@@ -495,6 +546,15 @@ class FloatingMiniPlayerService : LifecycleService() {
             wm.addView(view, params)
             lyricsView = view
             lyricsParams = params
+        } else {
+            lyricsView?.visibility = View.VISIBLE
+            lyricsParams?.let { params ->
+                params.width = lyricsWidthPx()
+                params.height = dp(64)
+                params.x = coverX - dp(14) - lyricsWidthPx()
+                params.y = coverY + dp(2)
+                lyricsView?.let { view -> runCatching { wm.updateViewLayout(view, params) } }
+            }
         }
     }
 
@@ -515,10 +575,22 @@ class FloatingMiniPlayerService : LifecycleService() {
     }
 
     private fun toggleExpanded() {
-        expanded = !expanded
-        syncLyricsWindow()
-        updateWindowPositions()
+        // Activity owns expanded/collapsed state; optimistically mutating service state here
+        // created a race with the Activity update and could flash the lyrics window.
         sendCommand(this, COMMAND_TOGGLE_DETAILS)
+    }
+
+    private fun openAppAndLocateSong() {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            putExtra(EXTRA_OPEN_APP_AND_LOCATE, true)
+            putExtra(EXTRA_OPEN_MODE, openMode)
+            putExtra(EXTRA_OPEN_TRACK_ID, openTrackId)
+            putExtra(EXTRA_OPEN_PLAYLIST_ID, openPlaylistId)
+            putExtra(EXTRA_TITLE, title)
+            putExtra(EXTRA_ARTIST, artist)
+        }
+        runCatching { startActivity(intent) }
     }
 
     private fun closePlayer() {
@@ -551,6 +623,7 @@ private fun OverlayCoverUi(
     onClose: () -> Unit,
     onTogglePlaybackMode: () -> Unit,
     playbackMode: Int,
+    onOpenApp: () -> Unit,
     onDrag: (Float, Float) -> Unit,
 ) {
     Column(
@@ -576,6 +649,29 @@ private fun OverlayCoverUi(
                         onDoubleTap = { onClose() },
                         onLongPress = { onLongPress() },
                     )
+                }
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        var initialDistance = 0f
+                        var hasOpened = false
+                        do {
+                            val event = awaitPointerEvent()
+                            val pressed = event.changes.filter { it.pressed }
+                            if (pressed.size >= 2) {
+                                val first = pressed[0].position
+                                val second = pressed[1].position
+                                val dx = first.x - second.x
+                                val dy = first.y - second.y
+                                val distance = sqrt(dx * dx + dy * dy)
+                                if (initialDistance == 0f) initialDistance = distance.coerceAtLeast(1f)
+                                if (!hasOpened && distance >= initialDistance * 1.24f) {
+                                    hasOpened = true
+                                    onOpenApp()
+                                }
+                                event.changes.forEach { it.consume() }
+                            }
+                        } while (event.changes.any { it.pressed })
+                    }
                 },
         ) {
             AsyncImage(
@@ -605,7 +701,18 @@ private fun OverlayCoverUi(
                         contentDescription = "当前播放模式：" + listOf("顺序播放", "乱序播放", "单曲循环")[playbackMode] + "，点击切换"
                     },
                 contentAlignment = Alignment.Center,
-            ) { OverlayPlaybackModeGlyph(playbackMode) }
+            ) {
+                Icon(
+                    imageVector = when (playbackMode) {
+                        1 -> Icons.Filled.Shuffle
+                        2 -> Icons.Filled.RepeatOne
+                        else -> Icons.Filled.PlaylistPlay
+                    },
+                    contentDescription = null,
+                    tint = Color(0xFF9FF0C9),
+                    modifier = Modifier.size(15.dp),
+                )
+            }
             Text(
                 text = formatMiniTime(positionMs) + "/" + formatMiniTime(durationMs),
                 modifier = Modifier.weight(1f),
@@ -627,39 +734,6 @@ private fun OverlayCoverUi(
                 OverlayPlayGlyph(isPlaying = isPlaying, isLoading = isLoading)
             }
         }
-    }
-}
-
-@Composable
-private fun OverlayPlaybackModeGlyph(mode: Int) {
-    Box(modifier = Modifier.size(18.dp), contentAlignment = Alignment.Center) {
-        Canvas(modifier = Modifier.size(15.dp)) {
-            val tint = Color(0xFF9FF0C9)
-            val stroke = 1.5.dp.toPx()
-            when (mode) {
-                1 -> {
-                    drawLine(tint, Offset(size.width * 0.12f, size.height * 0.25f), Offset(size.width * 0.82f, size.height * 0.75f), stroke, cap = StrokeCap.Round)
-                    drawLine(tint, Offset(size.width * 0.12f, size.height * 0.75f), Offset(size.width * 0.82f, size.height * 0.25f), stroke, cap = StrokeCap.Round)
-                    drawLine(tint, Offset(size.width * 0.62f, size.height * 0.24f), Offset(size.width * 0.83f, size.height * 0.25f), stroke, cap = StrokeCap.Round)
-                    drawLine(tint, Offset(size.width * 0.82f, size.height * 0.25f), Offset(size.width * 0.77f, size.height * 0.45f), stroke, cap = StrokeCap.Round)
-                    drawLine(tint, Offset(size.width * 0.62f, size.height * 0.76f), Offset(size.width * 0.83f, size.height * 0.75f), stroke, cap = StrokeCap.Round)
-                    drawLine(tint, Offset(size.width * 0.82f, size.height * 0.75f), Offset(size.width * 0.77f, size.height * 0.55f), stroke, cap = StrokeCap.Round)
-                }
-                2 -> {
-                    drawArc(tint, 35f, 285f, false, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke))
-                    drawLine(tint, Offset(size.width * 0.77f, size.height * 0.12f), Offset(size.width * 0.90f, size.height * 0.34f), stroke, cap = StrokeCap.Round)
-                    drawLine(tint, Offset(size.width * 0.90f, size.height * 0.34f), Offset(size.width * 0.66f, size.height * 0.32f), stroke, cap = StrokeCap.Round)
-                }
-                else -> {
-                    drawLine(tint, Offset(size.width * 0.12f, size.height * 0.25f), Offset(size.width * 0.58f, size.height * 0.25f), stroke, cap = StrokeCap.Round)
-                    drawLine(tint, Offset(size.width * 0.12f, size.height * 0.50f), Offset(size.width * 0.58f, size.height * 0.50f), stroke, cap = StrokeCap.Round)
-                    drawLine(tint, Offset(size.width * 0.12f, size.height * 0.75f), Offset(size.width * 0.58f, size.height * 0.75f), stroke, cap = StrokeCap.Round)
-                    drawLine(tint, Offset(size.width * 0.58f, size.height * 0.25f), Offset(size.width * 0.85f, size.height * 0.50f), stroke, cap = StrokeCap.Round)
-                    drawLine(tint, Offset(size.width * 0.85f, size.height * 0.50f), Offset(size.width * 0.58f, size.height * 0.75f), stroke, cap = StrokeCap.Round)
-                }
-            }
-        }
-        if (mode == 2) Text("1", color = Color(0xFF9FF0C9), fontSize = 8.sp, fontWeight = FontWeight.Bold)
     }
 }
 
