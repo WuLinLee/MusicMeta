@@ -210,6 +210,13 @@ class FloatingMiniPlayerService : LifecycleService() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val progressTicker = object : Runnable {
         override fun run() {
+            if (!Settings.canDrawOverlays(this@FloatingMiniPlayerService)) {
+                sendCommand(this@FloatingMiniPlayerService, COMMAND_CLOSE)
+                removeOverlayViews()
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+                return
+            }
             if (isPlaying && durationMs > 0) {
                 positionMs = (positionMs + 300).coerceAtMost(durationMs)
                 if (positionMs >= durationMs) isPlaying = false
@@ -232,6 +239,7 @@ class FloatingMiniPlayerService : LifecycleService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
         if (intent?.action == ACTION_STOP || !Settings.canDrawOverlays(this)) {
+            sendCommand(this, COMMAND_CLOSE)
             removeOverlayViews()
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
