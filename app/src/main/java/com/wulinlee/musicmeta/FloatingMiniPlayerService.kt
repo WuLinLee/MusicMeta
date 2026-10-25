@@ -368,7 +368,7 @@ class FloatingMiniPlayerService : LifecycleService() {
         } else {
             val groupWidth = groupWidthPx()
             coverX = (displayWidth - groupWidth) / 2 + groupWidth - dp(64)
-            coverY = (displayHeight - dp(124)).coerceAtLeast(dp(24))
+            coverY = (displayHeight - dp(106)).coerceAtLeast(dp(24))
         }
         initializedPosition = true
         clampPosition()
@@ -378,7 +378,7 @@ class FloatingMiniPlayerService : LifecycleService() {
         val minimumX = lyricsWidthPx() + dp(14)
         val maximumX = (displayWidth - dp(8) - dp(64)).coerceAtLeast(minimumX)
         coverX = coverX.coerceIn(minimumX.coerceAtMost(maximumX), maximumX)
-        val maximumY = (displayHeight - dp(124)).coerceAtLeast(dp(24))
+        val maximumY = (displayHeight - dp(106)).coerceAtLeast(dp(24))
         coverY = coverY.coerceIn(dp(24), maximumY)
     }
 
@@ -480,7 +480,7 @@ class FloatingMiniPlayerService : LifecycleService() {
                 lyricsWidthPx(),
                 dp(64),
                 coverX - dp(14) - lyricsWidthPx(),
-                coverY + dp(20),
+                coverY + dp(2),
             )
             wm.addView(view, params)
             lyricsView = view
@@ -498,7 +498,7 @@ class FloatingMiniPlayerService : LifecycleService() {
         }
         lyricsParams?.let { params ->
             params.x = coverX - dp(14) - lyricsWidthPx()
-            params.y = coverY + dp(20)
+            params.y = coverY + dp(2)
             params.width = lyricsWidthPx()
             lyricsView?.let { view -> runCatching { wm.updateViewLayout(view, params) } }
         }
@@ -547,19 +547,6 @@ private fun OverlayCoverUi(
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         Box(
-            modifier = Modifier.fillMaxWidth().height(18.dp),
-            contentAlignment = Alignment.CenterEnd,
-        ) {
-            Box(
-                modifier = Modifier.size(18.dp)
-                    .clickable { onClose() }
-                    .semantics { contentDescription = "关闭迷你播放器" },
-                contentAlignment = Alignment.Center,
-            ) {
-                OverlayCloseGlyph()
-            }
-        }
-        Box(
             modifier = Modifier
                 .size(64.dp)
                 .clip(RoundedCornerShape(18.dp))
@@ -574,14 +561,14 @@ private fun OverlayCoverUi(
                 .pointerInput(Unit) {
                     detectTapGestures(
                         onTap = { onTogglePlay() },
-                        onDoubleTap = { onLongPress() },
+                        onDoubleTap = { onClose() },
                         onLongPress = { onLongPress() },
                     )
                 },
         ) {
             AsyncImage(
                 model = coverUrl.takeIf { it.isNotBlank() },
-                contentDescription = "单击播放 / 暂停，长按或双击展开 / 收起歌词，拖动移动播放器",
+                contentDescription = "单击播放 / 暂停，双击关闭悬浮窗，长按展开 / 收起歌词，拖动移动播放器",
                 placeholder = painterResource(id = R.drawable.musicmeta_cover),
                 error = painterResource(id = R.drawable.musicmeta_cover),
                 modifier = Modifier.fillMaxSize(),
@@ -757,17 +744,6 @@ private fun OverlaySkipGlyph(previous: Boolean) {
             close()
         }
         drawPath(path, tint)
-    }
-}
-
-@Composable
-private fun OverlayCloseGlyph() {
-    Canvas(modifier = Modifier.size(12.dp)) {
-        val stroke = 1.8.dp.toPx()
-        drawLine(Color(0xCC101512), Offset(size.width * 0.2f, size.height * 0.2f), Offset(size.width * 0.8f, size.height * 0.8f), stroke + 1.dp.toPx(), cap = StrokeCap.Round)
-        drawLine(Color(0xCC101512), Offset(size.width * 0.8f, size.height * 0.2f), Offset(size.width * 0.2f, size.height * 0.8f), stroke + 1.dp.toPx(), cap = StrokeCap.Round)
-        drawLine(Color(0xFFF4F7F5), Offset(size.width * 0.2f, size.height * 0.2f), Offset(size.width * 0.8f, size.height * 0.8f), stroke, cap = StrokeCap.Round)
-        drawLine(Color(0xFFF4F7F5), Offset(size.width * 0.8f, size.height * 0.2f), Offset(size.width * 0.2f, size.height * 0.8f), stroke, cap = StrokeCap.Round)
     }
 }
 

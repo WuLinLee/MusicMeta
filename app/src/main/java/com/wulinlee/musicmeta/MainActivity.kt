@@ -201,7 +201,7 @@ private fun MusicMetaApp() {
                 .remove("destination_tree_uri")
                 .putString("quality", "320k")
                 .putString("source_platform", "wyy")
-                .putString("naming_format", "song_title")
+                .putString("naming_format", "song_artist")
                 .putString("folder_rule", "none")
                 .putBoolean("download_lyrics", false)
                 .putBoolean("write_audio_tags", true)
@@ -210,6 +210,17 @@ private fun MusicMetaApp() {
                 .putBoolean("save_word_by_word_lyrics", true)
                 .putInt("download_defaults_version", 4)
                 .apply()
+        }
+    }
+    remember(folderPreferences) {
+        if (!folderPreferences.getBoolean("v1_12_naming_default_migrated", false)) {
+            val savedNamingFormat = folderPreferences.getString("naming_format", null)
+            val editor = folderPreferences.edit()
+                .putBoolean("v1_12_naming_default_migrated", true)
+            if (savedNamingFormat.isNullOrBlank() || savedNamingFormat == "song_title") {
+                editor.putString("naming_format", "song_artist")
+            }
+            editor.apply()
         }
     }
     var destinationTreeUri by remember { mutableStateOf(loadSavedDestination(context)) }
@@ -327,6 +338,12 @@ private fun MusicMetaApp() {
     var isDownloading by remember { mutableStateOf(false) }
     var verificationOpen by remember { mutableStateOf(false) }
     var floatingOverlayEnabled by remember { mutableStateOf(folderPreferences.getBoolean("floating_overlay_enabled", false)) }
+    var floatingLyricsExpandedByDefault by remember {
+        mutableStateOf(folderPreferences.getBoolean("floating_lyrics_expanded_by_default", true))
+    }
+    var floatingLyricsTranslatedByDefault by remember {
+        mutableStateOf(folderPreferences.getBoolean("floating_lyrics_translated_by_default", true))
+    }
     var previewSong by remember { mutableStateOf<FlacSiteSong?>(null) }
     var previewCurrentTrack by remember { mutableStateOf<MusicTrack?>(null) }
     var previewCurrentPlaylistId by remember { mutableStateOf<Long?>(null) }
@@ -338,8 +355,8 @@ private fun MusicMetaApp() {
     var isPreviewLoading by remember { mutableStateOf(false) }
     var isPreviewPlaying by remember { mutableStateOf(false) }
     var isPreviewLyricsLoading by remember { mutableStateOf(false) }
-    var showPreviewDetails by remember { mutableStateOf(false) }
-    var showTranslatedPreviewLyric by remember { mutableStateOf(false) }
+    var showPreviewDetails by remember { mutableStateOf(floatingLyricsExpandedByDefault) }
+    var showTranslatedPreviewLyric by remember { mutableStateOf(floatingLyricsTranslatedByDefault) }
     var previewPositionMs by remember { mutableStateOf(0) }
     var previewDurationMs by remember { mutableStateOf(0) }
     var miniPlayerOffset by remember { mutableStateOf(Offset.Zero) }
@@ -771,8 +788,8 @@ private fun MusicMetaApp() {
         isPreviewLoading = false
         isPreviewPlaying = false
         isPreviewLyricsLoading = false
-        showPreviewDetails = false
-        showTranslatedPreviewLyric = false
+        showPreviewDetails = floatingLyricsExpandedByDefault
+        showTranslatedPreviewLyric = floatingLyricsTranslatedByDefault
         previewPositionMs = 0
         previewDurationMs = 0
         miniPlayerOffset = Offset.Zero
@@ -817,10 +834,9 @@ private fun MusicMetaApp() {
             previewCoverUrl = song.coverUrl
             previewLyrics = ""
             previewTranslatedLyrics = ""
-            showTranslatedPreviewLyric = false
+            showTranslatedPreviewLyric = floatingLyricsTranslatedByDefault
             previewPositionMs = 0
             previewDurationMs = 0
-            showPreviewDetails = false
             miniPlayerOffset = Offset.Zero
             isPreviewPlaying = false
             isPreviewLoading = true
@@ -956,7 +972,7 @@ private fun MusicMetaApp() {
                         ) {
                             previewLyrics = lyrics.original.trim()
                             previewTranslatedLyrics = lyrics.translated.trim()
-                            showTranslatedPreviewLyric = false
+                            showTranslatedPreviewLyric = floatingLyricsTranslatedByDefault
                             isPreviewLyricsLoading = false
                         }
                     }
@@ -1455,14 +1471,23 @@ private fun MusicMetaApp() {
         topBar = {
             CenterAlignedTopAppBar(
                 navigationIcon = {
-                    IconButton(
-                        onClick = copyErrorReport,
-                        enabled = lastErrorReport != null,
-                        modifier = Modifier.padding(start = 4.dp).size(42.dp).semantics {
-                            contentDescription = "复制错误报告"
-                        },
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(0.dp),
                     ) {
-                        CopyGlyph(enabled = lastErrorReport != null)
+                        IconButton(
+                            onClick = copyErrorReport,
+                            enabled = lastErrorReport != null,
+                            modifier = Modifier.padding(start = 4.dp).size(38.dp).semantics {
+                                contentDescription = "复制错误报告"
+                            },
+                        ) {
+                            ErrorReportGlyph(enabled = lastErrorReport != null)
+                        }
+                        IconButton(
+                            onClick = { verificationOpen = true },
+                            modifier = Modifier.size(38.dp).semantics { contentDescription = "下载站验证" },
+                        ) { WebpageGlyph() }
                     }
                 },
                 title = {
@@ -1511,10 +1536,6 @@ private fun MusicMetaApp() {
                         enabled = !busy,
                         modifier = Modifier.size(38.dp).semantics { contentDescription = "下载设置" },
                     ) { SettingsGlyph() }
-                    IconButton(
-                        onClick = { verificationOpen = true },
-                        modifier = Modifier.size(38.dp).semantics { contentDescription = "下载站验证" },
-                    ) { WebpageGlyph() }
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
                     containerColor = PageBackground,
@@ -1591,6 +1612,13 @@ private fun MusicMetaApp() {
                             horizontalArrangement = Arrangement.spacedBy(1.dp),
                         ) {
                             Text("每页", color = SubInk, fontSize = 9.sp)
+                            Text(
+                                "$currentPage/$pageCount页",
+                                modifier = Modifier.padding(start = 3.dp, end = 2.dp),
+                                color = Accent,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
                             listOf(25, 50, 100).forEach { count ->
                                 TextButton(
                                     onClick = {
@@ -2584,6 +2612,31 @@ private fun MusicMetaApp() {
                         FilterChip(selected = selectedQuality == "320k", onClick = { setQuality("320k") }, label = { Text("MP3 320k") })
                         FilterChip(selected = selectedQuality == "FLAC", onClick = { setQuality("FLAC") }, label = { Text("FLAC") })
                     }
+                    Text("悬浮窗默认行为", fontWeight = FontWeight.SemiBold, color = Ink)
+                    DownloadSettingSwitchRow(
+                        title = "悬浮窗左栏默认展开",
+                        summary = "默认显示歌词栏；播放下一首时保留当前展开状态",
+                        checked = floatingLyricsExpandedByDefault,
+                        onCheckedChange = {
+                            floatingLyricsExpandedByDefault = it
+                            showPreviewDetails = it
+                            folderPreferences.edit()
+                                .putBoolean("floating_lyrics_expanded_by_default", it)
+                                .apply()
+                        },
+                    )
+                    DownloadSettingSwitchRow(
+                        title = "悬浮窗左栏默认显示翻译歌词",
+                        summary = "新曲目优先显示译文；以音源实际提供的歌词为准",
+                        checked = floatingLyricsTranslatedByDefault,
+                        onCheckedChange = {
+                            floatingLyricsTranslatedByDefault = it
+                            showTranslatedPreviewLyric = it
+                            folderPreferences.edit()
+                                .putBoolean("floating_lyrics_translated_by_default", it)
+                                .apply()
+                        },
+                    )
                     Text("下载目录", fontWeight = FontWeight.SemiBold, color = Ink)
                     Text(destinationFolderName, color = SubInk, fontSize = 12.sp)
                     OutlinedButton(
@@ -2593,8 +2646,8 @@ private fun MusicMetaApp() {
                     ) { Text("选择下载目录") }
                     Text("文件命名", fontWeight = FontWeight.SemiBold, color = Ink)
                     listOf(
-                        "song_title" to "歌曲名（默认）",
-                        "song_artist" to "歌曲名 - 艺术家",
+                        "song_title" to "仅歌曲名",
+                        "song_artist" to "歌曲名 - 艺术家（默认）",
                         "artist_song" to "艺术家 - 歌曲名",
                         "song_artist_quality" to "歌曲名 - 艺术家 [音质]",
                         "artist_song_quality" to "艺术家 - 歌曲名 [音质]",
@@ -3251,6 +3304,30 @@ private fun CopyGlyph(enabled: Boolean = true) {
         drawRoundRect(color = tint, topLeft = Offset(size.width * 0.12f, size.height * 0.30f),
             size = androidx.compose.ui.geometry.Size(size.width * 0.56f, size.height * 0.62f),
             cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()), style = Stroke(width = stroke))
+    }
+}
+
+@Composable
+private fun ErrorReportGlyph(enabled: Boolean = true) {
+    Canvas(modifier = Modifier.size(19.dp)) {
+        val tint = if (enabled) Accent else SubInk
+        val stroke = 1.7.dp.toPx()
+        drawCircle(
+            color = tint,
+            radius = size.minDimension * 0.39f,
+            style = Stroke(width = stroke),
+        )
+        drawLine(
+            color = tint,
+            start = Offset(size.width / 2f, size.height * 0.28f),
+            end = Offset(size.width / 2f, size.height * 0.57f),
+            strokeWidth = stroke,
+        )
+        drawCircle(
+            color = tint,
+            radius = 1.dp.toPx(),
+            center = Offset(size.width / 2f, size.height * 0.72f),
+        )
     }
 }
 
