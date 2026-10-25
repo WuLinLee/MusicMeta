@@ -1270,15 +1270,46 @@ private fun MusicMetaApp() {
                     }
                 },
                 title = {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(1.dp),
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Text("音笺", fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
-                        Text("MUSIC META", color = SubInk, fontSize = 9.sp, letterSpacing = 2.sp)
+                        Image(
+                            painter = painterResource(id = R.drawable.musicmeta_cover),
+                            contentDescription = "音笺应用图标",
+                            modifier = Modifier.size(44.dp).clip(RoundedCornerShape(9.dp)),
+                            contentScale = ContentScale.Crop,
+                        )
+                        Column(horizontalAlignment = Alignment.Start) {
+                            Text("音笺", fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
+                            Text("MUSIC META", color = SubInk, fontSize = 9.sp, letterSpacing = 2.sp)
+                        }
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = {
+                            if (floatingOverlayEnabled) {
+                                floatingOverlayEnabled = false
+                                folderPreferences.edit().putBoolean("floating_overlay_enabled", false).apply()
+                                FloatingMiniPlayerService.stop(context)
+                                Toast.makeText(context, "已关闭跨应用悬浮窗。", Toast.LENGTH_SHORT).show()
+                            } else if (Settings.canDrawOverlays(context)) {
+                                floatingOverlayEnabled = true
+                                folderPreferences.edit().putBoolean("floating_overlay_enabled", true).apply()
+                                if (previewSong == null) {
+                                    Toast.makeText(context, "悬浮窗已开启；播放歌曲试听后会显示。", Toast.LENGTH_LONG).show()
+                                }
+                            } else {
+                                overlayPermissionLauncher.launch(
+                                    Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}")),
+                                )
+                            }
+                        },
+                        modifier = Modifier.size(38.dp).semantics {
+                            contentDescription = if (floatingOverlayEnabled) "关闭跨应用悬浮窗" else "开启跨应用悬浮窗"
+                        },
+                    ) { FloatingWindowGlyph(enabled = floatingOverlayEnabled) }
                     IconButton(
                         onClick = { showDownloadSettings = true },
                         enabled = !busy,
@@ -2949,6 +2980,29 @@ private fun PageArrowGlyph(pointsLeft: Boolean, tint: Color) {
             end = Offset(headX, size.height * 0.75f),
             strokeWidth = stroke,
             cap = StrokeCap.Round,
+        )
+    }
+}
+
+@Composable
+private fun FloatingWindowGlyph(enabled: Boolean) {
+    Canvas(modifier = Modifier.size(22.dp)) {
+        val tint = if (enabled) Accent else SubInk
+        val stroke = 1.7.dp.toPx()
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(size.width * 0.10f, size.height * 0.18f),
+            size = androidx.compose.ui.geometry.Size(size.width * 0.80f, size.height * 0.64f),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx()),
+            style = Stroke(width = stroke),
+        )
+        drawLine(tint, Offset(size.width * 0.18f, size.height * 0.40f), Offset(size.width * 0.82f, size.height * 0.40f), stroke, cap = StrokeCap.Round)
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(size.width * 0.45f, size.height * 0.48f),
+            size = androidx.compose.ui.geometry.Size(size.width * 0.43f, size.height * 0.39f),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()),
+            style = Stroke(width = stroke),
         )
     }
 }
