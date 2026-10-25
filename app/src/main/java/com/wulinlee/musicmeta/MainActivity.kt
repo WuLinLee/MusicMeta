@@ -26,6 +26,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -81,6 +83,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -90,6 +93,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.viewinterop.AndroidView
@@ -97,6 +101,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.documentfile.provider.DocumentFile
 import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -142,6 +147,29 @@ class MainActivity : ComponentActivity() {
 private fun MusicMetaApp() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
+    val imeVisible = WindowInsets.isImeVisible
+    var jumpFieldFocused by remember { mutableStateOf(false) }
+    var filterFieldFocused by remember { mutableStateOf(false) }
+    var sourceQueryFieldFocused by remember { mutableStateOf(false) }
+    LaunchedEffect(jumpFieldFocused, imeVisible) {
+        if (jumpFieldFocused && !imeVisible) {
+            delay(800L)
+            if (!WindowInsets.isImeVisible) focusManager.clearFocus()
+        }
+    }
+    LaunchedEffect(filterFieldFocused, imeVisible) {
+        if (filterFieldFocused && !imeVisible) {
+            delay(800L)
+            if (!WindowInsets.isImeVisible) focusManager.clearFocus()
+        }
+    }
+    LaunchedEffect(sourceQueryFieldFocused, imeVisible) {
+        if (sourceQueryFieldFocused && !imeVisible) {
+            delay(800L)
+            if (!WindowInsets.isImeVisible) focusManager.clearFocus()
+        }
+    }
     val folderPreferences = remember { context.getSharedPreferences("music_meta_settings", Context.MODE_PRIVATE) }
     remember(folderPreferences) {
         if (folderPreferences.getInt("download_defaults_version", 0) < 4) {
@@ -164,15 +192,21 @@ private fun MusicMetaApp() {
     val playlistProvider = remember { PublicPlaylistProvider() }
     val metadataProvider = remember { MetadataProvider() }
     val flacProvider = remember { FlacMusicProvider() }
-    val listState = rememberLazyListState()
-    var currentPage by remember { mutableStateOf(1) }
+    val publicListState = rememberLazyListState()
+    val likedListState = rememberLazyListState()
+    var inputMode by remember { mutableStateOf(if (folderPreferences.getString("input_mode", "playlist") == "liked") "liked" else "playlist") }
+    val listState = if (inputMode == "liked") likedListState else publicListState
+    var publicCurrentPage by remember { mutableStateOf(1) }
+    var likedCurrentPage by remember { mutableStateOf(1) }
+    val currentPage = if (inputMode == "liked") likedCurrentPage else publicCurrentPage
+    val setCurrentPage: (Int) -> Unit = { value ->
+        if (inputMode == "liked") likedCurrentPage = value else publicCurrentPage = value
+    }
     val savedPageSize = folderPreferences.getInt("songs_per_page", 25)
     var pageSize by remember { mutableStateOf(if (savedPageSize in listOf(25, 50, 100)) savedPageSize else 25) }
     var jumpPageInput by remember { mutableStateOf("1") }
     var pageCache by remember { mutableStateOf<Map<String, List<MusicTrack>>>(emptyMap()) }
     var isLoadingPage by remember { mutableStateOf(false) }
-
-    var inputMode by remember { mutableStateOf(if (folderPreferences.getString("input_mode", "playlist") == "liked") "liked" else "playlist") }
     // Keep the two sources independent: a public playlist ID is not the same as
     // the user ID used to fetch a liked-song list, and both lists remain cached.
     var publicPlaylistInput by remember { mutableStateOf(folderPreferences.getString("last_public_playlist_input", "") ?: "") }
@@ -196,7 +230,7 @@ private fun MusicMetaApp() {
     }
     val setFilterText: (String) -> Unit = { value ->
         if (inputMode == "liked") likedFilterText = value else publicFilterText = value
-        currentPage = 1
+        setCurrentPage(1)
         jumpPageInput = "1"
     }
     var isSyncing by remember { mutableStateOf(false) }
@@ -221,6 +255,8 @@ private fun MusicMetaApp() {
         folderPreferences.edit().putString("quality", value).apply()
     }
     var flacResults by remember { mutableStateOf<List<FlacSiteSong>>(emptyList()) }
+    var manualSearchQuery by remember { mutableStateOf("") }
+    var manualSourceSearchActive by remember { mutableStateOf(false) }
     var isSearchingFlac by remember { mutableStateOf(false) }
     var isResolvingUrl by remember { mutableStateOf(false) }
     var isDownloading by remember { mutableStateOf(false) }
@@ -271,8 +307,9 @@ private fun MusicMetaApp() {
                     if (inputMode == "liked") likedPlaylist = loaded else publicPlaylist = loaded
                     selectedTrack = null
                     flacResults = emptyList()
-                    currentPage = 1
+                    setCurrentPage(1)
                     jumpPageInput = "1"
+                    manualSourceSearchActive = false
                     pageCache = emptyMap()
                     setFilterText("")
                     scope.launch { listState.scrollToItem(0) }
@@ -293,6 +330,7 @@ private fun MusicMetaApp() {
             status = "当前任务还没完成，请稍候。"
         } else {
             selectedTrack = track
+            manualSourceSearchActive = false
             val keyword = listOf(track.title, track.artists).filter { it.isNotBlank() }.joinToString(" ")
             flacResults = emptyList()
             isSearchingFlac = true
@@ -323,6 +361,54 @@ private fun MusicMetaApp() {
                     val detail = error.message?.takeIf { it.isNotBlank() } ?: "下载站暂不可用"
                     status = "搜索失败：" + detail
                     captureError("搜索音源", error)
+                    if (
+                        detail.contains("验证") ||
+                        detail.contains("468") ||
+                        detail.contains("challenge", ignoreCase = true) ||
+                        detail.contains("网页", ignoreCase = true)
+                    ) {
+                        verificationOpen = true
+                    }
+                } finally {
+                    isSearchingFlac = false
+                }
+            }
+        }
+    }
+
+    val searchSourceKeyword: () -> Unit = {
+        val keyword = manualSearchQuery.trim()
+        if (keyword.isBlank()) {
+            status = "请输入要搜索的歌名或歌手。"
+        } else if (busy) {
+            status = "当前任务还没完成，请稍候。"
+        } else {
+            selectedTrack = null
+            manualSourceSearchActive = true
+            flacResults = emptyList()
+            isSearchingFlac = true
+            status = "正在搜索音源《" + keyword + "》……"
+            scope.launch {
+                try {
+                    val cookie = CookieManager.getInstance().getCookie(DEFAULT_SOURCE)
+                    val results = withContext(Dispatchers.IO) {
+                        flacProvider.search(
+                            keyword = keyword,
+                            platform = flacPlatform,
+                            cookie = cookie,
+                            userAgent = fallbackUserAgent,
+                        )
+                    }
+                    flacResults = results.take(8)
+                    status = if (flacResults.isEmpty()) {
+                        "没有找到匹配音源。可以切换音源平台或检查关键词后重试。"
+                    } else {
+                        "找到 " + flacResults.size + " 个候选版本，请核对歌手和专辑后下载。"
+                    }
+                } catch (error: Exception) {
+                    val detail = error.message?.takeIf { it.isNotBlank() } ?: "下载站暂不可用"
+                    status = "搜索失败：" + detail
+                    captureError("直接搜索音源", error)
                     if (
                         detail.contains("验证") ||
                         detail.contains("468") ||
@@ -528,6 +614,56 @@ private fun MusicMetaApp() {
     }
     val latestWebsiteDownload by rememberUpdatedState(onWebsiteDownload)
 
+    val downloadManualSearchResult: (FlacSiteSong) -> Unit = { song ->
+        if (isResolvingUrl || isDownloading) {
+            status = "当前下载任务还没完成，请稍候。"
+        } else {
+            isResolvingUrl = true
+            status = "正在解析《" + song.title + "》的下载地址……"
+            scope.launch {
+                try {
+                    val cookie = CookieManager.getInstance().getCookie(DEFAULT_SOURCE)
+                    val (directUrl, usedGdStudioFallback) = withContext(Dispatchers.IO) {
+                        flacProvider.resolveDownloadUrlWithFallback(
+                            song = song,
+                            format = if (selectedQuality == "FLAC") "flac" else "mp3",
+                            bitrate = when (selectedQuality) {
+                                "128k" -> "128"
+                                "320k" -> "320"
+                                else -> "2000"
+                            },
+                            cookie = cookie,
+                            userAgent = fallbackUserAgent,
+                        )
+                    }
+                    if (usedGdStudioFallback) {
+                        status = "主音源不可用，本次使用 GD Studio 兜底下载地址。"
+                    }
+                    isResolvingUrl = false
+                    manualSourceSearchActive = false
+                    latestDownloadAndSave(
+                        directUrl,
+                        fallbackUserAgent,
+                        null,
+                        if (selectedQuality == "FLAC") "audio/flac" else "audio/mpeg",
+                        DEFAULT_SOURCE,
+                        cookie,
+                        null,
+                    )
+                } catch (error: Exception) {
+                    val detail = error.message?.takeIf { it.isNotBlank() } ?: "下载站暂不可用"
+                    status = "解析下载地址失败：" + detail
+                    captureError("解析直接搜索音源", error)
+                    if (detail.contains("验证") || detail.contains("468")) {
+                        verificationOpen = true
+                    }
+                } finally {
+                    isResolvingUrl = false
+                }
+            }
+        }
+    }
+
     val pageCacheKey: (String, String, Int, Int) -> String = { mode, id, size, page ->
         "$mode:$id:$size:$page"
     }
@@ -547,16 +683,15 @@ private fun MusicMetaApp() {
         if (mode != inputMode && !busy) {
             inputMode = mode
             folderPreferences.edit().putString("input_mode", mode).apply()
-            currentPage = 1
-            jumpPageInput = "1"
+            jumpPageInput = (if (mode == "liked") likedCurrentPage else publicCurrentPage).toString()
             selectedTrack = null
             flacResults = emptyList()
+            manualSourceSearchActive = false
             status = if ((if (mode == "liked") likedPlaylist else publicPlaylist) != null) {
                 if (mode == "liked") "已切换到红心歌单。" else "已切换到公开歌单。"
             } else {
                 if (mode == "liked") "输入网易云用户 ID 同步红心歌单。" else "输入公开歌单链接或 ID 开始。"
             }
-            scope.launch { listState.animateScrollToItem(0) }
         }
     }
 
@@ -566,7 +701,7 @@ private fun MusicMetaApp() {
             val maxPage = pageCount
             val targetPage = requestedPage.coerceIn(1, maxPage)
             val pageChanged = targetPage != currentPage
-            currentPage = targetPage
+            setCurrentPage(targetPage)
             jumpPageInput = targetPage.toString()
             if (pageChanged) scope.launch { listState.animateScrollToItem(6) }
             selectedTrack = null
@@ -743,7 +878,7 @@ private fun MusicMetaApp() {
                                         if (!busy && pageSize != count) {
                                             pageSize = count
                                             folderPreferences.edit().putInt("songs_per_page", count).apply()
-                                            currentPage = 1
+                                            setCurrentPage(1)
                                             jumpPageInput = "1"
                                             selectedTrack = null
                                             flacResults = emptyList()
@@ -765,7 +900,7 @@ private fun MusicMetaApp() {
                             OutlinedTextField(
                                 value = jumpPageInput,
                                 onValueChange = { jumpPageInput = it.filter(Char::isDigit).take(5) },
-                                modifier = Modifier.width(42.dp).height(30.dp),
+                                modifier = Modifier.width(42.dp).height(30.dp).onFocusChanged { jumpFieldFocused = it.isFocused },
                                 singleLine = true,
                                 placeholder = { Text("页", fontSize = 9.sp) },
                                 shape = RoundedCornerShape(7.dp),
@@ -773,15 +908,15 @@ private fun MusicMetaApp() {
                                 keyboardActions = KeyboardActions(onDone = { jumpPageInput.toIntOrNull()?.let(requestPage) }),
                                 enabled = !busy && pageCount > 1,
                             )
-                            TextButton(
+                            IconButton(
                                 onClick = {
                                     val target = jumpPageInput.toIntOrNull()
                                     if (target == null) status = "请输入页码。" else requestPage(target)
                                 },
                                 enabled = !busy && pageCount > 1,
-                                contentPadding = PaddingValues(horizontal = 3.dp, vertical = 0.dp),
+                                modifier = Modifier.size(28.dp).semantics { contentDescription = "跳转到页码" },
                             ) {
-                                Text("跳", color = Accent, fontSize = 10.sp)
+                                EnterGlyph()
                             }
                             TextButton(
                                 onClick = {
@@ -958,7 +1093,56 @@ private fun MusicMetaApp() {
                                 Text(if (inputMode == "liked") "同步我的红心歌单" else "同步公开歌单", fontWeight = FontWeight.SemiBold)
                             }
                         }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            OutlinedTextField(
+                                value = manualSearchQuery,
+                                onValueChange = { manualSearchQuery = it },
+                                modifier = Modifier.weight(1f).onFocusChanged { sourceQueryFieldFocused = it.isFocused },
+                                singleLine = true,
+                                label = { Text("直接搜歌") },
+                                placeholder = { Text("歌名或歌手，不用先同步歌单") },
+                                shape = RoundedCornerShape(13.dp),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Search),
+                                keyboardActions = KeyboardActions(onSearch = { searchSourceKeyword() }),
+                                enabled = !busy,
+                            )
+                            OutlinedButton(
+                                onClick = { searchSourceKeyword() },
+                                enabled = !busy && manualSearchQuery.isNotBlank(),
+                                shape = RoundedCornerShape(13.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+                            ) {
+                                Text("搜歌", fontSize = 12.sp)
+                            }
+                        }
                     }
+                }
+            }
+
+            if (manualSourceSearchActive) {
+                item(key = "direct-source-results") {
+                    ManualSourceSearchPanel(
+                        title = manualSearchQuery,
+                        isSearching = isSearchingFlac,
+                        results = flacResults,
+                        platform = flacPlatform,
+                        quality = selectedQuality,
+                        isResolvingUrl = isResolvingUrl,
+                        isDownloading = isDownloading,
+                        onPlatformChange = { value ->
+                            if (flacPlatform != value) {
+                                flacPlatform = value
+                                folderPreferences.edit().putString("source_platform", value).apply()
+                                searchSourceKeyword()
+                            }
+                        },
+                        onQualityChange = setQuality,
+                        onDownload = { song -> downloadManualSearchResult(song) },
+                    )
                 }
             }
 
@@ -1082,7 +1266,7 @@ private fun MusicMetaApp() {
                             selectedTrack = null
                             flacResults = emptyList()
                         },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().onFocusChanged { filterFieldFocused = it.isFocused },
                         singleLine = true,
                         label = { Text("筛选歌曲") },
                         placeholder = { Text("按歌名或歌手查找") },
@@ -1613,6 +1797,139 @@ private fun MusicMetaApp() {
     }
 }
 
+
+@Composable
+private fun ManualSourceSearchPanel(
+    title: String,
+    isSearching: Boolean,
+    results: List<FlacSiteSong>,
+    platform: String,
+    quality: String,
+    isResolvingUrl: Boolean,
+    isDownloading: Boolean,
+    onPlatformChange: (String) -> Unit,
+    onQualityChange: (String) -> Unit,
+    onDownload: (FlacSiteSong) -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = SurfaceColor),
+    ) {
+        Column(
+            modifier = Modifier.padding(13.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("搜索结果", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                    Text(title, color = SubInk, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    FilterChip(
+                        selected = platform == "wyy",
+                        onClick = { onPlatformChange("wyy") },
+                        label = { Text("网易云", fontSize = 10.sp) },
+                        enabled = !isSearching && !isResolvingUrl && !isDownloading,
+                    )
+                    FilterChip(
+                        selected = platform == "kuwo",
+                        onClick = { onPlatformChange("kuwo") },
+                        label = { Text("酷我", fontSize = 10.sp) },
+                        enabled = !isSearching && !isResolvingUrl && !isDownloading,
+                    )
+                }
+            }
+            if (isSearching) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 13.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Accent, strokeWidth = 2.dp)
+                    Spacer(Modifier.size(8.dp))
+                    Text("正在搜索音源…", color = SubInk, fontSize = 12.sp)
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    Text("音质", color = SubInk, fontSize = 11.sp)
+                    FilterChip(
+                        selected = quality == "128k",
+                        onClick = { onQualityChange("128k") },
+                        enabled = !isResolvingUrl && !isDownloading,
+                        label = { Text("128k", fontSize = 10.sp) },
+                    )
+                    FilterChip(
+                        selected = quality == "320k",
+                        onClick = { onQualityChange("320k") },
+                        enabled = !isResolvingUrl && !isDownloading,
+                        label = { Text("320k", fontSize = 10.sp) },
+                    )
+                    FilterChip(
+                        selected = quality == "FLAC",
+                        onClick = { onQualityChange("FLAC") },
+                        enabled = !isResolvingUrl && !isDownloading,
+                        label = { Text("FLAC", fontSize = 10.sp) },
+                    )
+                }
+                if (results.isEmpty()) {
+                    Text("没有找到匹配音源，切换平台或修改关键词再试。", color = SubInk, fontSize = 12.sp)
+                } else {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 260.dp).verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(7.dp),
+                    ) {
+                        results.forEach { song ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(13.dp))
+                                    .background(PageBackground).padding(9.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                AsyncImage(
+                                    model = song.coverUrl.takeIf { it.isNotBlank() },
+                                    contentDescription = "音源封面",
+                                    modifier = Modifier.size(42.dp).clip(RoundedCornerShape(9.dp)).background(SoftAccent),
+                                )
+                                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(song.title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(
+                                        listOf(song.artist, song.album).filter { it.isNotBlank() }.joinToString(" · "),
+                                        color = SubInk, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                                    )
+                                    if (song.platform.startsWith("gd:")) {
+                                        Text("GD Studio 兜底音源", color = Accent, fontSize = 9.sp)
+                                    }
+                                }
+                                Button(
+                                    onClick = { onDownload(song) },
+                                    enabled = !isResolvingUrl && !isDownloading,
+                                    shape = RoundedCornerShape(11.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 7.dp),
+                                ) {
+                                    if (isResolvingUrl) {
+                                        CircularProgressIndicator(modifier = Modifier.size(13.dp), strokeWidth = 2.dp, color = Color.White)
+                                    } else {
+                                        Text("下载", fontSize = 11.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun DownloadSettingSwitchRow(
     title: String,
@@ -1677,6 +1994,25 @@ private fun combineLyricsWithoutLabels(
         return LrcMerger.merge(source, translated)
     }
     return listOf(source, translated).filter { it.isNotBlank() }.joinToString("\n")
+}
+
+
+@Composable
+private fun EnterGlyph() {
+    Canvas(modifier = Modifier.size(20.dp)) {
+        val stroke = 2.dp.toPx()
+        val color = Accent
+        val left = size.width * 0.18f
+        val right = size.width * 0.82f
+        val top = size.height * 0.22f
+        val cornerY = size.height * 0.58f
+        val bottom = size.height * 0.78f
+        val arrowX = size.width * 0.34f
+        drawLine(color, Offset(right, top), Offset(right, cornerY), stroke, cap = StrokeCap.Round)
+        drawLine(color, Offset(right, cornerY), Offset(left, cornerY), stroke, cap = StrokeCap.Round)
+        drawLine(color, Offset(left, cornerY), Offset(arrowX, cornerY - size.height * 0.17f), stroke, cap = StrokeCap.Round)
+        drawLine(color, Offset(left, cornerY), Offset(arrowX, bottom), stroke, cap = StrokeCap.Round)
+    }
 }
 
 @Composable
