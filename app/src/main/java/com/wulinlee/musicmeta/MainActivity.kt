@@ -1642,8 +1642,8 @@ private fun MusicMetaApp() {
             }
         }
     }
-    val activity = context as? MainActivity
-    val pendingOpenRequest = activity?.pendingOverlayOpenRequest
+    val activity = context as MainActivity
+    val pendingOpenRequest = activity.pendingOverlayOpenRequest
     LaunchedEffect(
         pendingOpenRequest?.requestId,
         inputMode,
