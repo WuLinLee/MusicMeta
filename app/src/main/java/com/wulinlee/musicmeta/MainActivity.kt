@@ -2939,15 +2939,16 @@ private fun MusicMetaApp() {
                                 .clip(RoundedCornerShape(18.dp))
                                 .background(SurfaceColor)
                                 .border(1.dp, Hairline, RoundedCornerShape(18.dp))
-                                .pointerInput(activePreviewSong) {
-                                    detectDragGestures { change, dragAmount ->
-                                        change.consume()
+                                .overlayDragGesture(
+                                    key = listOf(activePreviewSong, minDragX, maxDragX, maxDragY, showPreviewDetails),
+                                    onDrag = { dx, dy ->
                                         miniPlayerOffset = Offset(
-                                            (miniPlayerOffset.x + dragAmount.x).coerceIn(minDragX, maxDragX),
-                                            (miniPlayerOffset.y + dragAmount.y).coerceIn(-maxDragY, 0f),
+                                            (miniPlayerOffset.x + dx).coerceIn(minDragX, maxDragX),
+                                            (miniPlayerOffset.y + dy).coerceIn(-maxDragY, 0f),
                                         )
-                                    }
-                                }
+                                    },
+                                    onCircularDrag = {},
+                                )
                                 .pointerInput(activePreviewSong) {
                                     detectTapGestures(
                                         onTap = { playPreview(activePreviewSong) },
