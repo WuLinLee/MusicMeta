@@ -2183,7 +2183,7 @@ private fun SettingsGlyph() {
             drawLine(Accent, Offset(cx + dx * radius * 0.78f, cy + dy * radius * 0.78f),
                 Offset(cx + dx * radius * 1.30f, cy + dy * radius * 1.30f), stroke, cap = StrokeCap.Round)
         }
-        drawCircle(Accent, radius = radius * 0.90f, center = Offset(cx, cy), style = Stroke(strokeWidth = stroke))
+        drawCircle(Accent, radius = radius * 0.90f, center = Offset(cx, cy), style = Stroke(width = stroke))
         drawCircle(Accent, radius = radius * 0.30f, center = Offset(cx, cy))
     }
 }
@@ -2198,7 +2198,7 @@ private fun WebpageGlyph() {
         val bottom = size.height * 0.88f
         drawRoundRect(color = Accent, topLeft = Offset(left, top),
             size = androidx.compose.ui.geometry.Size(right - left, bottom - top),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx()), style = Stroke(strokeWidth = stroke))
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx()), style = Stroke(width = stroke))
         drawLine(Accent, Offset(left, size.height * 0.34f), Offset(right, size.height * 0.34f), stroke, cap = StrokeCap.Round)
         drawCircle(Accent, radius = 1.dp.toPx(), center = Offset(size.width * 0.28f, size.height * 0.23f))
         drawCircle(Accent, radius = 1.dp.toPx(), center = Offset(size.width * 0.39f, size.height * 0.23f))
@@ -2214,10 +2214,10 @@ private fun CopyGlyph(enabled: Boolean = true) {
         val tint = if (enabled) Accent else SubInk
         drawRoundRect(color = tint, topLeft = Offset(size.width * 0.30f, size.height * 0.12f),
             size = androidx.compose.ui.geometry.Size(size.width * 0.56f, size.height * 0.62f),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()), style = Stroke(strokeWidth = stroke))
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()), style = Stroke(width = stroke))
         drawRoundRect(color = tint, topLeft = Offset(size.width * 0.12f, size.height * 0.30f),
             size = androidx.compose.ui.geometry.Size(size.width * 0.56f, size.height * 0.62f),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()), style = Stroke(strokeWidth = stroke))
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()), style = Stroke(width = stroke))
     }
 }
 
