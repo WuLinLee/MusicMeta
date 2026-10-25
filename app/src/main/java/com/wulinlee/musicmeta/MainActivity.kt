@@ -149,7 +149,36 @@ private val Accent = Color(0xFF80C9AA)
 private val SoftAccent = Color(0xFF203D30)
 private val Hairline = Color(0xFF2B3730)
 
+internal data class OverlayOpenRequest(
+    val requestId: Long,
+    val mode: String,
+    val trackId: String,
+    val playlistId: Long,
+    val title: String,
+    val artist: String,
+)
+
 class MainActivity : ComponentActivity() {
+    internal var pendingOverlayOpenRequest by mutableStateOf<OverlayOpenRequest?>(null)
+        private set
+    private var overlayOpenRequestSequence = 0L
+
+    private fun acceptOverlayOpenIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(FloatingMiniPlayerService.EXTRA_OPEN_APP_AND_LOCATE, false) != true) return
+        pendingOverlayOpenRequest = OverlayOpenRequest(
+            requestId = ++overlayOpenRequestSequence,
+            mode = intent.getStringExtra(FloatingMiniPlayerService.EXTRA_OPEN_MODE).orEmpty(),
+            trackId = intent.getStringExtra(FloatingMiniPlayerService.EXTRA_OPEN_TRACK_ID).orEmpty(),
+            playlistId = intent.getLongExtra(FloatingMiniPlayerService.EXTRA_OPEN_PLAYLIST_ID, 0L),
+            title = intent.getStringExtra(FloatingMiniPlayerService.EXTRA_TITLE).orEmpty(),
+            artist = intent.getStringExtra(FloatingMiniPlayerService.EXTRA_ARTIST).orEmpty(),
+        )
+    }
+
+    internal fun clearOverlayOpenRequest(requestId: Long) {
+        if (pendingOverlayOpenRequest?.requestId == requestId) pendingOverlayOpenRequest = null
+    }
+
     private val floatingOverlayReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val command = intent?.getStringExtra(FloatingMiniPlayerService.EXTRA_COMMAND) ?: return
@@ -161,6 +190,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        acceptOverlayOpenIntent(intent)
         ContextCompat.registerReceiver(this, floatingOverlayReceiver, IntentFilter(FloatingMiniPlayerService.ACTION_CONTROL), ContextCompat.RECEIVER_NOT_EXPORTED)
         floatingOverlayReceiverRegistered = true
         setContent {
@@ -181,6 +211,12 @@ class MainActivity : ComponentActivity() {
                 MusicMetaApp()
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        acceptOverlayOpenIntent(intent)
     }
 
     override fun onDestroy() {
