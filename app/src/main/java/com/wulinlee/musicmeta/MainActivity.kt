@@ -2601,7 +2601,7 @@ private fun MusicMetaApp() {
                                                     if (flacPlatform != "wyy") {
                                                         flacPlatform = "wyy"
                                                         folderPreferences.edit().putString("source_platform", "wyy").apply()
-                                                        selectedTrack?.let { searchTrackSource(it) }
+                                                        selectedTrack?.let { searchTrackSource(it, false) }
                                                     }
                                                 },
                                                 label = { Text("网易云") },
