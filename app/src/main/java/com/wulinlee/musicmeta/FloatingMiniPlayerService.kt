@@ -114,8 +114,8 @@ internal fun Modifier.overlayDragGesture(
                 if (totalFromStart > touchSlop) {
                     dragged = true
                     totalDistance = totalFromStart
-                    val angle = atan2(totalX, totalY)
-                    previousAngle = angle
+                    // Start counting turns only from observed movement directions.
+                    previousAngle = Float.NaN
                     onDrag(totalX, totalY)
                     change.consume()
                 }
