@@ -75,9 +75,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -85,13 +83,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.width
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -105,7 +99,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.io.IOException
-import kotlin.math.abs
 
 private const val DEFAULT_SOURCE = "https://flac.music.hi.cn/"
 private val PageBackground = Color(0xFF0D1210)
@@ -171,7 +164,7 @@ private fun MusicMetaApp() {
     val listState = rememberLazyListState()
     var currentPage by remember { mutableStateOf(1) }
     val savedPageSize = folderPreferences.getInt("songs_per_page", 25)
-    var pageSize by remember { mutableStateOf(if (savedPageSize in listOf(10, 25, 50, 100)) savedPageSize else 25) }
+    var pageSize by remember { mutableStateOf(if (savedPageSize in listOf(25, 50, 100)) savedPageSize else 25) }
     var jumpPageInput by remember { mutableStateOf("1") }
     var pageCache by remember { mutableStateOf<Map<String, List<MusicTrack>>>(emptyMap()) }
     var isLoadingPage by remember { mutableStateOf(false) }
@@ -547,11 +540,6 @@ private fun MusicMetaApp() {
     }
     val pageItemCount = if (filterText.isBlank()) playlist?.totalTrackCount ?: 0 else filteredKnownTracks.size
     val pageCount = maxOf(1, (pageItemCount + pageSize - 1) / pageSize)
-    val pullDistance = remember { mutableStateOf(0f) }
-    val pullThresholdPx = with(androidx.compose.ui.platform.LocalDensity.current) { 84.dp.toPx() }
-    val latestPagingAvailable = rememberUpdatedState(!busy && pageItemCount > pageSize)
-    val latestPage = rememberUpdatedState(currentPage)
-    val latestPageCount = rememberUpdatedState(pageCount)
     val switchInputMode: (String) -> Unit = { mode ->
         if (mode != inputMode && !busy) {
             inputMode = mode
@@ -626,55 +614,6 @@ private fun MusicMetaApp() {
     }
 
 
-    val latestRequestPage = rememberUpdatedState(requestPage)
-
-    val pagePullConnection = remember(pullThresholdPx) {
-        object : NestedScrollConnection {
-            override fun onPostScroll(
-                consumed: Offset,
-                available: Offset,
-                source: NestedScrollSource,
-            ): Offset {
-                if (!latestPagingAvailable.value) {
-                    pullDistance.value = 0f
-                    return Offset.Zero
-                }
-                // Keep the last drag distance through the fling callback so the
-                // release can still trigger a page change at the boundary.
-                if (source != NestedScrollSource.UserInput) return Offset.Zero
-                val deltaY = available.y
-                if (deltaY == 0f) return Offset.Zero
-                val page = latestPage.value
-                val maxPage = latestPageCount.value
-                val canNavigate = if (deltaY > 0f) page < maxPage else page > 1
-                if (!canNavigate) {
-                    pullDistance.value = 0f
-                    return Offset.Zero
-                }
-                val previous = pullDistance.value
-                val accum = if (previous == 0f || (previous > 0f) == (deltaY > 0f)) {
-                    previous + deltaY
-                } else {
-                    deltaY
-                }
-                pullDistance.value = accum.coerceIn(-pullThresholdPx * 1.35f, pullThresholdPx * 1.35f)
-                return Offset.Zero
-            }
-
-            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                val distance = pullDistance.value
-                pullDistance.value = 0f
-                if (latestPagingAvailable.value && abs(distance) >= pullThresholdPx) {
-                    val current = latestPage.value
-                    val target = if (distance > 0f) current + 1 else current - 1
-                    if (target in 1..latestPageCount.value) {
-                        latestRequestPage.value(target)
-                    }
-                }
-                return Velocity.Zero
-            }
-        }
-    }
 
     Scaffold(
         containerColor = PageBackground,
@@ -722,6 +661,125 @@ private fun MusicMetaApp() {
         bottomBar = {
             Surface(color = SurfaceColor, shadowElevation = 3.dp) {
                 Column(Modifier.fillMaxWidth()) {
+                    if (playlist != null && pageItemCount > 0) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+                            verticalArrangement = Arrangement.spacedBy(0.dp),
+                        ) {
+                            if (pageCount > 1) {
+                                val footerPageNumbers = if (pageCount <= 7) {
+                                    (1..pageCount).toList()
+                                } else {
+                                    buildList {
+                                        add(1)
+                                        if (currentPage > 3) add(-1)
+                                        val windowStart = if (currentPage <= 3) 2 else maxOf(2, currentPage - 1)
+                                        val windowEnd = if (currentPage <= 3) 5 else minOf(pageCount - 1, currentPage + 2)
+                                        for (number in windowStart..windowEnd) if (number !in this) add(number)
+                                        if (currentPage < pageCount - 2) add(-1)
+                                        if (pageCount !in this) add(pageCount)
+                                    }
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().height(34.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(1.dp),
+                                ) {
+                                    IconButton(
+                                        onClick = { requestPage(currentPage - 1) },
+                                        enabled = !busy && currentPage > 1,
+                                        modifier = Modifier.size(32.dp).semantics { contentDescription = "上一页" },
+                                    ) {
+                                        PageArrowGlyph(pointsLeft = true, tint = if (!busy && currentPage > 1) Ink else SubInk)
+                                    }
+                                    Row(
+                                        modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(0.dp),
+                                    ) {
+                                        footerPageNumbers.forEach { number ->
+                                            if (number == -1) {
+                                                Text("…", color = SubInk, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 2.dp))
+                                            } else {
+                                                TextButton(
+                                                    onClick = { requestPage(number) },
+                                                    enabled = !busy && number != currentPage,
+                                                    contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp),
+                                                ) {
+                                                    Text(
+                                                        number.toString(),
+                                                        color = if (number == currentPage) Accent else Ink,
+                                                        fontWeight = if (number == currentPage) FontWeight.Bold else FontWeight.Normal,
+                                                        fontSize = 11.sp,
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                    IconButton(
+                                        onClick = { requestPage(currentPage + 1) },
+                                        enabled = !busy && currentPage < pageCount,
+                                        modifier = Modifier.size(32.dp).semantics { contentDescription = "下一页" },
+                                    ) {
+                                        PageArrowGlyph(pointsLeft = false, tint = if (!busy && currentPage < pageCount) Ink else SubInk)
+                                    }
+                                }
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth().height(36.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            ) {
+                                Text("每页", color = SubInk, fontSize = 10.sp)
+                                listOf(25, 50, 100).forEach { count ->
+                                    TextButton(
+                                        onClick = {
+                                            if (!busy && pageSize != count) {
+                                                pageSize = count
+                                                folderPreferences.edit().putInt("songs_per_page", count).apply()
+                                                currentPage = 1
+                                                jumpPageInput = "1"
+                                                selectedTrack = null
+                                                flacResults = emptyList()
+                                                scope.launch { listState.scrollToItem(0) }
+                                            }
+                                        },
+                                        enabled = !busy,
+                                        contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp),
+                                    ) {
+                                        Text(
+                                            count.toString(),
+                                            color = if (pageSize == count) Accent else Ink,
+                                            fontSize = 10.sp,
+                                            fontWeight = if (pageSize == count) FontWeight.SemiBold else FontWeight.Normal,
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.weight(1f))
+                                OutlinedTextField(
+                                    value = jumpPageInput,
+                                    onValueChange = { jumpPageInput = it.filter(Char::isDigit).take(5) },
+                                    modifier = Modifier.width(54.dp).height(36.dp),
+                                    singleLine = true,
+                                    placeholder = { Text("页", fontSize = 10.sp) },
+                                    shape = RoundedCornerShape(9.dp),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                                    keyboardActions = KeyboardActions(onDone = { jumpPageInput.toIntOrNull()?.let(requestPage) }),
+                                    enabled = !busy && pageCount > 1,
+                                )
+                                TextButton(
+                                    onClick = {
+                                        val target = jumpPageInput.toIntOrNull()
+                                        if (target == null) status = "请输入页码。" else requestPage(target)
+                                    },
+                                    enabled = !busy && pageCount > 1,
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                ) {
+                                    Text("跳", color = Accent, fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    }
                     if (busy) {
                         LinearProgressIndicator(
                             modifier = Modifier.fillMaxWidth(),
@@ -733,11 +791,11 @@ private fun MusicMetaApp() {
                         text = status,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 18.dp, vertical = 12.dp),
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
                         color = SubInk,
-                        fontSize = 12.sp,
-                        lineHeight = 17.sp,
-                        maxLines = 3,
+                        fontSize = 11.sp,
+                        lineHeight = 14.sp,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Row(
@@ -771,7 +829,6 @@ private fun MusicMetaApp() {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .nestedScroll(pagePullConnection),
         ) {
         LazyColumn(
             state = listState,
@@ -1038,129 +1095,14 @@ private fun MusicMetaApp() {
                             .padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalArrangement = Arrangement.spacedBy(7.dp),
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            Text(
-                                when {
-                                    pageItemCount > pageSize -> "第 $currentPage / $pageCount 页"
-                                    filterText.isNotBlank() -> filteredKnownTracks.size.toString() + " 首匹配歌曲"
-                                    else -> pageItemCount.toString() + " 首歌曲"
-                                },
-                                color = SubInk,
-                                fontSize = 11.sp,
-                            )
-                            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                                listOf(10, 25, 50, 100).forEach { count ->
-                                    FilterChip(
-                                        selected = pageSize == count,
-                                        onClick = {
-                                            if (!busy && pageSize != count) {
-                                                pageSize = count
-                                                folderPreferences.edit().putInt("songs_per_page", count).apply()
-                                                currentPage = 1
-                                                jumpPageInput = "1"
-                                                selectedTrack = null
-                                                flacResults = emptyList()
-                                            }
-                                        },
-                                        enabled = !busy,
-                                        label = { Text(count.toString(), fontSize = 10.sp) },
-                                    )
-                                }
-                            }
-                        }
-                        if (pageItemCount > pageSize) {
-                            val pageNumbers = if (pageCount <= 7) {
-                                (1..pageCount).toList()
-                            } else {
-                                buildList {
-                                    add(1)
-                                    if (currentPage > 3) add(-1)
-                                    val windowStart = if (currentPage <= 3) 2 else maxOf(2, currentPage - 1)
-                                    val windowEnd = if (currentPage <= 3) 5 else minOf(pageCount - 1, currentPage + 2)
-                                    for (number in windowStart..windowEnd) if (number !in this) add(number)
-                                    if (currentPage < pageCount - 2) add(-1)
-                                    if (pageCount !in this) add(pageCount)
-                                }
-                            }
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(3.dp),
-                            ) {
-                                IconButton(
-                                    onClick = { requestPage(currentPage - 1) },
-                                    enabled = !busy && currentPage > 1,
-                                    modifier = Modifier.semantics { contentDescription = "上一页" },
-                                ) {
-                                    PageArrowGlyph(pointsLeft = true, tint = if (!busy && currentPage > 1) Ink else SubInk)
-                                }
-                                Row(
-                                    modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(1.dp),
-                                ) {
-                                    pageNumbers.forEach { number ->
-                                        if (number == -1) {
-                                            Text("…", color = SubInk, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 4.dp))
-                                        } else {
-                                            TextButton(
-                                                onClick = { requestPage(number) },
-                                                enabled = !busy && number != currentPage,
-                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-                                            ) {
-                                                Text(
-                                                    number.toString(),
-                                                    color = if (number == currentPage) Accent else Ink,
-                                                    fontWeight = if (number == currentPage) FontWeight.Bold else FontWeight.Normal,
-                                                    fontSize = 12.sp,
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                                IconButton(
-                                    onClick = { requestPage(currentPage + 1) },
-                                    enabled = !busy && currentPage < pageCount,
-                                    modifier = Modifier.semantics { contentDescription = "下一页" },
-                                ) {
-                                    PageArrowGlyph(pointsLeft = false, tint = if (!busy && currentPage < pageCount) Ink else SubInk)
-                                }
-                            }
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.End,
-                            ) {
-                                OutlinedTextField(
-                                    value = jumpPageInput,
-                                    onValueChange = { jumpPageInput = it.filter(Char::isDigit).take(5) },
-                                    modifier = Modifier.width(76.dp),
-                                    singleLine = true,
-                                    placeholder = { Text("页码", fontSize = 11.sp) },
-                                    shape = RoundedCornerShape(12.dp),
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-                                    keyboardActions = KeyboardActions(
-                                        onDone = { jumpPageInput.toIntOrNull()?.let(requestPage) }
-                                    ),
-                                    enabled = !busy,
-                                )
-                                TextButton(
-                                    onClick = {
-                                        val target = jumpPageInput.toIntOrNull()
-                                        if (target == null) status = "请输入页码。" else requestPage(target)
-                                    },
-                                    enabled = !busy,
-                                    contentPadding = PaddingValues(horizontal = 9.dp, vertical = 0.dp),
-                                ) {
-                                    Text("跳", color = Accent, fontSize = 12.sp)
-                                }
-                            }
-    
-                        }
+                        Text(
+                            when {
+                                filterText.isNotBlank() -> filteredKnownTracks.size.toString() + " 首匹配歌曲"
+                                else -> "共 " + pageItemCount + " 首 · 第 " + currentPage + " / " + pageCount + " 页"
+                            },
+                            color = SubInk,
+                            fontSize = 11.sp,
+                        )
                         if (filterText.isNotBlank()) {
                             Text("筛选范围：已加载或访问过的歌曲", color = SubInk, fontSize = 10.sp)
                         }
@@ -1469,49 +1411,7 @@ private fun MusicMetaApp() {
                 }
             }
         }
-        if (abs(pullDistance.value) > 2f && latestPagingAvailable.value) {
-            val pullingToPrevious = pullDistance.value < 0f
-            val pullProgress = (abs(pullDistance.value) / pullThresholdPx).coerceIn(0f, 1f)
-            Surface(
-                modifier = Modifier
-                    .align(if (pullingToPrevious) Alignment.TopCenter else Alignment.BottomCenter)
-                    .padding(horizontal = 24.dp, vertical = 12.dp),
-                shape = RoundedCornerShape(18.dp),
-                color = SurfaceColor,
-                shadowElevation = 8.dp,
-                border = androidx.compose.foundation.BorderStroke(1.dp, Hairline),
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    PullArrowGlyph(pointsUp = !pullingToPrevious, tint = Accent)
-                    Column(
-                        modifier = Modifier.width(180.dp),
-                        verticalArrangement = Arrangement.spacedBy(5.dp),
-                    ) {
-                        Text(
-                            when {
-                                pullProgress >= 1f && pullingToPrevious -> "松开返回上一页"
-                                pullProgress >= 1f -> "松开进入下一页"
-                                pullingToPrevious -> "继续下拉，返回上一页"
-                                else -> "继续上拉，进入下一页"
-                            },
-                            color = Ink,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                        )
-                        LinearProgressIndicator(
-                            progress = pullProgress,
-                            modifier = Modifier.fillMaxWidth().height(3.dp).clip(CircleShape),
-                            color = Accent,
-                            trackColor = SoftAccent,
-                        )
-                    }
-                }
-            }
-        }
+
         }
     }
 
@@ -1773,22 +1673,6 @@ private fun combineLyricsWithoutLabels(
         return LrcMerger.merge(source, translated)
     }
     return listOf(source, translated).filter { it.isNotBlank() }.joinToString("\n")
-}
-
-@Composable
-private fun PullArrowGlyph(pointsUp: Boolean, tint: Color) {
-    Canvas(modifier = Modifier.size(22.dp)) {
-        val stroke = 2.dp.toPx()
-        val centerX = size.width / 2f
-        val tipY = size.height * if (pointsUp) 0.20f else 0.80f
-        val baseY = size.height * if (pointsUp) 0.75f else 0.25f
-        drawLine(color = tint, start = Offset(centerX, baseY), end = Offset(centerX, tipY), strokeWidth = stroke, cap = StrokeCap.Round)
-        val headY = size.height * if (pointsUp) 0.43f else 0.57f
-        val leftX = size.width * 0.27f
-        val rightX = size.width * 0.73f
-        drawLine(color = tint, start = Offset(leftX, headY), end = Offset(centerX, tipY), strokeWidth = stroke, cap = StrokeCap.Round)
-        drawLine(color = tint, start = Offset(centerX, tipY), end = Offset(rightX, headY), strokeWidth = stroke, cap = StrokeCap.Round)
-    }
 }
 
 @Composable
