@@ -19,6 +19,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,6 +53,7 @@ import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -62,8 +65,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -83,6 +84,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.width
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.documentfile.provider.DocumentFile
@@ -91,8 +94,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.distinctUntilChanged
 import java.io.File
 import java.io.IOException
 
@@ -158,6 +159,12 @@ private fun MusicMetaApp() {
     val metadataProvider = remember { MetadataProvider() }
     val flacProvider = remember { FlacMusicProvider() }
     val listState = rememberLazyListState()
+    var currentPage by remember { mutableStateOf(1) }
+    val savedPageSize = folderPreferences.getInt("songs_per_page", 25)
+    var pageSize by remember { mutableStateOf(if (savedPageSize in listOf(10, 25, 50, 100)) savedPageSize else 25) }
+    var jumpPageInput by remember { mutableStateOf("1") }
+    var pageCache by remember { mutableStateOf<Map<String, List<MusicTrack>>>(emptyMap()) }
+    var isLoadingPage by remember { mutableStateOf(false) }
 
     var inputMode by remember { mutableStateOf(if (folderPreferences.getString("input_mode", "playlist") == "liked") "liked" else "playlist") }
     // Keep the two sources independent: a public playlist ID is not the same as
@@ -183,10 +190,12 @@ private fun MusicMetaApp() {
     }
     val setFilterText: (String) -> Unit = { value ->
         if (inputMode == "liked") likedFilterText = value else publicFilterText = value
+        currentPage = 1
+        jumpPageInput = "1"
+        selectedTrack = null
+        flacResults = emptyList()
     }
     var isSyncing by remember { mutableStateOf(false) }
-    var isLoadingMore by remember { mutableStateOf(false) }
-    var suppressAutoLoadMore by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("输入公开歌单 ID 或链接开始。无需登录网易云账号。") }
     var lastErrorReport by remember { mutableStateOf<String?>(null) }
     val captureError: (String, Throwable) -> Unit = { stage, error ->
@@ -239,94 +248,7 @@ private fun MusicMetaApp() {
         } ?: "Download/MusicMeta（默认）"
     }
 
-    val busy = isSyncing || isLoadingMore || isSearchingFlac || isResolvingUrl || isDownloading
-
-    val loadMoreTracks: () -> Unit = {
-        val current = playlist
-        if (
-            current != null &&
-            current.nextOffset < current.totalTrackCount &&
-            !isSyncing && !isLoadingMore && !isSearchingFlac && !isResolvingUrl && !isDownloading
-        ) {
-            val pageOffset = current.nextOffset
-            val targetMode = inputMode
-            isLoadingMore = true
-            suppressAutoLoadMore = false
-            status = "正在加载下一批歌曲（第 " + (pageOffset + 1) + " 首起）……"
-            scope.launch {
-                try {
-                    val page = withTimeout(28_000L) {
-                        withContext(Dispatchers.IO) {
-                            playlistProvider.load(
-                                input = current.id.toString(),
-                                likedByUserId = false,
-                                offset = pageOffset,
-                                limit = 100,
-                            )
-                        }
-                    }
-                    if (page.nextOffset <= pageOffset && page.totalTrackCount > pageOffset) {
-                        throw IOException("接口没有推进分页位置，请重试。")
-                    }
-                    val existing = if (targetMode == "liked") likedPlaylist else publicPlaylist
-                    if (existing != null && existing.id == current.id) {
-                        val updated = existing.copy(
-                            tracks = (existing.tracks + page.tracks).distinctBy { it.id },
-                            totalTrackCount = maxOf(existing.totalTrackCount, page.totalTrackCount),
-                            nextOffset = maxOf(existing.nextOffset, page.nextOffset),
-                            coverUrl = existing.coverUrl.ifBlank { page.coverUrl },
-                            name = existing.name.ifBlank { page.name },
-                            creator = existing.creator.ifBlank { page.creator },
-                        )
-                        if (targetMode == "liked") likedPlaylist = updated else publicPlaylist = updated
-                        status = if (updated.nextOffset >= updated.totalTrackCount) {
-                            "已到歌单末尾：目前显示 " + updated.tracks.size +
-                                " 首有效歌曲，歌单共 " + updated.totalTrackCount + " 个曲目位置。"
-                        } else {
-                            "已读取 " + updated.nextOffset + " / " + updated.totalTrackCount +
-                                " 个曲目位置，目前显示 " + updated.tracks.size + " 首；继续下滑加载下一批。"
-                        }
-                    }
-                } catch (error: Exception) {
-                    val detail = error.message?.takeIf { it.isNotBlank() } ?: "网络或接口暂不可用"
-                    status = "继续加载失败：" + detail + "，已加载内容会保留。"
-                    captureError("继续加载歌单", error)
-                    suppressAutoLoadMore = true
-                } finally {
-                    isLoadingMore = false
-                }
-            }
-        }
-    }
-
-    LaunchedEffect(
-        inputMode,
-        playlist?.id,
-        playlist?.tracks?.size,
-        playlist?.nextOffset,
-        isLoadingMore,
-        suppressAutoLoadMore,
-        filterText,
-    ) {
-        val current = playlist ?: return@LaunchedEffect
-        if (
-            current.nextOffset >= current.totalTrackCount ||
-            isLoadingMore ||
-            suppressAutoLoadMore ||
-            filterText.isNotBlank()
-        ) {
-            return@LaunchedEffect
-        }
-        snapshotFlow {
-            val info = listState.layoutInfo
-            val lastVisibleIndex = info.visibleItemsInfo.lastOrNull()?.index ?: -1
-            info.totalItemsCount > 0 && lastVisibleIndex >= info.totalItemsCount - 3
-        }.distinctUntilChanged().collect { nearBottom ->
-            if (nearBottom && !isLoadingMore && !suppressAutoLoadMore) {
-                loadMoreTracks()
-            }
-        }
-    }
+    val busy = isSyncing || isLoadingPage || isSearchingFlac || isResolvingUrl || isDownloading
 
     val syncPlaylist: () -> Unit = {
         val input = playlistInput.trim()
@@ -345,15 +267,12 @@ private fun MusicMetaApp() {
                     if (inputMode == "liked") likedPlaylist = loaded else publicPlaylist = loaded
                     selectedTrack = null
                     flacResults = emptyList()
+                    currentPage = 1
+                    jumpPageInput = "1"
+                    pageCache = emptyMap()
                     setFilterText("")
-                    suppressAutoLoadMore = false
                     scope.launch { listState.scrollToItem(0) }
-                    status = if (loaded.nextOffset >= loaded.totalTrackCount) {
-                        "已加载 " + loaded.tracks.size + " 首歌曲。点歌曲右侧“找音源”继续。"
-                    } else {
-                        "已加载首批 " + loaded.tracks.size + " 首 / 共 " + loaded.totalTrackCount +
-                            " 首。滑到列表底部会继续读取下一批 100 首。"
-                    }
+                    status = "已读取歌单信息，共 " + loaded.totalTrackCount + " 首。可调整每页数量或输入页码快速跳转。"
                 } catch (error: Exception) {
                     val detail = error.message?.takeIf { it.isNotBlank() } ?: "网络或接口暂不可用"
                     status = "同步失败：" + detail
@@ -605,10 +524,104 @@ private fun MusicMetaApp() {
     }
     val latestWebsiteDownload by rememberUpdatedState(onWebsiteDownload)
 
+    val pageCacheKey: (String, String, Int, Int) -> String = { mode, id, size, page ->
+        "$mode:$id:$size:$page"
+    }
+    val knownTracks = playlist?.let { current ->
+        val prefix = "$inputMode:${current.id}:"
+        (current.tracks + pageCache.filterKeys { it.startsWith(prefix) }.values.flatten())
+            .distinctBy { it.id }
+    }.orEmpty()
+    val filteredKnownTracks = knownTracks.filter {
+        filterText.isBlank() ||
+            it.title.contains(filterText.trim(), ignoreCase = true) ||
+            it.artists.contains(filterText.trim(), ignoreCase = true)
+    }
+    val pageItemCount = if (filterText.isBlank()) playlist?.totalTrackCount ?: 0 else filteredKnownTracks.size
+    val pageCount = maxOf(1, (pageItemCount + pageSize - 1) / pageSize)
+
+    val switchInputMode: (String) -> Unit = { mode ->
+        if (mode != inputMode && !busy) {
+            inputMode = mode
+            folderPreferences.edit().putString("input_mode", mode).apply()
+            currentPage = 1
+            jumpPageInput = "1"
+            selectedTrack = null
+            flacResults = emptyList()
+            status = if ((if (mode == "liked") likedPlaylist else publicPlaylist) != null) {
+                if (mode == "liked") "已切换到红心歌单。" else "已切换到公开歌单。"
+            } else {
+                if (mode == "liked") "输入网易云用户 ID 同步红心歌单。" else "输入公开歌单链接或 ID 开始。"
+            }
+            scope.launch { listState.animateScrollToItem(0) }
+        }
+    }
+
+    val requestPage: (Int) -> Unit = { requestedPage ->
+        val current = playlist
+        if (current != null && !busy) {
+            val maxPage = pageCount
+            val targetPage = requestedPage.coerceIn(1, maxPage)
+            currentPage = targetPage
+            jumpPageInput = targetPage.toString()
+            selectedTrack = null
+            flacResults = emptyList()
+
+            if (filterText.isBlank()) {
+                val offset = (targetPage - 1) * pageSize
+                val needed = minOf(pageSize, maxOf(0, current.totalTrackCount - offset))
+                val key = pageCacheKey(inputMode, current.id.toString(), pageSize, targetPage)
+                val alreadyLoaded = offset + needed <= current.tracks.size
+                if (!alreadyLoaded && !pageCache.containsKey(key) && needed > 0) {
+                    val targetMode = inputMode
+                    isLoadingPage = true
+                    status = "正在加载第 " + targetPage + " 页……"
+                    scope.launch {
+                        try {
+                            val loadedPage = withTimeout(28_000L) {
+                                withContext(Dispatchers.IO) {
+                                    playlistProvider.load(
+                                        input = current.id.toString(),
+                                        likedByUserId = false,
+                                        offset = offset,
+                                        limit = pageSize,
+                                    )
+                                }
+                            }
+                            val activePlaylist = if (targetMode == "liked") likedPlaylist else publicPlaylist
+                            if (inputMode == targetMode && activePlaylist?.id == current.id) {
+                                pageCache = pageCache + (key to loadedPage.tracks)
+                                status = "第 " + targetPage + " / " + maxPage + " 页已加载。"
+                            }
+                        } catch (error: Exception) {
+                            val detail = error.message?.takeIf { it.isNotBlank() } ?: "网络或接口暂不可用"
+                            val activePlaylist = if (targetMode == "liked") likedPlaylist else publicPlaylist
+                            if (inputMode == targetMode && activePlaylist?.id == current.id) {
+                                status = "加载第 " + targetPage + " 页失败：" + detail + "。点击页码可重试。"
+                                captureError("加载歌单页", error)
+                            }
+                        } finally {
+                            isLoadingPage = false
+                        }
+                    }
+                } else {
+                    status = "第 " + targetPage + " / " + maxPage + " 页"
+                }
+            } else {
+                status = "显示已加载歌曲中的筛选结果。"
+            }
+        }
+    }
+
     Scaffold(
         containerColor = PageBackground,
         topBar = {
             CenterAlignedTopAppBar(
+                navigationIcon = {
+                    IconButton(onClick = { scope.launch { listState.animateScrollToItem(0) } }) {
+                        Text("⌂", color = Accent, fontSize = 25.sp)
+                    }
+                },
                 title = {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -690,7 +703,24 @@ private fun MusicMetaApp() {
     ) { innerPadding ->
         LazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxSize().padding(innerPadding),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .pointerInput(inputMode, busy) {
+                    var dragDistance = 0f
+                    detectHorizontalDragGestures(
+                        onHorizontalDrag = { change, dragAmount ->
+                            dragDistance += dragAmount
+                            change.consume()
+                        },
+                        onDragEnd = {
+                            if (!busy && dragDistance < -72f) switchInputMode("liked")
+                            else if (!busy && dragDistance > 72f) switchInputMode("playlist")
+                            dragDistance = 0f
+                        },
+                        onDragCancel = { dragDistance = 0f },
+                    )
+                },
             contentPadding = PaddingValues(start = 18.dp, top = 12.dp, end = 18.dp, bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
@@ -730,23 +760,13 @@ private fun MusicMetaApp() {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             FilterChip(
                                 selected = inputMode == "playlist",
-                                onClick = {
-                                    inputMode = "playlist"
-                                    folderPreferences.edit().putString("input_mode", "playlist").apply()
-                                    selectedTrack = null
-                                    flacResults = emptyList()
-                                },
+                                onClick = { switchInputMode("playlist") },
                                 enabled = !busy,
                                 label = { Text("公开歌单") },
                             )
                             FilterChip(
                                 selected = inputMode == "liked",
-                                onClick = {
-                                    inputMode = "liked"
-                                    folderPreferences.edit().putString("input_mode", "liked").apply()
-                                    selectedTrack = null
-                                    flacResults = emptyList()
-                                },
+                                onClick = { switchInputMode("liked") },
                                 enabled = !busy,
                                 label = { Text("我的红心歌单") },
                             )
@@ -934,11 +954,163 @@ private fun MusicMetaApp() {
                         }
                     }
                 }
-                val visibleTracks = currentPlaylist.tracks.filter {
-                    filterText.isBlank() ||
-                        it.title.contains(filterText.trim(), ignoreCase = true) ||
-                        it.artists.contains(filterText.trim(), ignoreCase = true)
+
+                item(key = "pagination-controls") {
+                    Column(
+                        modifier = Modifier.fillMaxWidth()
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(SurfaceColor)
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(7.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(
+                                if (filterText.isBlank()) "第 $currentPage / $pageCount 页" else filteredKnownTracks.size.toString() + " 首",
+                                color = SubInk,
+                                fontSize = 11.sp,
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                listOf(10, 25, 50, 100).forEach { count ->
+                                    FilterChip(
+                                        selected = pageSize == count,
+                                        onClick = {
+                                            if (!busy && pageSize != count) {
+                                                pageSize = count
+                                                folderPreferences.edit().putInt("songs_per_page", count).apply()
+                                                currentPage = 1
+                                                jumpPageInput = "1"
+                                                selectedTrack = null
+                                                flacResults = emptyList()
+                                            }
+                                        },
+                                        enabled = !busy,
+                                        label = { Text(count.toString(), fontSize = 10.sp) },
+                                    )
+                                }
+                            }
+                        }
+                        val pageNumbers = if (pageCount <= 7) {
+                            (1..pageCount).toList()
+                        } else {
+                            buildList {
+                                add(1)
+                                if (currentPage > 3) add(-1)
+                                val windowStart = if (currentPage <= 3) 2 else maxOf(2, currentPage - 1)
+                                val windowEnd = if (currentPage <= 3) 5 else minOf(pageCount - 1, currentPage + 2)
+                                for (number in windowStart..windowEnd) if (number !in this) add(number)
+                                if (currentPage < pageCount - 2) add(-1)
+                                if (pageCount !in this) add(pageCount)
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(1.dp),
+                        ) {
+                            pageNumbers.forEach { number ->
+                                if (number == -1) {
+                                    Text("…", color = SubInk, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 4.dp))
+                                } else {
+                                    TextButton(
+                                        onClick = { requestPage(number) },
+                                        enabled = !busy && number != currentPage,
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                    ) {
+                                        Text(
+                                            number.toString(),
+                                            color = if (number == currentPage) Accent else Ink,
+                                            fontWeight = if (number == currentPage) FontWeight.Bold else FontWeight.Normal,
+                                            fontSize = 12.sp,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.End,
+                        ) {
+                            OutlinedTextField(
+                                value = jumpPageInput,
+                                onValueChange = { jumpPageInput = it.filter(Char::isDigit).take(5) },
+                                modifier = Modifier.width(76.dp),
+                                singleLine = true,
+                                placeholder = { Text("页码", fontSize = 11.sp) },
+                                shape = RoundedCornerShape(12.dp),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(
+                                    onDone = { jumpPageInput.toIntOrNull()?.let(requestPage) }
+                                ),
+                                enabled = !busy,
+                            )
+                            TextButton(
+                                onClick = {
+                                    val target = jumpPageInput.toIntOrNull()
+                                    if (target == null) status = "请输入页码。" else requestPage(target)
+                                },
+                                enabled = !busy,
+                                contentPadding = PaddingValues(horizontal = 9.dp, vertical = 0.dp),
+                            ) {
+                                Text("跳", color = Accent, fontSize = 12.sp)
+                            }
+                        }
+                        if (filterText.isNotBlank()) {
+                            Text("筛选范围：已加载或访问过的歌曲", color = SubInk, fontSize = 10.sp)
+                        }
+                    }
                 }
+                val pageOffset = (currentPage - 1) * pageSize
+                val currentCacheKey = pageCacheKey(inputMode, currentPlaylist.id.toString(), pageSize, currentPage)
+                val loadedPageTracks = currentPlaylist.tracks.drop(pageOffset).take(pageSize)
+                val requiredPageSize = minOf(pageSize, maxOf(0, currentPlaylist.totalTrackCount - pageOffset))
+                val pageTracks = if (filterText.isNotBlank()) {
+                    filteredKnownTracks.drop(pageOffset).take(pageSize)
+                } else if (loadedPageTracks.size >= requiredPageSize) {
+                    loadedPageTracks
+                } else {
+                    pageCache[currentCacheKey].orEmpty()
+                }
+                val visibleTracks = pageTracks
+
+                if (isLoadingPage && visibleTracks.isEmpty()) {
+                    item(key = "page-loading") {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(18.dp),
+                            color = SurfaceColor,
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(18.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Accent, strokeWidth = 2.dp)
+                                Spacer(Modifier.size(9.dp))
+                                Text("正在加载第 $currentPage 页…", color = SubInk, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                } else if (visibleTracks.isEmpty()) {
+                    item(key = "page-empty") {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(18.dp),
+                            color = SurfaceColor,
+                        ) {
+                            Text(
+                                if (filterText.isBlank()) "这一页暂时没有歌曲，点一下页码可重试。" else "没有找到匹配的已加载歌曲。",
+                                color = SubInk,
+                                fontSize = 12.sp,
+                                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            )
+                        }
+                    }
+                } else {
                 items(visibleTracks, key = { "track-" + it.id }) { track ->
                     Column(
                         modifier = Modifier.fillMaxWidth(),
@@ -1165,37 +1337,6 @@ private fun MusicMetaApp() {
                         }
                     }
                 }
-                if (currentPlaylist.nextOffset < currentPlaylist.totalTrackCount || isLoadingMore) {
-                    item(key = "load-more-tracks") {
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(18.dp),
-                            color = SurfaceColor,
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                                horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                if (isLoadingMore) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(18.dp),
-                                        color = Accent,
-                                        strokeWidth = 2.dp,
-                                    )
-                                    Spacer(Modifier.size(10.dp))
-                                    Text("正在加载下一批歌曲…", color = SubInk, fontSize = 12.sp)
-                                } else if (suppressAutoLoadMore || filterText.isNotBlank()) {
-                                    OutlinedButton(
-                                        onClick = { loadMoreTracks() },
-                                        enabled = !busy,
-                                    ) { Text("加载下一批 100 首") }
-                                } else {
-                                    Text("滑到这里自动加载下一批 100 首", color = SubInk, fontSize = 12.sp)
-                                }
-                            }
-                        }
-                    }
                 }
             } else {
                 item(key = "empty-playlist") {
