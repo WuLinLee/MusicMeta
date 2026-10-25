@@ -766,7 +766,16 @@ private fun MusicMetaApp() {
             CenterAlignedTopAppBar(
                 navigationIcon = {
                     IconButton(
-                        onClick = { scope.launch { listState.animateScrollToItem(0) } },
+                        onClick = {
+                            scope.launch {
+                                val firstSongIndex = if (manualSourceSearchActive) 7 else 6
+                                if (playlist != null) {
+                                    listState.animateScrollToItem(firstSongIndex)
+                                } else {
+                                    listState.animateScrollToItem(0)
+                                }
+                            }
+                        },
                         modifier = Modifier.semantics { contentDescription = "回到顶部" },
                     ) {
                         HomeGlyph()
