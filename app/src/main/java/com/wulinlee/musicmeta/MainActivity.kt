@@ -980,24 +980,23 @@ private fun MusicMetaApp() {
                             ) {
                                 EnterGlyph()
                             }
-                            if (lastErrorReport != null) {
-                                IconButton(
-                                    onClick = {
-                                        val report = lastErrorReport
-                                        if (report != null) {
-                                            runCatching {
-                                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                                clipboard.setPrimaryClip(ClipData.newPlainText("MusicMeta error report", report))
-                                            }.onSuccess {
-                                                status = "错误报告已复制到剪贴板，请粘贴发送给助手。"
-                                            }.onFailure { error ->
-                                                status = "复制失败：" + (error.message ?: "请重试")
-                                            }
+                            IconButton(
+                                onClick = {
+                                    val report = lastErrorReport
+                                    if (report != null) {
+                                        runCatching {
+                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                            clipboard.setPrimaryClip(ClipData.newPlainText("MusicMeta error report", report))
+                                        }.onSuccess {
+                                            status = "错误报告已复制到剪贴板，请粘贴发送给助手。"
+                                        }.onFailure { error ->
+                                            status = "复制失败：" + (error.message ?: "请重试")
                                         }
-                                    },
-                                    modifier = Modifier.size(28.dp).semantics { contentDescription = "复制错误报告" },
-                                ) { CopyGlyph() }
-                            }
+                                    }
+                                },
+                                enabled = lastErrorReport != null,
+                                modifier = Modifier.size(28.dp).semantics { contentDescription = "复制错误报告" },
+                            ) { CopyGlyph(enabled = lastErrorReport != null) }
                         }
                     }
                     if ((playlist == null || pageItemCount <= 0) && lastErrorReport != null) {
@@ -2209,13 +2208,14 @@ private fun WebpageGlyph() {
 }
 
 @Composable
-private fun CopyGlyph() {
+private fun CopyGlyph(enabled: Boolean = true) {
     Canvas(modifier = Modifier.size(19.dp)) {
         val stroke = 1.7.dp.toPx()
-        drawRoundRect(color = SubInk, topLeft = Offset(size.width * 0.30f, size.height * 0.12f),
+        val tint = if (enabled) Accent else SubInk
+        drawRoundRect(color = tint, topLeft = Offset(size.width * 0.30f, size.height * 0.12f),
             size = androidx.compose.ui.geometry.Size(size.width * 0.56f, size.height * 0.62f),
             cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()), style = Stroke(strokeWidth = stroke))
-        drawRoundRect(color = Accent, topLeft = Offset(size.width * 0.12f, size.height * 0.30f),
+        drawRoundRect(color = tint, topLeft = Offset(size.width * 0.12f, size.height * 0.30f),
             size = androidx.compose.ui.geometry.Size(size.width * 0.56f, size.height * 0.62f),
             cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()), style = Stroke(strokeWidth = stroke))
     }
