@@ -38,10 +38,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlaylistPlay
-import androidx.compose.material.icons.filled.RepeatOne
-import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -702,11 +698,13 @@ private fun OverlayCoverUi(
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    imageVector = when (playbackMode) {
-                        1 -> Icons.Filled.Shuffle
-                        2 -> Icons.Filled.RepeatOne
-                        else -> Icons.Filled.PlaylistPlay
-                    },
+                    painter = painterResource(
+                        id = when (playbackMode) {
+                            1 -> R.drawable.ic_playback_shuffle
+                            2 -> R.drawable.ic_playback_repeat_one
+                            else -> R.drawable.ic_playback_sequential
+                        },
+                    ),
                     contentDescription = null,
                     tint = Color(0xFF9FF0C9),
                     modifier = Modifier.size(15.dp),
