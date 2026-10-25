@@ -569,7 +569,7 @@ private fun MusicMetaApp() {
                 if (deltaY == 0f) return Offset.Zero
                 val page = latestPage.value
                 val maxPage = latestPageCount.value
-                val canNavigate = if (deltaY < 0f) page < maxPage else page > 1
+                val canNavigate = if (deltaY > 0f) page < maxPage else page > 1
                 if (!canNavigate) {
                     pullDistance.value = 0f
                     return Offset.Zero
@@ -589,7 +589,7 @@ private fun MusicMetaApp() {
                 pullDistance.value = 0f
                 if (latestPagingAvailable.value && abs(distance) >= pullThresholdPx) {
                     val current = latestPage.value
-                    val target = if (distance < 0f) current + 1 else current - 1
+                    val target = if (distance > 0f) current + 1 else current - 1
                     if (target in 1..latestPageCount.value) {
                         latestRequestPage.value(target)
                     }
@@ -1466,7 +1466,7 @@ private fun MusicMetaApp() {
             }
         }
         if (abs(pullDistance.value) > 2f && latestPagingAvailable.value) {
-            val pullingToPrevious = pullDistance.value > 0f
+            val pullingToPrevious = pullDistance.value < 0f
             val pullProgress = (abs(pullDistance.value) / pullThresholdPx).coerceIn(0f, 1f)
             Surface(
                 modifier = Modifier
