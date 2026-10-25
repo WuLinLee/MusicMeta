@@ -18,6 +18,8 @@ import java.util.concurrent.TimeUnit
  * visits. The caller supplies cookies from the embedded WebView; this class does not
  * attempt to solve or bypass any verification challenge.
  */
+data class PreviewLyrics(val original: String = "", val translated: String = "")
+
 data class FlacSiteSong(
     val id: String,
     val platform: String,
@@ -237,24 +239,14 @@ class FlacMusicProvider {
         song: FlacSiteSong,
         cookie: String?,
         userAgent: String,
-    ): String = withContext(Dispatchers.IO) {
-        val body = if (song.platform.startsWith("gd:")) {
-            val source = song.platform.removePrefix("gd:").ifBlank { "netease" }
-            val url = HttpUrl.Builder()
-                .scheme("https")
-                .host("music-api.gdstudio.xyz")
-                .addPathSegments("api.php")
-                .addQueryParameter("types", "lyric")
-                .addQueryParameter("source", source)
-                .addQueryParameter("id", song.lyricId.ifBlank { song.id })
-                .build()
-            val request = Request.Builder()
-                .url(url)
-                .header("Referer", "https://music.gdstudio.xyz/")
-                .header("User-Agent", userAgent.ifBlank { fallbackUserAgent })
-                .get()
-                .build()
-            executeBody(request).trim()
+    ): PreviewLyrics = withContext(Dispatchers.IO) {
+        val isGdStudioSong = song.platform.startsWith("gd:")
+        val primaryBody = if (isGdStudioSong) {
+            fetchGdStudioLyricsBody(
+                source = song.platform.removePrefix("gd:").ifBlank { "netease" },
+                lyricId = song.lyricId.ifBlank { song.id },
+                userAgent = userAgent,
+            )
         } else {
             val request = baseRequest(apiUrl("getLyric"), cookie, userAgent)
                 .post(
@@ -266,33 +258,76 @@ class FlacMusicProvider {
                         .build()
                 )
                 .build()
-            executeBody(request).trim()
+            runCatching { executeBody(request).trim() }.getOrDefault("")
         }
-        if (body.startsWith("{")) {
-            val root = JSONObject(body)
-            checkApiCode(root)
-            val data = root.opt("data")
-            val dataObject = data as? JSONObject
-            val lyric = when (data) {
-                is String -> data
-                is JSONObject -> data.optString("lyric").ifBlank { data.optString("lrc") }
-                else -> ""
-            }
-            val original = root.optString("lyric").ifBlank {
-                root.optString("lrc").ifBlank { lyric }
-            }
-            val translated = root.optString("tlyric").ifBlank {
-                root.optString("translated_lyric").ifBlank {
-                    dataObject?.optString("tlyric")
-                        .orEmpty().ifBlank { dataObject?.optString("translated_lyric").orEmpty() }
-                }
-            }
-            LrcMerger.merge(original, translated).ifBlank { original }
+        val primary = parsePreviewLyricsPayload(primaryBody)
+        if (isGdStudioSong || (primary.original.isNotBlank() && primary.translated.isNotBlank())) {
+            primary
         } else {
-            body
+            // The FLAC search endpoint often supplies only the original LRC.
+            // GD Studio documents an optional tlyric field, so use it as a translation fallback.
+            val source = when (song.platform.lowercase()) {
+                "wyy" -> "netease"
+                "kuwo" -> "kuwo"
+                else -> song.platform.lowercase()
+            }
+            val fallback = runCatching {
+                parsePreviewLyricsPayload(
+                    fetchGdStudioLyricsBody(
+                        source = source,
+                        lyricId = song.lyricId.ifBlank { song.id },
+                        userAgent = userAgent,
+                    )
+                )
+            }.getOrDefault(PreviewLyrics())
+            PreviewLyrics(
+                original = primary.original.ifBlank { fallback.original },
+                translated = primary.translated.ifBlank { fallback.translated },
+            )
         }
     }
 
+    private fun fetchGdStudioLyricsBody(source: String, lyricId: String, userAgent: String): String {
+        val url = HttpUrl.Builder()
+            .scheme("https")
+            .host("music-api.gdstudio.xyz")
+            .addPathSegments("api.php")
+            .addQueryParameter("types", "lyric")
+            .addQueryParameter("source", source)
+            .addQueryParameter("id", lyricId)
+            .build()
+        val request = Request.Builder()
+            .url(url)
+            .header("Referer", "https://music.gdstudio.xyz/")
+            .header("User-Agent", userAgent.ifBlank { fallbackUserAgent })
+            .get()
+            .build()
+        return executeBody(request).trim()
+    }
+
+    private fun parsePreviewLyricsPayload(body: String): PreviewLyrics {
+        val text = body.trim()
+        if (text.isBlank()) return PreviewLyrics()
+        if (!text.startsWith("{")) return PreviewLyrics(original = text)
+        val root = runCatching { JSONObject(text) }.getOrNull() ?: return PreviewLyrics(original = text)
+        val data = root.opt("data")
+        val dataObject = data as? JSONObject
+        fun pick(vararg candidates: String?): String = candidates
+            .firstOrNull { !it.isNullOrBlank() && !it.equals("null", ignoreCase = true) }
+            ?.trim().orEmpty()
+        val original = pick(
+            root.optString("lyric"), root.optString("lrc"),
+            dataObject?.optString("lyric"), dataObject?.optString("lrc"),
+            data as? String,
+        )
+        val translated = pick(
+            root.optString("tlyric"), root.optString("trans"),
+            root.optString("translated_lyric"), root.optString("translation"),
+            dataObject?.optString("tlyric"), dataObject?.optString("trans"),
+            dataObject?.optString("translated_lyric"), dataObject?.optString("translation"),
+        )
+        return PreviewLyrics(original = original, translated = translated)
+    }
     private fun searchGdStudio(keyword: String, normalizedPlatform: String): List<FlacSiteSong> {
         val source = if (normalizedPlatform == "wyy") "netease" else normalizedPlatform
         val url = HttpUrl.Builder()
