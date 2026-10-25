@@ -306,6 +306,7 @@ private fun MusicMetaApp() {
     var previewQueue by remember { mutableStateOf<List<FlacSiteSong>>(emptyList()) }
     var previewCoverUrl by remember { mutableStateOf("") }
     var previewLyrics by remember { mutableStateOf("") }
+    var previewTranslatedLyrics by remember { mutableStateOf("") }
     var isPreviewLoading by remember { mutableStateOf(false) }
     var isPreviewPlaying by remember { mutableStateOf(false) }
     var isPreviewLyricsLoading by remember { mutableStateOf(false) }
@@ -720,6 +721,7 @@ private fun MusicMetaApp() {
         previewQueue = emptyList()
         previewCoverUrl = ""
         previewLyrics = ""
+        previewTranslatedLyrics = ""
         isPreviewLoading = false
         isPreviewPlaying = false
         isPreviewLyricsLoading = false
@@ -764,6 +766,7 @@ private fun MusicMetaApp() {
             }
             previewCoverUrl = song.coverUrl
             previewLyrics = ""
+            previewTranslatedLyrics = ""
             showTranslatedPreviewLyric = false
             previewPositionMs = 0
             previewDurationMs = 0
@@ -861,15 +864,21 @@ private fun MusicMetaApp() {
                     }
                     scope.launch {
                         val lyrics = withContext(Dispatchers.IO) {
-                            val primary = runCatching {
+                            var tracks = runCatching {
                                 flacProvider.fetchLyrics(song, cookie, fallbackUserAgent)
-                            }.getOrDefault("").trim()
-                            primary.ifBlank {
-                                runCatching { metadataProvider.resolveSourceLyrics(song) }.getOrDefault("")
+                            }.getOrDefault(PreviewLyrics())
+                            if (tracks.original.isBlank()) {
+                                tracks = tracks.copy(
+                                    original = runCatching { metadataProvider.resolveSourceLyrics(song) }
+                                        .getOrDefault("").trim(),
+                                )
                             }
+                            tracks
                         }
                         if (previewSong?.let(sourceSongKey) == songKey) {
-                            previewLyrics = lyrics
+                            previewLyrics = lyrics.original.trim()
+                            previewTranslatedLyrics = lyrics.translated.trim()
+                            showTranslatedPreviewLyric = false
                             isPreviewLyricsLoading = false
                         }
                     }
@@ -2010,87 +2019,121 @@ private fun MusicMetaApp() {
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val density = LocalDensity.current
                 val playerAreaWidth = maxWidth
-                val dragWidth = if (showPreviewDetails) 142.dp else 76.dp
+                val dragWidth = if (showPreviewDetails) 356.dp else 76.dp
                 val maxDragX = with(density) { (maxWidth - dragWidth).toPx().coerceAtLeast(0f) }
-                val dragHeight = if (showPreviewDetails) 180.dp else 108.dp
+                val dragHeight = 108.dp
                 val maxDragY = with(density) { (maxHeight - dragHeight).toPx().coerceAtLeast(0f) }
 
                 if (showPreviewDetails) {
-                    val timedLyrics = remember(previewLyrics) { parseTimedPreviewLyrics(previewLyrics) }
-                    val fallbackLyrics = remember(previewLyrics) {
+                    val originalTimedLyrics = remember(previewLyrics) { parseTimedPreviewLyrics(previewLyrics) }
+                    val translatedTimedLyrics = remember(previewTranslatedLyrics) {
+                        parseTimedPreviewLyrics(previewTranslatedLyrics)
+                    }
+                    val originalFallbackLyrics = remember(previewLyrics) {
                         formatPreviewLyrics(previewLyrics).lineSequence().filter { it.isNotBlank() }.toList()
                     }
-                    val activeTimestamp = timedLyrics.lastOrNull { it.first <= previewPositionMs }?.first
-                    val activeTimestampLyrics = activeTimestamp?.let { timestamp ->
-                        timedLyrics.filter { it.first == timestamp }.map { it.second }.distinct()
-                    }.orEmpty()
+                    val translatedFallbackLyrics = remember(previewTranslatedLyrics) {
+                        formatPreviewLyrics(previewTranslatedLyrics).lineSequence().filter { it.isNotBlank() }.toList()
+                    }
+                    val activeTrackLyrics = if (showTranslatedPreviewLyric) translatedTimedLyrics else originalTimedLyrics
+                    val activeFallbackLyrics = if (showTranslatedPreviewLyric) translatedFallbackLyrics else originalFallbackLyrics
                     val activeLyric = when {
                         isPreviewLyricsLoading -> "正在找歌词…"
                         previewLyrics.isBlank() -> "暂未找到歌词"
-                        timedLyrics.isNotEmpty() && activeTimestamp == null -> "♪ 等待下一句歌词"
-                        activeTimestampLyrics.isNotEmpty() -> activeTimestampLyrics.getOrNull(if (showTranslatedPreviewLyric) 1 else 0)
-                            ?: activeTimestampLyrics.first()
-                        else -> fallbackLyrics.getOrNull(if (showTranslatedPreviewLyric) 1 else 0)
-                            ?: fallbackLyrics.firstOrNull() ?: "♪"
+                        showTranslatedPreviewLyric && previewTranslatedLyrics.isBlank() -> "这首歌暂无译文"
+                        activeTrackLyrics.isNotEmpty() -> activeTrackLyrics.lastOrNull { it.first <= previewPositionMs }?.second
+                            ?: activeTrackLyrics.first().second
+                        activeFallbackLyrics.isNotEmpty() -> activeFallbackLyrics.first()
+                        else -> "♪"
                     }
                     Card(
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
-                            .padding(end = 78.dp, bottom = 38.dp)
+                            .padding(end = 78.dp, bottom = 36.dp)
                             .offset {
                                 IntOffset(
                                     miniPlayerOffset.x.coerceIn(-maxDragX, 0f).roundToInt(),
                                     miniPlayerOffset.y.coerceIn(-maxDragY, 0f).roundToInt(),
                                 )
                             }
-                            .width(64.dp)
-                            .heightIn(min = 90.dp, max = 142.dp),
+                            .width(278.dp)
+                            .height(64.dp),
                         shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.cardColors(containerColor = Color(0xFF17211F)),
                         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
                     ) {
                         Column(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 7.dp),
-                            verticalArrangement = Arrangement.spacedBy(5.dp),
+                            modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 4.dp),
+                            verticalArrangement = Arrangement.spacedBy(0.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .heightIn(min = 48.dp, max = 104.dp)
+                                    .weight(1f)
                                     .clip(RoundedCornerShape(9.dp))
                                     .background(Color(0xFF243631))
                                     .clickable { showTranslatedPreviewLyric = !showTranslatedPreviewLyric }
-                                    .padding(horizontal = 3.dp, vertical = 5.dp)
-                                    .semantics { contentDescription = "歌词，点击切换原文或译文" },
+                                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                                    .semantics {
+                                        contentDescription = if (previewTranslatedLyrics.isBlank())
+                                            "歌词，点击尝试显示译文" else "歌词，点击切换原文或译文"
+                                    },
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
                                     activeLyric,
                                     color = Color(0xFF9FF0C9),
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp,
-                                    lineHeight = 14.sp,
+                                    fontSize = 12.sp,
+                                    lineHeight = 15.sp,
                                     textAlign = TextAlign.Center,
-                                    maxLines = 5,
+                                    maxLines = 2,
                                     overflow = TextOverflow.Ellipsis,
                                 )
                             }
-                            Slider(
-                                value = previewPositionMs.coerceIn(0, previewDurationMs.coerceAtLeast(0)).toFloat(),
-                                onValueChange = { value ->
-                                    val target = value.toInt().coerceAtLeast(0)
-                                    previewPositionMs = target
-                                    runCatching { previewPlayer.value?.seekTo(target) }
-                                },
-                                valueRange = 0f..previewDurationMs.coerceAtLeast(1).toFloat(),
-                                enabled = previewDurationMs > 0 && previewPlayer.value != null && !isPreviewLoading,
-                                modifier = Modifier.fillMaxWidth().height(16.dp),
-                            )
+                            val progress = if (previewDurationMs > 0)
+                                (previewPositionMs.toFloat() / previewDurationMs.toFloat()).coerceIn(0f, 1f)
+                            else 0f
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(14.dp)
+                                    .pointerInput(previewDurationMs, activePreviewSong) {
+                                        detectTapGestures { tap ->
+                                            if (previewDurationMs > 0 && size.width > 0) {
+                                                val fraction = (tap.x / size.width.toFloat()).coerceIn(0f, 1f)
+                                                val target = (fraction * previewDurationMs).toInt()
+                                                previewPositionMs = target
+                                                runCatching { previewPlayer.value?.seekTo(target) }
+                                            }
+                                        }
+                                    }
+                                    .pointerInput(previewDurationMs, activePreviewSong) {
+                                        detectHorizontalDragGestures { change, _ ->
+                                            change.consume()
+                                            if (previewDurationMs > 0 && size.width > 0) {
+                                                val fraction = (change.position.x / size.width.toFloat()).coerceIn(0f, 1f)
+                                                val target = (fraction * previewDurationMs).toInt()
+                                                previewPositionMs = target
+                                                runCatching { previewPlayer.value?.seekTo(target) }
+                                            }
+                                        }
+                                    },
+                                contentAlignment = Alignment.CenterStart,
+                            ) {
+                                Box(
+                                    modifier = Modifier.fillMaxWidth().height(3.dp)
+                                        .clip(CircleShape).background(Color(0xFF3B514B)),
+                                )
+                                Box(
+                                    modifier = Modifier.fillMaxWidth(progress).height(3.dp)
+                                        .clip(CircleShape).background(Color(0xFF9FF0C9)),
+                                )
+                            }
                         }
                     }
                 }
-
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
@@ -2154,20 +2197,16 @@ private fun MusicMetaApp() {
                                 strokeWidth = 2.dp,
                             )
                         }
-                        Surface(
+                        Box(
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
-                                .padding(3.dp)
+                                .padding(5.dp)
                                 .size(20.dp)
                                 .clickable { stopPreview() }
                                 .semantics { contentDescription = "关闭迷你播放器" },
-                            color = Color(0xD90D1210),
-                            contentColor = Color.White,
-                            shape = CircleShape,
+                            contentAlignment = Alignment.Center,
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text("×", fontSize = 16.sp, color = Color.White, lineHeight = 18.sp)
-                            }
+                            CloseGlyph()
                         }
                     }
                     Row(
@@ -2614,6 +2653,21 @@ private fun formatPreviewLyrics(raw: String): String {
 private fun formatPreviewTime(milliseconds: Int): String {
     val totalSeconds = milliseconds.coerceAtLeast(0) / 1000
     return (totalSeconds / 60).toString() + ":" + (totalSeconds % 60).toString().padStart(2, '0')
+}
+
+@Composable
+private fun CloseGlyph() {
+    Canvas(modifier = Modifier.size(13.dp)) {
+        val start = Offset(size.width * 0.22f, size.height * 0.22f)
+        val end = Offset(size.width * 0.78f, size.height * 0.78f)
+        val oppositeStart = Offset(size.width * 0.78f, size.height * 0.22f)
+        val oppositeEnd = Offset(size.width * 0.22f, size.height * 0.78f)
+        val stroke = 1.8.dp.toPx()
+        drawLine(Color(0xCC101512), start, end, strokeWidth = stroke + 1.2.dp.toPx(), cap = StrokeCap.Round)
+        drawLine(Color(0xCC101512), oppositeStart, oppositeEnd, strokeWidth = stroke + 1.2.dp.toPx(), cap = StrokeCap.Round)
+        drawLine(Color(0xFFF4F7F5), start, end, strokeWidth = stroke, cap = StrokeCap.Round)
+        drawLine(Color(0xFFF4F7F5), oppositeStart, oppositeEnd, strokeWidth = stroke, cap = StrokeCap.Round)
+    }
 }
 
 @Composable
