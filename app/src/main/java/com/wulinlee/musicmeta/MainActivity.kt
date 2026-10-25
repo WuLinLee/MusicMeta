@@ -2010,52 +2010,82 @@ private fun MusicMetaApp() {
                 val maxDragY = with(density) { (maxHeight - 76.dp).toPx().coerceAtLeast(0f) }
 
                 if (showPreviewDetails) {
+                    val timedLyrics = remember(previewLyrics) { parseTimedPreviewLyrics(previewLyrics) }
+                    val activeLyricIndex = timedLyrics.indexOfLast { it.first <= previewPositionMs }
+                    val activeLyric = timedLyrics.getOrNull(activeLyricIndex)?.second
+                        ?: if (timedLyrics.isEmpty()) formatPreviewLyrics(previewLyrics).lineSequence().firstOrNull { it.isNotBlank() }.orEmpty()
+                        else "♪ 等待下一句歌词"
                     Card(
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
-                            .padding(end = 12.dp, bottom = 82.dp)
-                            .fillMaxWidth(0.94f)
-                            .widthIn(max = 340.dp),
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = SurfaceColor),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 12.dp),
+                            .padding(end = 78.dp, bottom = 12.dp)
+                            .offset {
+                                IntOffset(
+                                    miniPlayerOffset.x.coerceIn(-maxDragX, 0f).roundToInt(),
+                                    miniPlayerOffset.y.coerceIn(-maxDragY, 0f).roundToInt(),
+                                )
+                            }
+                            .width(278.dp),
+                        shape = RoundedCornerShape(topStart = 18.dp, bottomStart = 18.dp, topEnd = 14.dp, bottomEnd = 14.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF17211F)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 10.dp),
                     ) {
                         Column(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
-                                .heightIn(max = 250.dp),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                             verticalArrangement = Arrangement.spacedBy(5.dp),
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(9.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                AsyncImage(
-                                    model = previewCoverUrl.ifBlank { activePreviewSong.coverUrl }.takeIf { it.isNotBlank() },
-                                    contentDescription = "正在试听的歌曲封面",
-                                    placeholder = painterResource(id = R.drawable.musicmeta_cover),
-                                    error = painterResource(id = R.drawable.musicmeta_cover),
-                                    modifier = Modifier.size(42.dp).clip(RoundedCornerShape(9.dp)).background(SoftAccent),
-                                    contentScale = ContentScale.Crop,
-                                )
-                                Column(
-                                    modifier = Modifier.weight(1f),
-                                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                                ) {
-                                    Text(activePreviewSong.title, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text(activePreviewSong.artist, color = SubInk, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                     Text(
-                                        if (activePreviewSong.platform.startsWith("gd:")) "GD Studio 音源"
-                                        else if (activePreviewSong.platform == "kuwo") "酷我音源" else "网易云音源",
-                                        color = Accent,
+                                        activePreviewSong.title,
+                                        color = Color(0xFFF5F7F6),
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 12.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Text(
+                                        activePreviewSong.artist,
+                                        color = Color(0xFFB5C4BF),
                                         fontSize = 10.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
                                     )
                                 }
-                                IconButton(
+                                TextButton(
                                     onClick = { showPreviewDetails = false },
-                                    modifier = Modifier.size(28.dp).semantics { contentDescription = "收起播放详情" },
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                                    modifier = Modifier.height(26.dp),
                                 ) {
-                                    Text("⌄", color = Ink, fontSize = 20.sp)
+                                    Text("收起", color = Color(0xFFB5C4BF), fontSize = 10.sp)
                                 }
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 30.dp, max = 42.dp)
+                                    .clip(RoundedCornerShape(9.dp))
+                                    .background(Color(0xFF243631))
+                                    .padding(horizontal = 9.dp, vertical = 5.dp),
+                                contentAlignment = Alignment.CenterStart,
+                            ) {
+                                Text(
+                                    when {
+                                        isPreviewLyricsLoading -> "正在找歌词…"
+                                        previewLyrics.isBlank() -> "暂未找到可用歌词"
+                                        activeLyric.isBlank() -> "♪"
+                                        else -> activeLyric
+                                    },
+                                    color = Color(0xFF9FF0C9),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    lineHeight = 17.sp,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
                             }
                             Slider(
                                 value = previewPositionMs.coerceIn(0, previewDurationMs.coerceAtLeast(0)).toFloat(),
@@ -2066,114 +2096,26 @@ private fun MusicMetaApp() {
                                 },
                                 valueRange = 0f..previewDurationMs.coerceAtLeast(1).toFloat(),
                                 enabled = previewDurationMs > 0 && previewPlayer.value != null && !isPreviewLoading,
-                                modifier = Modifier.fillMaxWidth().height(22.dp),
+                                modifier = Modifier.fillMaxWidth().height(18.dp),
                             )
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Text(formatPreviewTime(previewPositionMs), color = SubInk, fontSize = 10.sp)
-                                Text(formatPreviewTime(previewDurationMs), color = SubInk, fontSize = 10.sp)
-                            }
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(1.dp),
-                            ) {
-                                IconButton(
-                                    onClick = { playAdjacentPreview(-1) },
-                                    enabled = !isPreviewLoading && activeQueueIndex > 0,
-                                    modifier = Modifier.size(30.dp).semantics {
-                                        contentDescription = "上一首"
-                                    },
-                                ) {
-                                    Text("◀|", color = if (activeQueueIndex > 0) Accent else SubInk, fontSize = 10.sp)
-                                }
+                                Text(
+                                    "${formatPreviewTime(previewPositionMs)} / ${formatPreviewTime(previewDurationMs)}",
+                                    color = Color(0xFFB5C4BF),
+                                    fontSize = 9.sp,
+                                )
                                 IconButton(
                                     onClick = { playPreview(activePreviewSong) },
                                     enabled = !isPreviewLoading,
-                                    modifier = Modifier.size(32.dp).semantics {
+                                    modifier = Modifier.size(30.dp).semantics {
                                         contentDescription = if (isPreviewPlaying) "暂停播放" else "继续播放"
                                     },
                                 ) {
                                     PlayGlyph(isPlaying = isPreviewPlaying, isLoading = isPreviewLoading)
-                                }
-                                Column(
-                                    modifier = Modifier.weight(1f),
-                                    verticalArrangement = Arrangement.spacedBy(1.dp),
-                                ) {
-                                    Text(
-                                        if (isPreviewLoading) "正在连接…" else if (isPreviewPlaying) "正在播放" else "已暂停",
-                                        color = SubInk,
-                                        fontSize = 10.sp,
-                                        maxLines = 1,
-                                    )
-                                    Text(
-                                        if (activeQueueIndex >= 0) "${activeQueueIndex + 1} / ${previewQueue.size}" else "单曲",
-                                        color = SubInk,
-                                        fontSize = 9.sp,
-                                        maxLines = 1,
-                                    )
-                                }
-                                IconButton(
-                                    onClick = { playAdjacentPreview(1) },
-                                    enabled = !isPreviewLoading && activeQueueIndex >= 0 && activeQueueIndex < previewQueue.lastIndex,
-                                    modifier = Modifier.size(30.dp).semantics {
-                                        contentDescription = "下一首"
-                                    },
-                                ) {
-                                    Text("|▶", color = if (activeQueueIndex >= 0 && activeQueueIndex < previewQueue.lastIndex) Accent else SubInk, fontSize = 10.sp)
-                                }
-                                TextButton(
-                                    onClick = stopPreview,
-                                    contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp),
-                                ) {
-                                    Text("停止", color = SubInk, fontSize = 11.sp)
-                                }
-                            }
-                            Text("歌词", color = Ink, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(max = 68.dp)
-                                    .clip(RoundedCornerShape(9.dp))
-                                    .background(PageBackground)
-                                    .verticalScroll(rememberScrollState())
-                                    .padding(horizontal = 8.dp, vertical = 6.dp),
-                            ) {
-                                val timedLyrics = remember(previewLyrics) {
-                                    parseTimedPreviewLyrics(previewLyrics)
-                                }
-                                val activeLyricIndex = timedLyrics.indexOfLast { it.first <= previewPositionMs }
-                                when {
-                                    isPreviewLyricsLoading -> Text(
-                                        "正在找歌词…", color = SubInk, fontSize = 11.sp, lineHeight = 15.sp,
-                                    )
-                                    previewLyrics.isBlank() -> Text(
-                                        "暂未找到可用歌词", color = SubInk, fontSize = 11.sp, lineHeight = 15.sp,
-                                    )
-                                    timedLyrics.isEmpty() -> Text(
-                                        formatPreviewLyrics(previewLyrics),
-                                        color = Ink,
-                                        fontSize = 11.sp,
-                                        lineHeight = 15.sp,
-                                    )
-                                    else -> Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                        timedLyrics.forEachIndexed { index, lyric ->
-                                            Text(
-                                                lyric.second,
-                                                color = if (index == activeLyricIndex) Accent else Ink,
-                                                fontWeight = if (index == activeLyricIndex) FontWeight.SemiBold else FontWeight.Normal,
-                                                fontSize = 11.sp,
-                                                lineHeight = 15.sp,
-                                                modifier = Modifier.fillMaxWidth().clickable {
-                                                    previewPositionMs = lyric.first
-                                                    runCatching { previewPlayer.value?.seekTo(lyric.first) }
-                                                },
-                                            )
-                                        }
-                                    }
                                 }
                             }
                         }
