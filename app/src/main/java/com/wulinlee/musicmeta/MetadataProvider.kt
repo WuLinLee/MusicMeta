@@ -327,18 +327,20 @@ class MetadataProvider {
         } catch (_: Exception) { null }
     }
 
-    private fun readLimited(input: InputStream, limit: Int): ByteArray? = input.use { stream ->
-        val output = ByteArrayOutputStream(minOf(limit, 64 * 1024))
-        val buffer = ByteArray(8 * 1024)
-        var total = 0
-        while (true) {
-            val count = stream.read(buffer)
-            if (count < 0) break
-            total += count
-            if (total > limit) return null
-            output.write(buffer, 0, count)
+    private fun readLimited(input: InputStream, limit: Int): ByteArray? {
+        return input.use { stream ->
+            val output = ByteArrayOutputStream(minOf(limit, 64 * 1024))
+            val buffer = ByteArray(8 * 1024)
+            var total = 0
+            while (true) {
+                val count = stream.read(buffer)
+                if (count < 0) break
+                total += count
+                if (total > limit) return@use null
+                output.write(buffer, 0, count)
+            }
+            output.toByteArray()
         }
-        output.toByteArray()
     }
 
     private fun get(url: String, referer: String? = null): String {
