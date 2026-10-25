@@ -979,7 +979,11 @@ private fun MusicMetaApp() {
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
                             Text(
-                                if (filterText.isBlank()) "第 $currentPage / $pageCount 页" else filteredKnownTracks.size.toString() + " 首",
+                                when {
+                                    pageItemCount > pageSize -> "第 $currentPage / $pageCount 页"
+                                    filterText.isNotBlank() -> filteredKnownTracks.size.toString() + " 首匹配歌曲"
+                                    else -> pageItemCount.toString() + " 首歌曲"
+                                },
                                 color = SubInk,
                                 fontSize = 11.sp,
                             )
@@ -1003,91 +1007,94 @@ private fun MusicMetaApp() {
                                 }
                             }
                         }
-                        val pageNumbers = if (pageCount <= 7) {
-                            (1..pageCount).toList()
-                        } else {
-                            buildList {
-                                add(1)
-                                if (currentPage > 3) add(-1)
-                                val windowStart = if (currentPage <= 3) 2 else maxOf(2, currentPage - 1)
-                                val windowEnd = if (currentPage <= 3) 5 else minOf(pageCount - 1, currentPage + 2)
-                                for (number in windowStart..windowEnd) if (number !in this) add(number)
-                                if (currentPage < pageCount - 2) add(-1)
-                                if (pageCount !in this) add(pageCount)
-                            }
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(3.dp),
-                        ) {
-                            IconButton(
-                                onClick = { requestPage(currentPage - 1) },
-                                enabled = !busy && currentPage > 1,
-                                modifier = Modifier.semantics { contentDescription = "上一页" },
-                            ) {
-                                PageArrowGlyph(pointsLeft = true, tint = if (!busy && currentPage > 1) Ink else SubInk)
+                        if (pageItemCount > pageSize) {
+                            val pageNumbers = if (pageCount <= 7) {
+                                (1..pageCount).toList()
+                            } else {
+                                buildList {
+                                    add(1)
+                                    if (currentPage > 3) add(-1)
+                                    val windowStart = if (currentPage <= 3) 2 else maxOf(2, currentPage - 1)
+                                    val windowEnd = if (currentPage <= 3) 5 else minOf(pageCount - 1, currentPage + 2)
+                                    for (number in windowStart..windowEnd) if (number !in this) add(number)
+                                    if (currentPage < pageCount - 2) add(-1)
+                                    if (pageCount !in this) add(pageCount)
+                                }
                             }
                             Row(
-                                modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                                modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(1.dp),
+                                horizontalArrangement = Arrangement.spacedBy(3.dp),
                             ) {
-                                pageNumbers.forEach { number ->
-                                    if (number == -1) {
-                                        Text("…", color = SubInk, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 4.dp))
-                                    } else {
-                                        TextButton(
-                                            onClick = { requestPage(number) },
-                                            enabled = !busy && number != currentPage,
-                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-                                        ) {
-                                            Text(
-                                                number.toString(),
-                                                color = if (number == currentPage) Accent else Ink,
-                                                fontWeight = if (number == currentPage) FontWeight.Bold else FontWeight.Normal,
-                                                fontSize = 12.sp,
-                                            )
+                                IconButton(
+                                    onClick = { requestPage(currentPage - 1) },
+                                    enabled = !busy && currentPage > 1,
+                                    modifier = Modifier.semantics { contentDescription = "上一页" },
+                                ) {
+                                    PageArrowGlyph(pointsLeft = true, tint = if (!busy && currentPage > 1) Ink else SubInk)
+                                }
+                                Row(
+                                    modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(1.dp),
+                                ) {
+                                    pageNumbers.forEach { number ->
+                                        if (number == -1) {
+                                            Text("…", color = SubInk, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 4.dp))
+                                        } else {
+                                            TextButton(
+                                                onClick = { requestPage(number) },
+                                                enabled = !busy && number != currentPage,
+                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                            ) {
+                                                Text(
+                                                    number.toString(),
+                                                    color = if (number == currentPage) Accent else Ink,
+                                                    fontWeight = if (number == currentPage) FontWeight.Bold else FontWeight.Normal,
+                                                    fontSize = 12.sp,
+                                                )
+                                            }
                                         }
                                     }
                                 }
+                                IconButton(
+                                    onClick = { requestPage(currentPage + 1) },
+                                    enabled = !busy && currentPage < pageCount,
+                                    modifier = Modifier.semantics { contentDescription = "下一页" },
+                                ) {
+                                    PageArrowGlyph(pointsLeft = false, tint = if (!busy && currentPage < pageCount) Ink else SubInk)
+                                }
                             }
-                            IconButton(
-                                onClick = { requestPage(currentPage + 1) },
-                                enabled = !busy && currentPage < pageCount,
-                                modifier = Modifier.semantics { contentDescription = "下一页" },
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.End,
                             ) {
-                                PageArrowGlyph(pointsLeft = false, tint = if (!busy && currentPage < pageCount) Ink else SubInk)
+                                OutlinedTextField(
+                                    value = jumpPageInput,
+                                    onValueChange = { jumpPageInput = it.filter(Char::isDigit).take(5) },
+                                    modifier = Modifier.width(76.dp),
+                                    singleLine = true,
+                                    placeholder = { Text("页码", fontSize = 11.sp) },
+                                    shape = RoundedCornerShape(12.dp),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                                    keyboardActions = KeyboardActions(
+                                        onDone = { jumpPageInput.toIntOrNull()?.let(requestPage) }
+                                    ),
+                                    enabled = !busy,
+                                )
+                                TextButton(
+                                    onClick = {
+                                        val target = jumpPageInput.toIntOrNull()
+                                        if (target == null) status = "请输入页码。" else requestPage(target)
+                                    },
+                                    enabled = !busy,
+                                    contentPadding = PaddingValues(horizontal = 9.dp, vertical = 0.dp),
+                                ) {
+                                    Text("跳", color = Accent, fontSize = 12.sp)
+                                }
                             }
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.End,
-                        ) {
-                            OutlinedTextField(
-                                value = jumpPageInput,
-                                onValueChange = { jumpPageInput = it.filter(Char::isDigit).take(5) },
-                                modifier = Modifier.width(76.dp),
-                                singleLine = true,
-                                placeholder = { Text("页码", fontSize = 11.sp) },
-                                shape = RoundedCornerShape(12.dp),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-                                keyboardActions = KeyboardActions(
-                                    onDone = { jumpPageInput.toIntOrNull()?.let(requestPage) }
-                                ),
-                                enabled = !busy,
-                            )
-                            TextButton(
-                                onClick = {
-                                    val target = jumpPageInput.toIntOrNull()
-                                    if (target == null) status = "请输入页码。" else requestPage(target)
-                                },
-                                enabled = !busy,
-                                contentPadding = PaddingValues(horizontal = 9.dp, vertical = 0.dp),
-                            ) {
-                                Text("跳", color = Accent, fontSize = 12.sp)
-                            }
+    
                         }
                         if (filterText.isNotBlank()) {
                             Text("筛选范围：已加载或访问过的歌曲", color = SubInk, fontSize = 10.sp)
