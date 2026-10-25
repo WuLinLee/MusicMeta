@@ -2,7 +2,7 @@
 
 **MusicMeta（音笺）** 是一个 Android 音乐整理工具：读取网易云公开歌单或可匿名访问的红心歌单，搜索并核对候选音源，下载音频，并尽可能补齐封面、歌词和音频标签。
 
-> **当前开发目标：1.09**（`versionCode = 13`；发布状态以 GitHub Actions 和 Release 实际结果为准）  
+> **当前版本：1.09**（`versionCode = 13`；正式 APK 请以本次 GitHub Actions 成功结果和 Release 附件为准）  
 > 应用 ID：`com.wulinlee.musicmeta` · 最低 Android：10 / API 29 · 目标 SDK：35  
 > 技术栈：Kotlin、Jetpack Compose、Material 3、Coroutines、OkHttp、Coil、jaudiotagger。
 
