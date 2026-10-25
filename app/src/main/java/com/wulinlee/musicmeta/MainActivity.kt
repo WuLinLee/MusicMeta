@@ -2632,7 +2632,7 @@ private fun SourceCoverImage(
 }
 
 private fun parseTimedPreviewLyrics(raw: String): List<Pair<Int, String>> {
-    val timestamp = Regex("\\[(\\d{1,3}):(\\d{2})(?:[.:](\\d{1,3}))?]")
+    val timestamp = Regex("\\[(\\d{1,3}):(\\d{2})(?:[.:](\\d{1,3}))?\\]")
     val lines = mutableListOf<Pair<Int, String>>()
     for (line in raw.lineSequence()) {
         val matches = timestamp.findAll(line).toList()
