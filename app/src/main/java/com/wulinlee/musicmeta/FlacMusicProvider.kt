@@ -272,14 +272,22 @@ class FlacMusicProvider {
             val root = JSONObject(body)
             checkApiCode(root)
             val data = root.opt("data")
+            val dataObject = data as? JSONObject
             val lyric = when (data) {
                 is String -> data
                 is JSONObject -> data.optString("lyric").ifBlank { data.optString("lrc") }
                 else -> ""
             }
-            root.optString("lyric").ifBlank {
+            val original = root.optString("lyric").ifBlank {
                 root.optString("lrc").ifBlank { lyric }
             }
+            val translated = root.optString("tlyric").ifBlank {
+                root.optString("translated_lyric").ifBlank {
+                    dataObject?.optString("tlyric")
+                        .orEmpty().ifBlank { dataObject?.optString("translated_lyric").orEmpty() }
+                }
+            }
+            LrcMerger.merge(original, translated).ifBlank { original }
         } else {
             body
         }
