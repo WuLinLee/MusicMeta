@@ -829,7 +829,7 @@ private fun MusicMetaApp() {
                                 }
                             }
                             Row(
-                                modifier = Modifier.fillMaxWidth().height(25.dp).padding(horizontal = 4.dp),
+                                modifier = Modifier.fillMaxWidth().height(28.dp).padding(horizontal = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(0.dp),
                             ) {
@@ -952,10 +952,10 @@ private fun MusicMetaApp() {
                             ) {
                                 EnterGlyph()
                             }
-                            TextButton(
-                                onClick = {
-                                    val report = lastErrorReport
-                                    if (report != null) {
+                            if (lastErrorReport != null) {
+                                TextButton(
+                                    onClick = {
+                                        val report = lastErrorReport ?: return@TextButton
                                         runCatching {
                                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                             clipboard.setPrimaryClip(ClipData.newPlainText("MusicMeta error report", report))
@@ -964,12 +964,11 @@ private fun MusicMetaApp() {
                                         }.onFailure { error ->
                                             status = "复制失败：" + (error.message ?: "请重试")
                                         }
-                                    }
-                                },
-                                enabled = lastErrorReport != null,
-                                contentPadding = PaddingValues(horizontal = 3.dp, vertical = 0.dp),
-                            ) {
-                                Text("复制错误报告", color = if (lastErrorReport != null) Accent else SubInk, fontSize = 9.sp, maxLines = 1)
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 3.dp, vertical = 0.dp),
+                                ) {
+                                    Text("复制报告", color = Accent, fontSize = 9.sp, maxLines = 1)
+                                }
                             }
                         }
                     }
