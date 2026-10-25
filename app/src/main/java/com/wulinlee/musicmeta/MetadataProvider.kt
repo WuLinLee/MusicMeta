@@ -54,6 +54,34 @@ class MetadataProvider {
         )
     }
 
+    suspend fun resolveSourceCoverUrl(song: FlacSiteSong): String = withContext(Dispatchers.IO) {
+        val existing = song.coverUrl.trim()
+        if (existing.startsWith("https://") || existing.startsWith("http://")) {
+            return@withContext existing.replaceFirst(Regex("^http://", RegexOption.IGNORE_CASE), "https://")
+        }
+        val track = MusicTrack(
+            id = 0L,
+            title = song.title,
+            artists = song.artist,
+            album = song.album,
+            coverUrl = "",
+        )
+        (resolveCoverUrlFromGdStudio(track) ?: resolveCoverUrlFromItunes(track))
+            .orEmpty()
+            .replaceFirst(Regex("^http://", RegexOption.IGNORE_CASE), "https://")
+    }
+
+    suspend fun resolveSourceLyrics(song: FlacSiteSong): String = withContext(Dispatchers.IO) {
+        val track = MusicTrack(
+            id = 0L,
+            title = song.title,
+            artists = song.artist,
+            album = song.album,
+            coverUrl = song.coverUrl,
+        )
+        getLrclibLyrics(track).first.trim()
+    }
+
     private fun getLyrics(id: Long): LyricsPayload {
         val url = HttpUrl.Builder()
             .scheme("https").host("music.163.com").addPathSegments("api/song/lyric")
