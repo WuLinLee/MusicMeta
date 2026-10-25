@@ -1080,11 +1080,13 @@ private fun MusicMetaApp() {
             CenterAlignedTopAppBar(
                 navigationIcon = {
                     IconButton(
-                        onClick = copyErrorReport,
-                        enabled = lastErrorReport != null,
-                        modifier = Modifier.semantics { contentDescription = "复制错误报告" },
+                        onClick = {
+                            focusManager.clearFocus()
+                            scope.launch { listState.animateScrollToItem(0) }
+                        },
+                        modifier = Modifier.size(38.dp).semantics { contentDescription = "回到顶部" },
                     ) {
-                        ErrorGlyph(enabled = lastErrorReport != null)
+                        HomeGlyph()
                     }
                 },
                 title = {
