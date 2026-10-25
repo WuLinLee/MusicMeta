@@ -27,6 +27,8 @@ data class FlacSiteSong(
     val sign: String,
     val time: String,
     val coverUrl: String,
+    val coverId: String = "",
+    val lyricId: String = id,
 )
 
 class FlacMusicProvider {
@@ -180,6 +182,57 @@ class FlacMusicProvider {
         }
     }
 
+    suspend fun resolveCoverUrl(song: FlacSiteSong): String = withContext(Dispatchers.IO) {
+        normalizeCoverUrl(song.coverUrl).ifBlank {
+            val source = when {
+                song.platform.startsWith("gd:") -> song.platform.removePrefix("gd:").ifBlank { "netease" }
+                song.platform == "wyy" -> "netease"
+                else -> song.platform
+            }
+            var picId = song.coverId
+            if (picId.isBlank() || picId == "0" || picId.equals("null", ignoreCase = true)) {
+                val searchPlatform = if (source == "netease") "wyy" else source
+                val match = runCatching {
+                    searchGdStudio(song.title + " " + song.artist, searchPlatform)
+                        .firstOrNull {
+                            normalizeMatch(it.title) == normalizeMatch(song.title) &&
+                                (normalizeMatch(it.artist).contains(normalizeMatch(song.artist.substringBefore(" / "))) ||
+                                    normalizeMatch(song.artist).contains(normalizeMatch(it.artist)))
+                        }
+                }.getOrNull()
+                picId = match?.coverId.orEmpty()
+            }
+            if (picId.isBlank() || picId == "0" || picId.equals("null", ignoreCase = true)) {
+                ""
+            } else {
+                val url = HttpUrl.Builder()
+                    .scheme("https")
+                    .host("music-api.gdstudio.xyz")
+                    .addPathSegments("api.php")
+                    .addQueryParameter("types", "pic")
+                    .addQueryParameter("source", source)
+                    .addQueryParameter("id", picId)
+                    .addQueryParameter("size", "500")
+                    .build()
+                val request = Request.Builder()
+                    .url(url)
+                    .header("Referer", "https://music.gdstudio.xyz/")
+                    .header("User-Agent", fallbackUserAgent)
+                    .get()
+                    .build()
+                val body = executeBody(request).trim()
+                val direct = if (body.startsWith("http://") || body.startsWith("https://")) {
+                    body
+                } else {
+                    val json = runCatching { JSONObject(body) }.getOrNull()
+                    json?.optString("url").orEmpty()
+                        .ifBlank { json?.optJSONObject("data")?.optString("url").orEmpty() }
+                }
+                normalizeCoverUrl(direct)
+            }
+        }
+    }
+
     suspend fun fetchLyrics(
         song: FlacSiteSong,
         cookie: String?,
@@ -193,7 +246,7 @@ class FlacMusicProvider {
                 .addPathSegments("api.php")
                 .addQueryParameter("types", "lyric")
                 .addQueryParameter("source", source)
-                .addQueryParameter("id", song.id)
+                .addQueryParameter("id", song.lyricId.ifBlank { song.id })
                 .build()
             val request = Request.Builder()
                 .url(url)
@@ -283,12 +336,14 @@ class FlacMusicProvider {
                 is String -> artistValue
                 else -> item.optString("artists")
             }
-            val cover = listOf(
-                item.optString("pic_url"),
-                item.optString("coverUrl"),
-                item.optString("cover"),
-            ).firstOrNull { it.startsWith("http://") || it.startsWith("https://") || it.startsWith("//") }.orEmpty()
-                .let { if (it.startsWith("//")) "https:" + it else it.replaceFirst(Regex("^http://", RegexOption.IGNORE_CASE), "https://") }
+            val cover = normalizeCoverUrl(
+                listOf(
+                    item.optString("pic_url"),
+                    item.optString("coverUrl"),
+                    item.optString("cover"),
+                    item.optString("pic"),
+                ).firstOrNull { it.isNotBlank() && !it.equals("null", ignoreCase = true) }.orEmpty()
+            )
             FlacSiteSong(
                 id = id,
                 platform = "gd:" + source,
@@ -298,6 +353,9 @@ class FlacMusicProvider {
                 sign = "",
                 time = "",
                 coverUrl = cover,
+                coverId = listOf(item.optString("pic_id"), item.optString("picId"), item.optString("picture_id"))
+                    .firstOrNull { it.isNotBlank() && !it.equals("null", ignoreCase = true) }.orEmpty(),
+                lyricId = item.optString("lyric_id").ifBlank { item.optString("lyricId") }.ifBlank { id },
             )
         }
         if (songs.isEmpty()) throw IOException("GD Studio 没有搜索到候选歌曲。")
@@ -388,9 +446,29 @@ class FlacMusicProvider {
             album = song.optString("album_name").ifBlank { song.optString("album") },
             sign = song.optString("sign"),
             time = song.optString("time"),
-            coverUrl = song.optString("pic_url").ifBlank { song.optString("cover") },
+            coverUrl = normalizeCoverUrl(
+                listOf(song.optString("pic_url"), song.optString("coverUrl"), song.optString("cover"), song.optString("pic"))
+                    .firstOrNull { it.isNotBlank() && !it.equals("null", ignoreCase = true) }.orEmpty()
+            ),
+            coverId = listOf(song.optString("pic_id"), song.optString("picId"), song.optString("picture_id"))
+                .firstOrNull { it.isNotBlank() && !it.equals("null", ignoreCase = true) }.orEmpty(),
+            lyricId = song.optString("lyric_id").ifBlank { song.optString("lyricId") }.ifBlank { id },
         )
     }
+
+    private fun normalizeCoverUrl(raw: String?): String {
+        val value = raw?.trim().orEmpty()
+        return when {
+            value.isBlank() || value.equals("null", ignoreCase = true) -> ""
+            value.startsWith("//") -> "https:$value"
+            value.startsWith("http://", ignoreCase = true) -> "https://" + value.substringAfter("://")
+            value.startsWith("https://", ignoreCase = true) -> value
+            else -> ""
+        }
+    }
+
+    private fun normalizeMatch(value: String): String =
+        value.trim().lowercase().filter { it.isLetterOrDigit() }
 
     private fun checkApiCode(root: JSONObject) {
         if (root.has("code") && root.optInt("code") != 0 && root.optInt("code") != 200) {
