@@ -58,10 +58,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlaylistPlay
-import androidx.compose.material.icons.filled.RepeatOne
-import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
@@ -2974,11 +2970,13 @@ private fun MusicMetaApp() {
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Icon(
-                                    imageVector = when (playbackMode) {
-                                        1 -> Icons.Filled.Shuffle
-                                        2 -> Icons.Filled.RepeatOne
-                                        else -> Icons.Filled.PlaylistPlay
-                                    },
+                                    painter = painterResource(
+                                        id = when (playbackMode) {
+                                            1 -> R.drawable.ic_playback_shuffle
+                                            2 -> R.drawable.ic_playback_repeat_one
+                                            else -> R.drawable.ic_playback_sequential
+                                        },
+                                    ),
                                     contentDescription = null,
                                     tint = Accent,
                                     modifier = Modifier.size(14.dp),
