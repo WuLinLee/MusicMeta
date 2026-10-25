@@ -303,6 +303,7 @@ private fun MusicMetaApp() {
     var isDownloading by remember { mutableStateOf(false) }
     var verificationOpen by remember { mutableStateOf(false) }
     var previewSong by remember { mutableStateOf<FlacSiteSong?>(null) }
+    var previewQueue by remember { mutableStateOf<List<FlacSiteSong>>(emptyList()) }
     var previewCoverUrl by remember { mutableStateOf("") }
     var previewLyrics by remember { mutableStateOf("") }
     var isPreviewLoading by remember { mutableStateOf(false) }
@@ -710,6 +711,7 @@ private fun MusicMetaApp() {
         }
         previewPlayer.value = null
         previewSong = null
+        previewQueue = emptyList()
         previewCoverUrl = ""
         previewLyrics = ""
         isPreviewLoading = false
@@ -730,13 +732,13 @@ private fun MusicMetaApp() {
                         player.pause()
                         isPreviewPlaying = false
                         previewPositionMs = runCatching { player.currentPosition }.getOrDefault(previewPositionMs)
-                        status = "试听已暂停。"
+                        status = "播放已暂停。"
                     } else {
                         player.start()
                         isPreviewPlaying = true
                         previewPositionMs = runCatching { player.currentPosition }.getOrDefault(previewPositionMs)
                         previewDurationMs = runCatching { player.duration }.getOrDefault(previewDurationMs).coerceAtLeast(0)
-                        status = "正在试听《" + song.title + "》。"
+                        status = "正在播放《" + song.title + "》。"
                     }
                 }.onFailure { error ->
                     status = "试听控制失败：" + (error.message ?: "请重试")
@@ -748,6 +750,11 @@ private fun MusicMetaApp() {
             runCatching { oldPlayer?.release() }
             previewPlayer.value = null
             previewSong = song
+            previewQueue = when {
+                flacResults.any { sourceSongKey(it) == songKey } -> flacResults.toList()
+                previewQueue.any { sourceSongKey(it) == songKey } -> previewQueue
+                else -> listOf(song)
+            }
             previewCoverUrl = song.coverUrl
             previewLyrics = ""
             previewPositionMs = 0
@@ -757,7 +764,7 @@ private fun MusicMetaApp() {
             isPreviewPlaying = false
             isPreviewLoading = true
             isPreviewLyricsLoading = true
-            status = "正在准备《" + song.title + "》的试听……"
+            status = "正在准备播放《" + song.title + "》的试听……"
             scope.launch {
                 var newPlayer: MediaPlayer? = null
                 try {
@@ -805,7 +812,7 @@ private fun MusicMetaApp() {
                                     status = if (usedGdStudio) {
                                         "正在通过 GD Studio 试听《" + song.title + "》。"
                                     } else {
-                                        "正在试听《" + song.title + "》。"
+                                        "正在播放《" + song.title + "》。"
                                     }
                                 }
                                 .onFailure { error ->
@@ -821,7 +828,7 @@ private fun MusicMetaApp() {
                         isPreviewPlaying = false
                         isPreviewLoading = false
                         previewPositionMs = previewDurationMs
-                        status = "试听结束：《" + song.title + "》。"
+                        status = "播放结束：《" + song.title + "》。"
                         runCatching { completed.release() }
                         if (previewPlayer.value === completed) previewPlayer.value = null
                     }
@@ -869,6 +876,18 @@ private fun MusicMetaApp() {
                     }
                 }
             }
+        }
+    }
+
+    val playAdjacentPreview: (Int) -> Unit = { direction ->
+        val current = previewSong
+        val currentIndex = if (current == null) -1 else
+            previewQueue.indexOfFirst { sourceSongKey(it) == sourceSongKey(current) }
+        val targetIndex = currentIndex + direction
+        if (currentIndex >= 0 && targetIndex in previewQueue.indices) {
+            playPreview(previewQueue[targetIndex])
+        } else {
+            status = if (direction < 0) "已经是播放队列第一首。" else "已经是播放队列最后一首。"
         }
     }
 
@@ -1120,12 +1139,15 @@ private fun MusicMetaApp() {
         topBar = {
             CenterAlignedTopAppBar(
                 navigationIcon = {
-                    Image(
-                        painter = painterResource(id = R.drawable.musicmeta_cover),
-                        contentDescription = "音笺应用标志",
-                        modifier = Modifier.padding(start = 10.dp).size(36.dp).clip(RoundedCornerShape(9.dp)),
-                        contentScale = ContentScale.Crop,
-                    )
+                    IconButton(
+                        onClick = copyErrorReport,
+                        enabled = lastErrorReport != null,
+                        modifier = Modifier.padding(start = 4.dp).size(42.dp).semantics {
+                            contentDescription = "复制错误报告"
+                        },
+                    ) {
+                        CopyGlyph(enabled = lastErrorReport != null)
+                    }
                 },
                 title = {
                     Column(
@@ -1855,7 +1877,7 @@ private fun MusicMetaApp() {
                                                 onClick = { playPreview(song) },
                                                 enabled = !isPreviewLoading && !isResolvingUrl && !isDownloading,
                                                 modifier = Modifier.size(32.dp).semantics {
-                                                    contentDescription = "试听音源"
+                                                    contentDescription = "播放音源"
                                                 },
                                             ) {
                                                 PlayGlyph(
@@ -1974,6 +1996,9 @@ private fun MusicMetaApp() {
 
         if (previewSong != null) {
             val activePreviewSong = previewSong!!
+            val activeQueueIndex = previewQueue.indexOfFirst {
+                sourceSongKey(it) == sourceSongKey(activePreviewSong)
+            }
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val density = LocalDensity.current
                 val maxDragX = with(density) { (maxWidth - 76.dp).toPx().coerceAtLeast(0f) }
@@ -2049,26 +2074,55 @@ private fun MusicMetaApp() {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(1.dp),
                             ) {
+                                IconButton(
+                                    onClick = { playAdjacentPreview(-1) },
+                                    enabled = !isPreviewLoading && activeQueueIndex > 0,
+                                    modifier = Modifier.size(30.dp).semantics {
+                                        contentDescription = "上一首"
+                                    },
+                                ) {
+                                    Text("◀|", color = if (activeQueueIndex > 0) Accent else SubInk, fontSize = 10.sp)
+                                }
                                 IconButton(
                                     onClick = { playPreview(activePreviewSong) },
                                     enabled = !isPreviewLoading,
-                                    modifier = Modifier.size(34.dp).semantics {
-                                        contentDescription = if (isPreviewPlaying) "暂停试听" else "继续试听"
+                                    modifier = Modifier.size(32.dp).semantics {
+                                        contentDescription = if (isPreviewPlaying) "暂停播放" else "继续播放"
                                     },
                                 ) {
                                     PlayGlyph(isPlaying = isPreviewPlaying, isLoading = isPreviewLoading)
                                 }
-                                Text(
-                                    if (isPreviewLoading) "正在连接…" else if (isPreviewPlaying) "正在播放" else "已暂停",
-                                    color = SubInk,
-                                    fontSize = 10.sp,
+                                Column(
                                     modifier = Modifier.weight(1f),
-                                )
+                                    verticalArrangement = Arrangement.spacedBy(1.dp),
+                                ) {
+                                    Text(
+                                        if (isPreviewLoading) "正在连接…" else if (isPreviewPlaying) "正在播放" else "已暂停",
+                                        color = SubInk,
+                                        fontSize = 10.sp,
+                                        maxLines = 1,
+                                    )
+                                    Text(
+                                        if (activeQueueIndex >= 0) "${activeQueueIndex + 1} / ${previewQueue.size}" else "单曲",
+                                        color = SubInk,
+                                        fontSize = 9.sp,
+                                        maxLines = 1,
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { playAdjacentPreview(1) },
+                                    enabled = !isPreviewLoading && activeQueueIndex >= 0 && activeQueueIndex < previewQueue.lastIndex,
+                                    modifier = Modifier.size(30.dp).semantics {
+                                        contentDescription = "下一首"
+                                    },
+                                ) {
+                                    Text("|▶", color = if (activeQueueIndex >= 0 && activeQueueIndex < previewQueue.lastIndex) Accent else SubInk, fontSize = 10.sp)
+                                }
                                 TextButton(
                                     onClick = stopPreview,
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                    contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp),
                                 ) {
                                     Text("停止", color = SubInk, fontSize = 11.sp)
                                 }
@@ -2083,16 +2137,39 @@ private fun MusicMetaApp() {
                                     .verticalScroll(rememberScrollState())
                                     .padding(horizontal = 8.dp, vertical = 6.dp),
                             ) {
-                                Text(
-                                    when {
-                                        isPreviewLyricsLoading -> "正在找歌词…"
-                                        previewLyrics.isBlank() -> "暂未找到可用歌词"
-                                        else -> formatPreviewLyrics(previewLyrics)
-                                    },
-                                    color = if (previewLyrics.isBlank()) SubInk else Ink,
-                                    fontSize = 11.sp,
-                                    lineHeight = 15.sp,
-                                )
+                                val timedLyrics = remember(previewLyrics) {
+                                    parseTimedPreviewLyrics(previewLyrics)
+                                }
+                                val activeLyricIndex = timedLyrics.indexOfLast { it.first <= previewPositionMs }
+                                when {
+                                    isPreviewLyricsLoading -> Text(
+                                        "正在找歌词…", color = SubInk, fontSize = 11.sp, lineHeight = 15.sp,
+                                    )
+                                    previewLyrics.isBlank() -> Text(
+                                        "暂未找到可用歌词", color = SubInk, fontSize = 11.sp, lineHeight = 15.sp,
+                                    )
+                                    timedLyrics.isEmpty() -> Text(
+                                        formatPreviewLyrics(previewLyrics),
+                                        color = Ink,
+                                        fontSize = 11.sp,
+                                        lineHeight = 15.sp,
+                                    )
+                                    else -> Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        timedLyrics.forEachIndexed { index, lyric ->
+                                            Text(
+                                                lyric.second,
+                                                color = if (index == activeLyricIndex) Accent else Ink,
+                                                fontWeight = if (index == activeLyricIndex) FontWeight.SemiBold else FontWeight.Normal,
+                                                fontSize = 11.sp,
+                                                lineHeight = 15.sp,
+                                                modifier = Modifier.fillMaxWidth().clickable {
+                                                    previewPositionMs = lyric.first
+                                                    runCatching { previewPlayer.value?.seekTo(lyric.first) }
+                                                },
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -2491,7 +2568,7 @@ private fun ManualSourceSearchPanel(
                                 IconButton(
                                     onClick = { onPlay(song) },
                                     enabled = !isPreviewLoading && !isResolvingUrl && !isDownloading,
-                                    modifier = Modifier.size(30.dp).semantics { contentDescription = "试听音源" },
+                                    modifier = Modifier.size(30.dp).semantics { contentDescription = "播放音源" },
                                 ) {
                                     PlayGlyph(
                                         isPlaying = previewingSourceKey == song.platform + ":" + song.id && isPreviewPlaying,
@@ -2547,6 +2624,31 @@ private fun SourceCoverImage(
         modifier = Modifier.size(size).clip(RoundedCornerShape(10.dp)).background(SoftAccent),
         contentScale = ContentScale.Crop,
     )
+}
+
+private fun parseTimedPreviewLyrics(raw: String): List<Pair<Int, String>> {
+    val timestamp = Regex("\\[(\\d{1,3}):(\\d{2})(?:[.:](\\d{1,3}))?]")
+    val lines = mutableListOf<Pair<Int, String>>()
+    for (line in raw.lineSequence()) {
+        val matches = timestamp.findAll(line).toList()
+        if (matches.isEmpty()) continue
+        val lyricText = timestamp.replace(line, "").trim()
+        if (lyricText.isBlank()) continue
+        for (match in matches) {
+            val minutes = match.groupValues[1].toIntOrNull() ?: continue
+            val seconds = match.groupValues[2].toIntOrNull() ?: continue
+            if (seconds >= 60) continue
+            val fraction = match.groupValues.getOrElse(3) { "" }
+            val millis = when (fraction.length) {
+                1 -> (fraction.toIntOrNull() ?: 0) * 100
+                2 -> (fraction.toIntOrNull() ?: 0) * 10
+                3 -> fraction.toIntOrNull() ?: 0
+                else -> 0
+            }
+            lines += ((minutes * 60 + seconds) * 1000 + millis) to lyricText
+        }
+    }
+    return lines.sortedBy { it.first }
 }
 
 private fun formatPreviewLyrics(raw: String): String {

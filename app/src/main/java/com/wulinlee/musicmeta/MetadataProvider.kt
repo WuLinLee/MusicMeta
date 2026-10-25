@@ -311,7 +311,7 @@ class MetadataProvider {
                 val reportedMime = body.contentType()?.toString()?.substringBefore(';').orEmpty()
                 if (reportedMime.isNotBlank() && !reportedMime.startsWith("image/") &&
                     reportedMime != "application/octet-stream") return@use null
-                val bytes = body.bytes()
+                val bytes = readLimited(body.byteStream(), 12_000_000) ?: return@use null
                 val isJpeg = bytes.size >= 3 && bytes[0] == 0xff.toByte() && bytes[1] == 0xd8.toByte()
                 val isPng = bytes.size >= 8 && bytes.copyOfRange(0, 8).contentEquals(
                     byteArrayOf(0x89.toByte(),0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a))
@@ -325,6 +325,20 @@ class MetadataProvider {
                 bytes to mime
             }
         } catch (_: Exception) { null }
+    }
+
+    private fun readLimited(input: InputStream, limit: Int): ByteArray? = input.use { stream ->
+        val output = ByteArrayOutputStream(minOf(limit, 64 * 1024))
+        val buffer = ByteArray(8 * 1024)
+        var total = 0
+        while (true) {
+            val count = stream.read(buffer)
+            if (count < 0) break
+            total += count
+            if (total > limit) return null
+            output.write(buffer, 0, count)
+        }
+        output.toByteArray()
     }
 
     private fun get(url: String, referer: String? = null): String {

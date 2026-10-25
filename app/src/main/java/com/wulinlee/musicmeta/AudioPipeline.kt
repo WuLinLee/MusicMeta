@@ -13,12 +13,18 @@ import org.jaudiotagger.tag.Tag
 import org.jaudiotagger.tag.images.ArtworkFactory
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 object AudioDownloader {
-    private val client = OkHttpClient.Builder().followRedirects(true).callTimeout(10, TimeUnit.MINUTES).build()
+    private const val maxAudioBytes = 1_500L * 1024L * 1024L
+    private val client = OkHttpClient.Builder()
+        .followRedirects(false)
+        .followSslRedirects(false)
+        .callTimeout(10, TimeUnit.MINUTES)
+        .build()
 
     fun download(
         context: Context,
@@ -33,23 +39,21 @@ object AudioDownloader {
         require(uri.scheme?.lowercase() in setOf("http", "https") && !uri.host.isNullOrBlank()) {
             "仅支持标准 HTTP/HTTPS 音频下载链接；网页内部 blob/data 链接暂不支持。"
         }
-        val builder = Request.Builder().url(url)
-            .header("User-Agent", userAgent.ifBlank { fallbackUserAgent })
-            .header("Accept", "audio/*, application/octet-stream, */*")
-            .get()
-        if (!cookie.isNullOrBlank()) builder.header("Cookie", cookie)
-        if (referer.startsWith("http://") || referer.startsWith("https://")) builder.header("Referer", referer)
 
-        return client.newCall(builder.build()).execute().use { response ->
+        return executeWithSafeRedirects(url, userAgent, cookie, referer).use { response ->
             if (!response.isSuccessful) throw IOException("下载失败：HTTP ${response.code}")
             val body = response.body ?: throw IOException("网站没有返回音频文件。")
+            if (body.contentLength() > maxAudioBytes) throw IOException("文件大于 1.5 GB，暂不下载。")
             val responseType = response.header("Content-Type")?.substringBefore(';')?.trim()?.lowercase().orEmpty()
             if (responseType == "text/html" || responseType.contains("json")) {
                 throw IOException("拿到的是网页或接口响应，不是音频。请在网站内点击正常的下载按钮。")
             }
-            if (body.contentLength() > 1_500L * 1024L * 1024L) throw IOException("文件大于 1.5 GB，暂不下载。")
             val mime = responseType.ifBlank { mimeTypeHint.orEmpty() }
-            val filename = URLUtil.guessFileName(response.request.url.toString(), response.header("Content-Disposition") ?: disposition, mime)
+            val filename = URLUtil.guessFileName(
+                response.request.url.toString(),
+                response.header("Content-Disposition") ?: disposition,
+                mime,
+            )
             val extension = File(filename).extension.lowercase()
             val allowed = setOf("mp3", "flac", "m4a", "aac", "ogg", "opus", "wav", "wma")
             val inferred = when (mime.substringBefore(';').lowercase()) {
@@ -69,7 +73,7 @@ object AudioDownloader {
                 else -> throw IOException("无法识别音频格式（${mime.ifBlank { "未知类型" }}）。")
             }
             val base = (if (filename.contains('.')) filename.substringBeforeLast('.') else filename)
-                .replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().trimEnd('.').take(150)
+                .replace(Regex("[\\\\/:*?\\"<>|]"), "_").trim().trimEnd('.').take(150)
                 .ifBlank { "music" }
             val folder = File(context.cacheDir, "incoming-audio").apply { mkdirs() }
             var file = File(folder, "$base.$finalExtension")
@@ -79,17 +83,100 @@ object AudioDownloader {
                 suffix++
                 if (suffix > 1000) throw IOException("下载缓存中存在过多同名文件。")
             }
-            body.byteStream().use { input -> file.outputStream().buffered().use { output -> input.copyTo(output) } }
-            if (!file.isFile || file.length() == 0L) {
+
+            try {
+                body.byteStream().use { input ->
+                    file.outputStream().buffered().use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        var totalBytes = 0L
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            totalBytes += count
+                            if (totalBytes > maxAudioBytes) {
+                                throw IOException("文件大于 1.5 GB，已停止下载。")
+                            }
+                            output.write(buffer, 0, count)
+                        }
+                    }
+                }
+                if (!file.isFile || file.length() == 0L) {
+                    throw IOException("下载到的音频文件为空。")
+                }
+                if (!hasAudioSignature(file, finalExtension)) {
+                    throw IOException("下载站返回的内容不是有效的 ${finalExtension.uppercase()} 音频（文件头校验失败）。请重试或切换音源，避免保存无法播放的文件。")
+                }
+                file
+            } catch (error: Exception) {
                 file.delete()
-                throw IOException("下载到的音频文件为空。")
+                throw error
             }
-            if (!hasAudioSignature(file, finalExtension)) {
-                file.delete()
-                throw IOException("下载站返回的内容不是有效的 ${finalExtension.uppercase()} 音频（文件头校验失败）。请重试或切换音源，避免保存无法播放的文件。")
-            }
-            file
         }
+    }
+
+    /**
+     * Handle redirects manually so explicit WebView cookies are only sent to
+     * the exact HTTPS host for which they were obtained, never to a redirected CDN.
+     */
+    private fun executeWithSafeRedirects(
+        initialUrl: String,
+        userAgent: String,
+        cookie: String?,
+        referer: String,
+    ): Response {
+        var currentUrl = initialUrl
+        val refererUri = runCatching { Uri.parse(referer) }.getOrNull()
+        val cookieHost = refererUri?.host
+        val redirectCodes = setOf(300, 301, 302, 303, 307, 308)
+
+        for (hop in 0..5) {
+            val currentUri = Uri.parse(currentUrl)
+            if (currentUri.scheme?.lowercase() !in setOf("http", "https") ||
+                currentUri.host.isNullOrBlank()
+            ) {
+                throw IOException("下载重定向到了无效或不支持的地址。")
+            }
+
+            val request = Request.Builder()
+                .url(currentUrl)
+                .header("User-Agent", userAgent.ifBlank { fallbackUserAgent })
+                .header("Accept", "audio/*, application/octet-stream, */*")
+                .get()
+                .apply {
+                    val sameHttpsHost = currentUri.scheme.equals("https", true) &&
+                        refererUri?.scheme.equals("https", true) &&
+                        currentUri.host.equals(cookieHost, ignoreCase = true)
+                    if (sameHttpsHost && !cookie.isNullOrBlank()) {
+                        header("Cookie", cookie)
+                    }
+                    if (refererUri?.scheme?.lowercase() in setOf("http", "https") &&
+                        !refererUri.host.isNullOrBlank()
+                    ) {
+                        val safeReferer = if (currentUri.host.equals(refererUri.host, true)) {
+                            referer
+                        } else {
+                            "${refererUri.scheme}://${refererUri.host}/"
+                        }
+                        header("Referer", safeReferer)
+                    }
+                }
+                .build()
+
+            val response = client.newCall(request).execute()
+            if (response.code !in redirectCodes) return response
+
+            val location = response.header("Location")
+            val next = location?.let { response.request.url.resolve(it) }
+            response.close()
+            if (next == null) throw IOException("下载站返回了不完整的重定向地址。")
+            val nextUri = Uri.parse(next.toString())
+            if (nextUri.scheme?.lowercase() !in setOf("http", "https") || nextUri.host.isNullOrBlank()) {
+                throw IOException("下载站重定向到了不支持的地址。")
+            }
+            if (hop == 5) throw IOException("下载重定向次数过多。")
+            currentUrl = next.toString()
+        }
+        throw IOException("下载重定向次数过多。")
     }
 
     private fun hasAudioSignature(file: File, extension: String): Boolean {
