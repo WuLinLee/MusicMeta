@@ -378,7 +378,7 @@ private fun MusicMetaApp() {
             folderPreferences.edit().putString("local_music_tree_uri", uri.toString()).apply()
         }.onFailure { captureError("选择本地音乐文件夹", it) }
     }
-    val scanLocalMusic: () -> Unit = {
+    val startLocalMusicScan: () -> Unit = {
         if (!isScanningLocalMusic) {
             isScanningLocalMusic = true
             scope.launch {
@@ -390,6 +390,21 @@ private fun MusicMetaApp() {
                     captureError("扫描本地音乐", error)
                 } finally { isScanningLocalMusic = false }
             }
+        }
+    }
+    val localAudioPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) startLocalMusicScan()
+        else status = "未授予读取音频权限；仍可在设置中选择一个音乐文件夹扫描。"
+    }
+    val scanLocalMusic: () -> Unit = {
+        if (localMusicFolderUri != null || Build.VERSION.SDK_INT < 33 ||
+            ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_MEDIA_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            startLocalMusicScan()
+        } else {
+            localAudioPermissionLauncher.launch(android.Manifest.permission.READ_MEDIA_AUDIO)
         }
     }
     val overlayPermissionLauncher = rememberLauncherForActivityResult(
