@@ -66,6 +66,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -265,7 +266,7 @@ private fun MusicMetaApp() {
             scope.launch {
                 try {
                     val loaded = withTimeout(28_000L) {
-                        withContext(Dispatchers.IO) { playlistProvider.load(input, likedByUserId = inputMode == "liked", offset = 0, limit = 100) }
+                        withContext(Dispatchers.IO) { playlistProvider.load(input, likedByUserId = inputMode == "liked", offset = 0, limit = pageSize) }
                     }
                     if (inputMode == "liked") likedPlaylist = loaded else publicPlaylist = loaded
                     selectedTrack = null
@@ -615,7 +616,12 @@ private fun MusicMetaApp() {
         }
     }
 
-
+    LaunchedEffect(pageSize, inputMode, playlist?.id) {
+        val current = playlist
+        if (current != null && filterText.isBlank() && !busy) {
+            requestPage(currentPage)
+        }
+    }
 
     Scaffold(
         containerColor = PageBackground,
@@ -664,121 +670,135 @@ private fun MusicMetaApp() {
             Surface(color = SurfaceColor, shadowElevation = 3.dp) {
                 Column(Modifier.fillMaxWidth()) {
                     if (playlist != null && pageItemCount > 0) {
-                        Column(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
-                            verticalArrangement = Arrangement.spacedBy(0.dp),
-                        ) {
-                            if (pageCount > 1) {
-                                val footerPageNumbers = if (pageCount <= 7) {
-                                    (1..pageCount).toList()
-                                } else {
-                                    buildList {
-                                        add(1)
-                                        if (currentPage > 3) add(-1)
-                                        val windowStart = if (currentPage <= 3) 2 else maxOf(2, currentPage - 1)
-                                        val windowEnd = if (currentPage <= 3) 5 else minOf(pageCount - 1, currentPage + 2)
-                                        for (number in windowStart..windowEnd) if (number !in this) add(number)
-                                        if (currentPage < pageCount - 2) add(-1)
-                                        if (pageCount !in this) add(pageCount)
-                                    }
-                                }
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().height(34.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(1.dp),
-                                ) {
-                                    IconButton(
-                                        onClick = { requestPage(currentPage - 1) },
-                                        enabled = !busy && currentPage > 1,
-                                        modifier = Modifier.size(32.dp).semantics { contentDescription = "上一页" },
-                                    ) {
-                                        PageArrowGlyph(pointsLeft = true, tint = if (!busy && currentPage > 1) Ink else SubInk)
-                                    }
-                                    Row(
-                                        modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(0.dp),
-                                    ) {
-                                        footerPageNumbers.forEach { number ->
-                                            if (number == -1) {
-                                                Text("…", color = SubInk, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 2.dp))
-                                            } else {
-                                                TextButton(
-                                                    onClick = { requestPage(number) },
-                                                    enabled = !busy && number != currentPage,
-                                                    contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp),
-                                                ) {
-                                                    Text(
-                                                        number.toString(),
-                                                        color = if (number == currentPage) Accent else Ink,
-                                                        fontWeight = if (number == currentPage) FontWeight.Bold else FontWeight.Normal,
-                                                        fontSize = 11.sp,
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                    IconButton(
-                                        onClick = { requestPage(currentPage + 1) },
-                                        enabled = !busy && currentPage < pageCount,
-                                        modifier = Modifier.size(32.dp).semantics { contentDescription = "下一页" },
-                                    ) {
-                                        PageArrowGlyph(pointsLeft = false, tint = if (!busy && currentPage < pageCount) Ink else SubInk)
-                                    }
+                        if (pageCount > 1) {
+                            val footerPageNumbers = if (pageCount <= 7) {
+                                (1..pageCount).toList()
+                            } else {
+                                buildList {
+                                    add(1)
+                                    if (currentPage > 3) add(-1)
+                                    val windowStart = if (currentPage <= 3) 2 else maxOf(2, currentPage - 1)
+                                    val windowEnd = if (currentPage <= 3) 5 else minOf(pageCount - 1, currentPage + 2)
+                                    for (number in windowStart..windowEnd) if (number !in this) add(number)
+                                    if (currentPage < pageCount - 2) add(-1)
+                                    if (pageCount !in this) add(pageCount)
                                 }
                             }
                             Row(
-                                modifier = Modifier.fillMaxWidth().height(36.dp),
+                                modifier = Modifier.fillMaxWidth().height(28.dp).padding(horizontal = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                horizontalArrangement = Arrangement.spacedBy(0.dp),
                             ) {
-                                Text("每页", color = SubInk, fontSize = 10.sp)
-                                listOf(25, 50, 100).forEach { count ->
-                                    TextButton(
-                                        onClick = {
-                                            if (!busy && pageSize != count) {
-                                                pageSize = count
-                                                folderPreferences.edit().putInt("songs_per_page", count).apply()
-                                                currentPage = 1
-                                                jumpPageInput = "1"
-                                                selectedTrack = null
-                                                flacResults = emptyList()
-                                                scope.launch { listState.scrollToItem(0) }
+                                IconButton(
+                                    onClick = { requestPage(currentPage - 1) },
+                                    enabled = !busy && currentPage > 1,
+                                    modifier = Modifier.size(28.dp).semantics { contentDescription = "上一页" },
+                                ) {
+                                    PageArrowGlyph(pointsLeft = true, tint = if (!busy && currentPage > 1) Ink else SubInk)
+                                }
+                                Row(
+                                    modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center,
+                                ) {
+                                    footerPageNumbers.forEach { number ->
+                                        if (number == -1) {
+                                            Text("…", color = SubInk, fontSize = 10.sp, modifier = Modifier.padding(horizontal = 1.dp))
+                                        } else {
+                                            TextButton(
+                                                onClick = { requestPage(number) },
+                                                enabled = !busy && number != currentPage,
+                                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                                            ) {
+                                                Text(
+                                                    number.toString(),
+                                                    color = if (number == currentPage) Accent else Ink,
+                                                    fontWeight = if (number == currentPage) FontWeight.Bold else FontWeight.Normal,
+                                                    fontSize = 10.sp,
+                                                )
                                             }
-                                        },
-                                        enabled = !busy,
-                                        contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp),
-                                    ) {
-                                        Text(
-                                            count.toString(),
-                                            color = if (pageSize == count) Accent else Ink,
-                                            fontSize = 10.sp,
-                                            fontWeight = if (pageSize == count) FontWeight.SemiBold else FontWeight.Normal,
-                                        )
+                                        }
                                     }
                                 }
-                                Spacer(Modifier.weight(1f))
-                                OutlinedTextField(
-                                    value = jumpPageInput,
-                                    onValueChange = { jumpPageInput = it.filter(Char::isDigit).take(5) },
-                                    modifier = Modifier.width(54.dp).height(36.dp),
-                                    singleLine = true,
-                                    placeholder = { Text("页", fontSize = 10.sp) },
-                                    shape = RoundedCornerShape(9.dp),
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-                                    keyboardActions = KeyboardActions(onDone = { jumpPageInput.toIntOrNull()?.let(requestPage) }),
-                                    enabled = !busy && pageCount > 1,
-                                )
+                                IconButton(
+                                    onClick = { requestPage(currentPage + 1) },
+                                    enabled = !busy && currentPage < pageCount,
+                                    modifier = Modifier.size(28.dp).semantics { contentDescription = "下一页" },
+                                ) {
+                                    PageArrowGlyph(pointsLeft = false, tint = if (!busy && currentPage < pageCount) Ink else SubInk)
+                                }
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth().height(32.dp).padding(horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(1.dp),
+                        ) {
+                            Text("每页", color = SubInk, fontSize = 9.sp)
+                            listOf(25, 50, 100).forEach { count ->
                                 TextButton(
                                     onClick = {
-                                        val target = jumpPageInput.toIntOrNull()
-                                        if (target == null) status = "请输入页码。" else requestPage(target)
+                                        if (!busy && pageSize != count) {
+                                            pageSize = count
+                                            folderPreferences.edit().putInt("songs_per_page", count).apply()
+                                            currentPage = 1
+                                            jumpPageInput = "1"
+                                            selectedTrack = null
+                                            flacResults = emptyList()
+                                            scope.launch { listState.scrollToItem(0) }
+                                        }
                                     },
-                                    enabled = !busy && pageCount > 1,
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                    enabled = !busy,
+                                    contentPadding = PaddingValues(horizontal = 3.dp, vertical = 0.dp),
                                 ) {
-                                    Text("跳", color = Accent, fontSize = 11.sp)
+                                    Text(
+                                        count.toString(),
+                                        color = if (pageSize == count) Accent else Ink,
+                                        fontSize = 10.sp,
+                                        fontWeight = if (pageSize == count) FontWeight.SemiBold else FontWeight.Normal,
+                                    )
                                 }
+                            }
+                            Spacer(Modifier.weight(1f))
+                            OutlinedTextField(
+                                value = jumpPageInput,
+                                onValueChange = { jumpPageInput = it.filter(Char::isDigit).take(5) },
+                                modifier = Modifier.width(42.dp).height(30.dp),
+                                singleLine = true,
+                                placeholder = { Text("页", fontSize = 9.sp) },
+                                shape = RoundedCornerShape(7.dp),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(onDone = { jumpPageInput.toIntOrNull()?.let(requestPage) }),
+                                enabled = !busy && pageCount > 1,
+                            )
+                            TextButton(
+                                onClick = {
+                                    val target = jumpPageInput.toIntOrNull()
+                                    if (target == null) status = "请输入页码。" else requestPage(target)
+                                },
+                                enabled = !busy && pageCount > 1,
+                                contentPadding = PaddingValues(horizontal = 3.dp, vertical = 0.dp),
+                            ) {
+                                Text("跳", color = Accent, fontSize = 10.sp)
+                            }
+                            TextButton(
+                                onClick = {
+                                    val report = lastErrorReport
+                                    if (report != null) {
+                                        runCatching {
+                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                            clipboard.setPrimaryClip(ClipData.newPlainText("MusicMeta error report", report))
+                                        }.onSuccess {
+                                            status = "错误报告已复制到剪贴板，请粘贴发送给助手。"
+                                        }.onFailure { error ->
+                                            status = "复制失败：" + (error.message ?: "请重试")
+                                        }
+                                    }
+                                },
+                                enabled = lastErrorReport != null,
+                                contentPadding = PaddingValues(horizontal = 3.dp, vertical = 0.dp),
+                            ) {
+                                Text("复制错误报告", color = if (lastErrorReport != null) Accent else SubInk, fontSize = 9.sp, maxLines = 1)
                             }
                         }
                     }
@@ -791,38 +811,13 @@ private fun MusicMetaApp() {
                     }
                     Text(
                         text = status,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
                         color = SubInk,
-                        fontSize = 11.sp,
-                        lineHeight = 14.sp,
+                        fontSize = 10.sp,
+                        lineHeight = 12.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 4.dp),
-                        horizontalArrangement = Arrangement.End,
-                    ) {
-                        TextButton(
-                            onClick = {
-                                val report = lastErrorReport
-                                if (report != null) {
-                                    runCatching {
-                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                        clipboard.setPrimaryClip(ClipData.newPlainText("MusicMeta error report", report))
-                                    }.onSuccess {
-                                        status = "错误报告已复制到剪贴板，请粘贴发送给助手。"
-                                    }.onFailure { error ->
-                                        status = "复制失败：" + (error.message ?: "请重试")
-                                    }
-                                }
-                            },
-                            enabled = lastErrorReport != null,
-                        ) {
-                            Text("复制错误报告", color = if (lastErrorReport != null) Accent else SubInk, fontSize = 12.sp)
-                        }
-                    }
                 }
             }
         },
@@ -1089,27 +1084,6 @@ private fun MusicMetaApp() {
                     }
                 }
 
-                item(key = "pagination-controls") {
-                    Column(
-                        modifier = Modifier.fillMaxWidth()
-                            .clip(RoundedCornerShape(18.dp))
-                            .background(SurfaceColor)
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalArrangement = Arrangement.spacedBy(7.dp),
-                    ) {
-                        Text(
-                            when {
-                                filterText.isNotBlank() -> filteredKnownTracks.size.toString() + " 首匹配歌曲"
-                                else -> "共 " + pageItemCount + " 首 · 第 " + currentPage + " / " + pageCount + " 页"
-                            },
-                            color = SubInk,
-                            fontSize = 11.sp,
-                        )
-                        if (filterText.isNotBlank()) {
-                            Text("筛选范围：已加载或访问过的歌曲", color = SubInk, fontSize = 10.sp)
-                        }
-                    }
-                }
                 val pageOffset = (currentPage - 1) * pageSize
                 val currentCacheKey = pageCacheKey(inputMode, currentPlaylist.id.toString(), pageSize, currentPage)
                 val loadedPageTracks = currentPlaylist.tracks.drop(pageOffset).take(pageSize)
