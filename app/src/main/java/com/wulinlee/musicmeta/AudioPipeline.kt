@@ -73,7 +73,7 @@ object AudioDownloader {
                 else -> throw IOException("无法识别音频格式（${mime.ifBlank { "未知类型" }}）。")
             }
             val base = (if (filename.contains('.')) filename.substringBeforeLast('.') else filename)
-                .replace(Regex("[\\\\/:*?\\"<>|]"), "_").trim().trimEnd('.').take(150)
+                .replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().trimEnd('.').take(150)
                 .ifBlank { "music" }
             val folder = File(context.cacheDir, "incoming-audio").apply { mkdirs() }
             var file = File(folder, "$base.$finalExtension")
@@ -143,19 +143,19 @@ object AudioDownloader {
                 .header("Accept", "audio/*, application/octet-stream, */*")
                 .get()
                 .apply {
+                    val refererScheme = refererUri?.scheme.orEmpty()
+                    val refererHost = refererUri?.host.orEmpty()
                     val sameHttpsHost = currentUri.scheme.equals("https", true) &&
-                        refererUri?.scheme.equals("https", true) &&
+                        refererScheme.equals("https", true) &&
                         currentUri.host.equals(cookieHost, ignoreCase = true)
                     if (sameHttpsHost && !cookie.isNullOrBlank()) {
                         header("Cookie", cookie)
                     }
-                    if (refererUri?.scheme?.lowercase() in setOf("http", "https") &&
-                        !refererUri.host.isNullOrBlank()
-                    ) {
-                        val safeReferer = if (currentUri.host.equals(refererUri.host, true)) {
+                    if (refererScheme.lowercase() in setOf("http", "https") && refererHost.isNotBlank()) {
+                        val safeReferer = if (currentUri.host.equals(refererHost, true)) {
                             referer
                         } else {
-                            "${refererUri.scheme}://${refererUri.host}/"
+                            "$refererScheme://$refererHost/"
                         }
                         header("Referer", safeReferer)
                     }

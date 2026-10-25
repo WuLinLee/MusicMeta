@@ -1,6 +1,8 @@
 package com.wulinlee.musicmeta
 
 import android.net.Uri
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
