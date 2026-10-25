@@ -10,6 +10,8 @@ import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.util.DisplayMetrics
 import android.view.Gravity
@@ -174,6 +176,16 @@ class FloatingMiniPlayerService : LifecycleService() {
     private var displayWidth = 0
     private var displayHeight = 0
     private var density = 1f
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val progressTicker = object : Runnable {
+        override fun run() {
+            if (isPlaying && durationMs > 0) {
+                positionMs = (positionMs + 300).coerceAtMost(durationMs)
+                if (positionMs >= durationMs) isPlaying = false
+            }
+            if (coverView != null) mainHandler.postDelayed(this, 300L)
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -182,6 +194,7 @@ class FloatingMiniPlayerService : LifecycleService() {
         ensureNotificationChannel()
         updateDisplaySize()
         restoreOrInitializePosition()
+        mainHandler.postDelayed(progressTicker, 300L)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -193,8 +206,8 @@ class FloatingMiniPlayerService : LifecycleService() {
             return START_NOT_STICKY
         }
 
-        startAsForegroundService()
         if (intent?.action == ACTION_UPDATE) applyUpdate(intent)
+        startAsForegroundService()
         ensureCoverWindow()
         syncLyricsWindow()
         updateWindowPositions()
@@ -204,6 +217,7 @@ class FloatingMiniPlayerService : LifecycleService() {
     override fun onBind(intent: Intent): IBinder? = super.onBind(intent)
 
     override fun onDestroy() {
+        mainHandler.removeCallbacks(progressTicker)
         removeOverlayViews()
         stopForeground(STOP_FOREGROUND_REMOVE)
         serviceAlive = false
