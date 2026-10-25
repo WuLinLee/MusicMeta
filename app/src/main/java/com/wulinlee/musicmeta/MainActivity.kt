@@ -1685,7 +1685,10 @@ private fun MusicMetaApp() {
             }
             manualSourceSearchActive = false
             val targetPage = targetIndex / pageSize + 1
-            requestPage(targetPage)
+            localCurrentPage = targetPage
+            jumpPageInput = targetPage.toString()
+            selectedTrack = null
+            flacResults = emptyList()
             withFrameNanos { }
             val itemIndex = 3 + (targetIndex % pageSize)
             runCatching { localListState.animateScrollToItem(itemIndex) }
@@ -1739,7 +1742,18 @@ private fun MusicMetaApp() {
         if (targetMode == "liked") likedFilterText = "" else publicFilterText = ""
         manualSourceSearchActive = false
         val targetPage = targetIndex / pageSize + 1
-        requestPage(targetPage)
+        val targetOffset = (targetPage - 1) * pageSize
+        val targetCount = minOf(pageSize, maxOf(0, activePlaylist.totalTrackCount - targetOffset))
+        val targetPageKey = pageCacheKey(targetMode, activePlaylist.id.toString(), pageSize, targetPage)
+        val targetPageLoaded = targetOffset + targetCount <= activePlaylist.tracks.size || pageCache.containsKey(targetPageKey)
+        if (!targetPageLoaded) {
+            requestPage(targetPage)
+            return@LaunchedEffect
+        }
+        setCurrentPage(targetPage)
+        jumpPageInput = targetPage.toString()
+        selectedTrack = null
+        flacResults = emptyList()
         withFrameNanos { }
         runCatching { listState.animateScrollToItem(5 + (targetIndex % pageSize)) }
         status = "已定位到歌单歌曲：" + request.title
@@ -2054,7 +2068,7 @@ private fun MusicMetaApp() {
                             ) { HomeGlyph() }
                         }
                     }
-                    if ((playlist == null && inputMode != "local") || pageItemCount <= 0) {
+                    if ((playlist == null && inputMode != "local") || pageItemCount <= 0 || pageCount <= 1) {
                         Row(
                             modifier = Modifier.fillMaxWidth().height(25.dp).padding(horizontal = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
