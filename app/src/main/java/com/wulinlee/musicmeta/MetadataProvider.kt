@@ -27,8 +27,8 @@ class MetadataProvider {
             ?: resolveCoverUrlFromSongDetail(track.id)?.let(::downloadCover)
             ?: resolveCoverUrlFromGdStudio(track)?.let(::downloadCover)
             ?: resolveCoverUrlFromItunes(track)?.let(::downloadCover)
-        var lyrics = getLyrics(track.id)
-        if (lyrics.original.isBlank() || lyrics.translated.isBlank()) {
+        var lyrics = if (track.id > 0L) getLyrics(track.id) else LyricsPayload()
+        if (track.id > 0L && (lyrics.original.isBlank() || lyrics.translated.isBlank())) {
             val gdFallback = getGdStudioLyrics(track.id)
             lyrics = lyrics.copy(
                 original = lyrics.original.ifBlank { gdFallback.original },

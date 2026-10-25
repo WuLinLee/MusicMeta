@@ -419,8 +419,8 @@ private fun MusicMetaApp() {
     }
 
     val downloadAndSave: (
-        String, String, String?, String?, String, String?, MusicTrack?
-    ) -> Unit = { url, userAgent, disposition, mimeType, referer, cookie, track ->
+        String, String, String?, String?, String, String?, MusicTrack?, FlacSiteSong?
+    ) -> Unit = { url, userAgent, disposition, mimeType, referer, cookie, track, sourceSong ->
         val uri = runCatching { Uri.parse(url) }.getOrNull()
         if (uri == null || uri.scheme?.lowercase() !in setOf("http", "https") || uri.host.isNullOrBlank()) {
             status = "这不是有效的音频下载地址，请重新获取音源。"
@@ -470,13 +470,32 @@ private fun MusicMetaApp() {
                             captureError("获取封面或歌词", error)
                             null
                         }
-                        val safeAssets = assets ?: TrackAssets(
+                        val metadataAssets = assets ?: TrackAssets(
                             coverBytes = null,
                             coverMimeType = null,
                             originalLyrics = "",
                             translatedLyrics = "",
                             bilingualLyrics = "",
                         )
+                        // Prefer lyrics matched to the exact selected source result; retain metadata-provider
+                        // lyrics as fallback if this source does not expose its own lyrics.
+                        val sourceLyrics = sourceSong?.let { candidate ->
+                            runCatching {
+                                flacProvider.fetchLyrics(
+                                    song = candidate,
+                                    cookie = cookie,
+                                    userAgent = fallbackUserAgent,
+                                )
+                            }.getOrDefault("").trim()
+                        }.orEmpty()
+                        val safeAssets = if (sourceLyrics.isNotBlank()) {
+                            metadataAssets.copy(
+                                originalLyrics = sourceLyrics,
+                                bilingualLyrics = LrcMerger.merge(sourceLyrics, metadataAssets.translatedLyrics),
+                            )
+                        } else {
+                            metadataAssets
+                        }
                         val normalizedWordByWordLyrics = if (saveWordByWordLyrics) {
                             LrcMerger.normalizeWordByWordToLrc(safeAssets.wordByWordLyrics)
                         } else {
@@ -604,6 +623,7 @@ private fun MusicMetaApp() {
             referer,
             cookie,
             selectedTrack,
+            null,
         )
     }
     val latestWebsiteDownload by rememberUpdatedState(onWebsiteDownload)
@@ -642,7 +662,8 @@ private fun MusicMetaApp() {
                         if (selectedQuality == "FLAC") "audio/flac" else "audio/mpeg",
                         DEFAULT_SOURCE,
                         cookie,
-                        null,
+                        selectedTrack ?: metadataTrackForSource(song),
+                        song,
                     )
                 } catch (error: Exception) {
                     val detail = error.message?.takeIf { it.isNotBlank() } ?: "下载站暂不可用"
@@ -1577,7 +1598,8 @@ private fun MusicMetaApp() {
                                                                     if (selectedQuality == "FLAC") "audio/flac" else "audio/mpeg",
                                                                     DEFAULT_SOURCE,
                                                                     cookie,
-                                                                    selectedTrack,
+                                                                    selectedTrack ?: metadataTrackForSource(song),
+                                                                    song,
                                                                 )
                                                             } catch (error: Exception) {
                                                                 val detail = error.message?.takeIf { it.isNotBlank() } ?: "下载站暂不可用"
@@ -2165,6 +2187,18 @@ private fun TrackRow(
             }
         }
     }
+}
+
+private fun metadataTrackForSource(song: FlacSiteSong): MusicTrack {
+    // Only a native NetEase ID is safe to pass to NetEase-specific metadata APIs.
+    val neteaseId = if (song.platform == "wyy") song.id.toLongOrNull()?.takeIf { it > 0L } ?: 0L else 0L
+    return MusicTrack(
+        id = neteaseId,
+        title = song.title,
+        artists = song.artist,
+        album = song.album,
+        coverUrl = song.coverUrl,
+    )
 }
 
 private fun loadSavedDestination(context: Context): Uri? {

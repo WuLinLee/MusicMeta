@@ -185,25 +185,47 @@ class FlacMusicProvider {
         cookie: String?,
         userAgent: String,
     ): String = withContext(Dispatchers.IO) {
-        val request = baseRequest(apiUrl("getLyric"), cookie, userAgent)
-            .post(
-                FormBody.Builder()
-                    .add("platform", song.platform)
-                    .add("songid", song.id)
-                    .add("time", song.time)
-                    .add("sign", song.sign)
-                    .build()
-            )
-            .build()
-        val body = executeBody(request).trim()
+        val body = if (song.platform.startsWith("gd:")) {
+            val source = song.platform.removePrefix("gd:").ifBlank { "netease" }
+            val url = HttpUrl.Builder()
+                .scheme("https")
+                .host("music-api.gdstudio.xyz")
+                .addPathSegments("api.php")
+                .addQueryParameter("types", "lyric")
+                .addQueryParameter("source", source)
+                .addQueryParameter("id", song.id)
+                .build()
+            val request = Request.Builder()
+                .url(url)
+                .header("Referer", "https://music.gdstudio.xyz/")
+                .header("User-Agent", userAgent.ifBlank { fallbackUserAgent })
+                .get()
+                .build()
+            executeBody(request).trim()
+        } else {
+            val request = baseRequest(apiUrl("getLyric"), cookie, userAgent)
+                .post(
+                    FormBody.Builder()
+                        .add("platform", song.platform)
+                        .add("songid", song.id)
+                        .add("time", song.time)
+                        .add("sign", song.sign)
+                        .build()
+                )
+                .build()
+            executeBody(request).trim()
+        }
         if (body.startsWith("{")) {
             val root = JSONObject(body)
             checkApiCode(root)
             val data = root.opt("data")
-            when (data) {
+            val lyric = when (data) {
                 is String -> data
                 is JSONObject -> data.optString("lyric").ifBlank { data.optString("lrc") }
-                else -> root.optString("lyric")
+                else -> ""
+            }
+            root.optString("lyric").ifBlank {
+                root.optString("lrc").ifBlank { lyric }
             }
         } else {
             body
@@ -392,13 +414,27 @@ class FlacMusicProvider {
     }
 
     private fun executeBody(request: Request): String {
-        client.newCall(request).execute().use { response ->
-            if (response.code == 468) {
-                throw IOException("下载站访问验证未通过（HTTP 468）。请在下方网页中完成验证后重试。")
+        for (attempt in 0..1) {
+            val response = client.newCall(request).execute()
+            try {
+                if (response.code == 468) {
+                    throw IOException("下载站访问验证未通过（HTTP 468）。请在下方网页中完成验证后重试。")
+                }
+                if (!response.isSuccessful) {
+                    val error = IOException("下载站请求失败：HTTP ${response.code}")
+                    if (attempt == 0 && (response.code == 429 || response.code in 500..599)) {
+                        // Upstream endpoints sometimes return a transient 503; retry once only.
+                        Thread.sleep(350L)
+                        continue
+                    }
+                    throw error
+                }
+                return response.body?.string() ?: throw IOException("下载站返回空内容。")
+            } finally {
+                response.close()
             }
-            if (!response.isSuccessful) throw IOException("下载站请求失败：HTTP ${response.code}")
-            return response.body?.string() ?: throw IOException("下载站返回空内容。")
         }
+        throw IOException("下载站请求失败：临时服务不可用，重试后仍失败。")
     }
 
     private companion object {
