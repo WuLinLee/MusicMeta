@@ -31,7 +31,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -3516,20 +3515,6 @@ private fun MiniPlayerSkipGlyph(previous: Boolean) {
     }
 }
 
-@Composable
-private fun CloseGlyph() {
-    Canvas(modifier = Modifier.size(13.dp)) {
-        val start = Offset(size.width * 0.22f, size.height * 0.22f)
-        val end = Offset(size.width * 0.78f, size.height * 0.78f)
-        val oppositeStart = Offset(size.width * 0.78f, size.height * 0.22f)
-        val oppositeEnd = Offset(size.width * 0.22f, size.height * 0.78f)
-        val stroke = 1.8.dp.toPx()
-        drawLine(Color(0xCC101512), start, end, strokeWidth = stroke + 1.2.dp.toPx(), cap = StrokeCap.Round)
-        drawLine(Color(0xCC101512), oppositeStart, oppositeEnd, strokeWidth = stroke + 1.2.dp.toPx(), cap = StrokeCap.Round)
-        drawLine(Color(0xFFF4F7F5), start, end, strokeWidth = stroke, cap = StrokeCap.Round)
-        drawLine(Color(0xFFF4F7F5), oppositeStart, oppositeEnd, strokeWidth = stroke, cap = StrokeCap.Round)
-    }
-}
 
 @Composable
 private fun PlayGlyph(isPlaying: Boolean, isLoading: Boolean) {
