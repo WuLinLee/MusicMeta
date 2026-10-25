@@ -385,7 +385,7 @@ object MediaPublisher {
     }
 
     private fun relativeMusicPath(folderName: String?): String {
-        val parts = listOf("Download", "MusicMeta") + listOfNotNull(
+        val parts = listOf("Download", "-07-MusicMeta") + listOfNotNull(
             folderName?.takeIf { it.isNotBlank() }?.let(AudioFileNamer::sanitizeComponent)
         )
         return parts.joinToString("/") + "/"
