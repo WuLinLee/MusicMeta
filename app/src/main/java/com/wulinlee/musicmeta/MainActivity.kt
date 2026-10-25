@@ -2009,6 +2009,7 @@ private fun MusicMetaApp() {
             }
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val density = LocalDensity.current
+                val playerAreaWidth = maxWidth
                 val dragWidth = if (showPreviewDetails) 142.dp else 76.dp
                 val maxDragX = with(density) { (maxWidth - dragWidth).toPx().coerceAtLeast(0f) }
                 val dragHeight = if (showPreviewDetails) 180.dp else 108.dp
@@ -2126,7 +2127,7 @@ private fun MusicMetaApp() {
                                         val expanding = !showPreviewDetails
                                         if (expanding) {
                                             val expandedMaxDragX = with(density) {
-                                                (maxWidth - 142.dp).toPx().coerceAtLeast(0f)
+                                                (playerAreaWidth - 142.dp).toPx().coerceAtLeast(0f)
                                             }
                                             miniPlayerOffset = Offset(
                                                 miniPlayerOffset.x.coerceIn(-expandedMaxDragX, 0f),
