@@ -2122,14 +2122,26 @@ private fun MusicMetaApp() {
                                     },
                                 contentAlignment = Alignment.CenterStart,
                             ) {
-                                Box(
-                                    modifier = Modifier.fillMaxWidth().height(3.dp)
-                                        .clip(CircleShape).background(Color(0xFF3B514B)),
-                                )
-                                Box(
-                                    modifier = Modifier.fillMaxWidth(progress).height(3.dp)
-                                        .clip(CircleShape).background(Color(0xFF9FF0C9)),
-                                )
+                                Canvas(modifier = Modifier.fillMaxSize()) {
+                                    val y = size.height / 2f
+                                    val strokeWidth = 3.dp.toPx()
+                                    drawLine(
+                                        color = Color(0xFF3B514B),
+                                        start = Offset(0f, y),
+                                        end = Offset(size.width, y),
+                                        strokeWidth = strokeWidth,
+                                        cap = StrokeCap.Round,
+                                    )
+                                    if (progress > 0f) {
+                                        drawLine(
+                                            color = Color(0xFF9FF0C9),
+                                            start = Offset(0f, y),
+                                            end = Offset(size.width * progress, y),
+                                            strokeWidth = strokeWidth,
+                                            cap = StrokeCap.Round,
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
