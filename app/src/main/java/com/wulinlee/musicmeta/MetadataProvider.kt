@@ -84,6 +84,106 @@ class MetadataProvider {
         getLrclibLyrics(track).first.trim()
     }
 
+    /**
+     * Prefer NetEase lyrics for local tracks and for streams regardless of which provider supplied the audio.
+     * A title match must be exact and the artist must be compatible before lyrics are accepted.
+     */
+    suspend fun resolveNetEaseLyrics(
+        title: String,
+        artist: String,
+        album: String = "",
+        durationMs: Long = 0L,
+        neteaseId: Long = 0L,
+    ): PreviewLyrics = withContext(Dispatchers.IO) {
+        val matchedId = neteaseId.takeIf { it > 0L }
+            ?: findNetEaseSongId(title, artist, album, durationMs)
+        if (matchedId > 0L) {
+            var payload = getLyrics(matchedId)
+            if (payload.original.isBlank() || payload.translated.isBlank()) {
+                val fallback = getGdStudioLyrics(matchedId)
+                payload = payload.copy(
+                    original = payload.original.ifBlank { fallback.original },
+                    translated = payload.translated.ifBlank { fallback.translated },
+                )
+            }
+            if (payload.original.isNotBlank() || payload.translated.isNotBlank()) {
+                return@withContext PreviewLyrics(
+                    original = payload.original.trim(),
+                    translated = payload.translated.trim(),
+                )
+            }
+        }
+        val fallback = getLrclibLyrics(
+            MusicTrack(
+                id = 0L,
+                title = title,
+                artists = artist,
+                album = album,
+                coverUrl = "",
+                durationMs = durationMs,
+            ),
+        )
+        PreviewLyrics(original = fallback.first.trim(), translated = fallback.second.trim())
+    }
+
+    private fun findNetEaseSongId(
+        title: String,
+        artist: String,
+        album: String,
+        durationMs: Long,
+    ): Long {
+        fun normalize(value: String): String =
+            value.trim().lowercase().filter { it.isLetterOrDigit() }
+
+        val wantedTitle = normalize(title)
+        val wantedArtist = normalize(artist.substringBefore(" / "))
+        val wantedAlbum = normalize(album)
+        if (wantedTitle.isBlank()) return 0L
+        return try {
+            val query = listOf(title.trim(), artist.trim()).filter { it.isNotBlank() }.joinToString(" ")
+            val url = HttpUrl.Builder()
+                .scheme("https")
+                .host("music.163.com")
+                .addPathSegments("api/cloudsearch/pc")
+                .addQueryParameter("s", query)
+                .addQueryParameter("type", "1")
+                .addQueryParameter("limit", "20")
+                .addQueryParameter("offset", "0")
+                .build()
+            val root = JSONObject(get(url.toString(), "https://music.163.com/"))
+            if (root.optInt("code") != 200) return 0L
+            val songs = root.optJSONObject("result")?.optJSONArray("songs") ?: return 0L
+            val exactMatches = (0 until songs.length()).mapNotNull { index ->
+                val song = songs.optJSONObject(index) ?: return@mapNotNull null
+                if (normalize(song.optString("name")) != wantedTitle) return@mapNotNull null
+                val artistArray = song.optJSONArray("artists") ?: song.optJSONArray("ar") ?: JSONArray()
+                val artists = (0 until artistArray.length()).mapNotNull { artistIndex ->
+                    artistArray.optJSONObject(artistIndex)?.optString("name")?.takeIf { it.isNotBlank() }
+                }
+                val normalizedArtists = artists.map(::normalize).filter { it.isNotBlank() }
+                val joinedArtist = normalize(artists.joinToString(" "))
+                val artistMatches = wantedArtist.isBlank() ||
+                    normalizedArtists.any { it == wantedArtist || it.contains(wantedArtist) || wantedArtist.contains(it) } ||
+                    joinedArtist.contains(wantedArtist)
+                if (!artistMatches) return@mapNotNull null
+                val albumObject = song.optJSONObject("album") ?: song.optJSONObject("al")
+                val candidateAlbum = normalize(albumObject?.optString("name").orEmpty())
+                val candidateDuration = song.optLong("duration", song.optLong("dt", 0L))
+                Triple(
+                    song.optLong("id", 0L),
+                    if (wantedAlbum.isNotBlank() && candidateAlbum == wantedAlbum) 1 else 0,
+                    if (durationMs > 0L && candidateDuration > 0L) kotlin.math.abs(candidateDuration - durationMs) else Long.MAX_VALUE,
+                ).takeIf { it.first > 0L }
+            }
+            exactMatches.sortedWith(
+                compareByDescending<Triple<Long, Int, Long>> { it.second }
+                    .thenBy { it.third },
+            ).firstOrNull()?.first ?: 0L
+        } catch (_: Exception) {
+            0L
+        }
+    }
+
     private fun getLyrics(id: Long): LyricsPayload {
         val url = HttpUrl.Builder()
             .scheme("https").host("music.163.com").addPathSegments("api/song/lyric")
