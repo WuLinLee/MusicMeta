@@ -242,9 +242,18 @@ private fun MusicMetaApp() {
     }
     var publicCurrentPage by remember { mutableStateOf(1) }
     var likedCurrentPage by remember { mutableStateOf(1) }
-    val currentPage = if (inputMode == "liked") likedCurrentPage else publicCurrentPage
+    var localCurrentPage by remember { mutableStateOf(1) }
+    val currentPage = when (inputMode) {
+        "liked" -> likedCurrentPage
+        "local" -> localCurrentPage
+        else -> publicCurrentPage
+    }
     val setCurrentPage: (Int) -> Unit = { value ->
-        if (inputMode == "liked") likedCurrentPage = value else publicCurrentPage = value
+        when (inputMode) {
+            "liked" -> likedCurrentPage = value
+            "local" -> localCurrentPage = value
+            else -> publicCurrentPage = value
+        }
     }
     val savedPageSize = folderPreferences.getInt("songs_per_page", 25)
     var pageSize by remember { mutableStateOf(if (savedPageSize in listOf(25, 50, 100)) savedPageSize else 25) }
@@ -263,7 +272,7 @@ private fun MusicMetaApp() {
     val playlistInput = if (inputMode == "liked") likedUserIdInput else publicPlaylistInput
     val playlist = when (inputMode) {
         "liked" -> likedPlaylist
-        "search" -> null
+        "search", "local" -> null
         else -> publicPlaylist
     }
     val filterText = if (inputMode == "liked") likedFilterText else publicFilterText
@@ -390,6 +399,8 @@ private fun MusicMetaApp() {
             scope.launch {
                 try {
                     localMusicTracks = LocalMusicScanner.scan(context, localMusicFolderUri)
+                     localCurrentPage = 1
+                     jumpPageInput = "1"
                     status = "本地音乐扫描完成，共 ${localMusicTracks.size} 首。"
                 } catch (error: Exception) {
                     status = "扫描本地音乐失败：" + (error.message ?: "请检查文件夹权限")
@@ -1470,14 +1481,19 @@ private fun MusicMetaApp() {
     SideEffect {
         previewNavigationHandler = navigatePreview
     }
-    val pageItemCount = if (filterText.isBlank()) playlist?.totalTrackCount ?: 0 else filteredKnownTracks.size
+    val filteredLocalMusicTracks = localMusicTracks.filter {
+        localMusicFilter.isBlank() || it.title.contains(localMusicFilter, true) ||
+            it.artist.contains(localMusicFilter, true) || it.album.contains(localMusicFilter, true)
+    }
+    val pageItemCount = if (inputMode == "local") filteredLocalMusicTracks.size
+        else if (filterText.isBlank()) playlist?.totalTrackCount ?: 0 else filteredKnownTracks.size
     val pageCount = maxOf(1, (pageItemCount + pageSize - 1) / pageSize)
     val switchInputMode: (String) -> Unit = { mode ->
         if (mode in setOf("playlist", "liked", "search", "local") && mode != inputMode && !busy) {
             focusManager.clearFocus()
             inputMode = mode
             folderPreferences.edit().putString("input_mode", mode).apply()
-            jumpPageInput = (if (mode == "liked") likedCurrentPage else publicCurrentPage).toString()
+            jumpPageInput = (when (mode) { "liked" -> likedCurrentPage; "local" -> localCurrentPage; else -> publicCurrentPage }).toString()
             selectedTrack = null
             flacResults = emptyList()
             manualSourceSearchActive = false
@@ -1492,68 +1508,80 @@ private fun MusicMetaApp() {
 
     val requestPage: (Int) -> Unit = { requestedPage ->
         focusManager.clearFocus()
-        val current = playlist
-        if (current != null && !busy) {
-            val maxPage = pageCount
-            val targetPage = requestedPage.coerceIn(1, maxPage)
-            val pageChanged = targetPage != currentPage
-            setCurrentPage(targetPage)
-            jumpPageInput = targetPage.toString()
-            if (pageChanged) scope.launch { listState.animateScrollToItem(6) }
-            selectedTrack = null
-            flacResults = emptyList()
-
-            if (filterText.isBlank()) {
-                val offset = (targetPage - 1) * pageSize
-                val needed = minOf(pageSize, maxOf(0, current.totalTrackCount - offset))
-                val key = pageCacheKey(inputMode, current.id.toString(), pageSize, targetPage)
-                val alreadyLoaded = offset + needed <= current.tracks.size || pageCache.containsKey(key)
-                if (!alreadyLoaded && needed > 0) {
-                    val targetMode = inputMode
-                    val batchOffset = (offset / 100) * 100
-                    isLoadingPage = true
-                    status = "正在加载第 " + targetPage + " 页……"
-                    scope.launch {
-                        try {
-                            val loadedPage = withTimeout(28_000L) {
-                                withContext(Dispatchers.IO) {
-                                    playlistProvider.load(
-                                        input = current.id.toString(),
-                                        likedByUserId = false,
-                                        offset = batchOffset,
-                                        limit = 100,
-                                    )
+        if (inputMode == "local") {
+            if (!busy) {
+                val targetPage = requestedPage.coerceIn(1, pageCount)
+                val pageChanged = targetPage != currentPage
+                setCurrentPage(targetPage)
+                jumpPageInput = targetPage.toString()
+                selectedTrack = null
+                flacResults = emptyList()
+                if (pageChanged) scope.launch { listState.animateScrollToItem(6) }
+                status = "已切换到本地第 $targetPage 页。"
+            }
+        } else {
+            val current = playlist
+            if (current != null && !busy) {
+                val maxPage = pageCount
+                val targetPage = requestedPage.coerceIn(1, maxPage)
+                val pageChanged = targetPage != currentPage
+                setCurrentPage(targetPage)
+                jumpPageInput = targetPage.toString()
+                if (pageChanged) scope.launch { listState.animateScrollToItem(6) }
+                selectedTrack = null
+                flacResults = emptyList()
+    
+                if (filterText.isBlank()) {
+                    val offset = (targetPage - 1) * pageSize
+                    val needed = minOf(pageSize, maxOf(0, current.totalTrackCount - offset))
+                    val key = pageCacheKey(inputMode, current.id.toString(), pageSize, targetPage)
+                    val alreadyLoaded = offset + needed <= current.tracks.size || pageCache.containsKey(key)
+                    if (!alreadyLoaded && needed > 0) {
+                        val targetMode = inputMode
+                        val batchOffset = (offset / 100) * 100
+                        isLoadingPage = true
+                        status = "正在加载第 " + targetPage + " 页……"
+                        scope.launch {
+                            try {
+                                val loadedPage = withTimeout(28_000L) {
+                                    withContext(Dispatchers.IO) {
+                                        playlistProvider.load(
+                                            input = current.id.toString(),
+                                            likedByUserId = false,
+                                            offset = batchOffset,
+                                            limit = 100,
+                                        )
+                                    }
                                 }
+                                val activePlaylist = if (targetMode == "liked") likedPlaylist else publicPlaylist
+                                if (inputMode == targetMode && activePlaylist?.id == current.id) {
+                                    val pageEntries = loadedPage.tracks.chunked(pageSize).mapIndexed { index, tracks ->
+                                        val pageNumber = batchOffset / pageSize + index + 1
+                                        pageCacheKey(targetMode, current.id.toString(), pageSize, pageNumber) to tracks
+                                    }.toMap()
+                                    pageCache = pageCache + pageEntries
+                                    status = "第 " + targetPage + " 页已加载（每批读取100首）。"
+                                }
+                            } catch (error: Exception) {
+                                val detail = error.message?.takeIf { it.isNotBlank() } ?: "网络或接口暂不可用"
+                                val activePlaylist = if (targetMode == "liked") likedPlaylist else publicPlaylist
+                                if (inputMode == targetMode && activePlaylist?.id == current.id) {
+                                    status = "加载第 " + targetPage + " 页失败：" + detail + "。点击页码可重试。"
+                                    captureError("加载歌单页", error)
+                                }
+                            } finally {
+                                isLoadingPage = false
                             }
-                            val activePlaylist = if (targetMode == "liked") likedPlaylist else publicPlaylist
-                            if (inputMode == targetMode && activePlaylist?.id == current.id) {
-                                val pageEntries = loadedPage.tracks.chunked(pageSize).mapIndexed { index, tracks ->
-                                    val pageNumber = batchOffset / pageSize + index + 1
-                                    pageCacheKey(targetMode, current.id.toString(), pageSize, pageNumber) to tracks
-                                }.toMap()
-                                pageCache = pageCache + pageEntries
-                                status = "第 " + targetPage + " 页已加载（每批读取100首）。"
-                            }
-                        } catch (error: Exception) {
-                            val detail = error.message?.takeIf { it.isNotBlank() } ?: "网络或接口暂不可用"
-                            val activePlaylist = if (targetMode == "liked") likedPlaylist else publicPlaylist
-                            if (inputMode == targetMode && activePlaylist?.id == current.id) {
-                                status = "加载第 " + targetPage + " 页失败：" + detail + "。点击页码可重试。"
-                                captureError("加载歌单页", error)
-                            }
-                        } finally {
-                            isLoadingPage = false
                         }
+                    } else {
+                        status = "已切换到第 " + targetPage + " 页。"
                     }
                 } else {
-                    status = "已切换到第 " + targetPage + " 页。"
+                    status = "正在显示整份歌单的筛选结果。"
                 }
-            } else {
-                status = "正在显示整份歌单的筛选结果。"
             }
         }
     }
-
     LaunchedEffect(pageSize, inputMode, playlist?.id) {
         val current = playlist
         if (current != null && filterText.isBlank() && !busy) {
@@ -1707,7 +1735,7 @@ private fun MusicMetaApp() {
         bottomBar = {
             Surface(color = SurfaceColor, shadowElevation = 3.dp) {
                 Column(Modifier.fillMaxWidth()) {
-                    if (playlist != null && pageItemCount > 0) {
+                    if ((playlist != null || inputMode == "local") && pageItemCount > 0) {
                         if (pageCount > 1) {
                             val footerPageNumbers = if (pageCount <= 7) {
                                 (1..pageCount).toList()
@@ -2114,13 +2142,14 @@ private fun MusicMetaApp() {
             if (inputMode == "local") {
                 item(key = "local-controls") {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedTextField(value = localMusicFilter, onValueChange = { localMusicFilter = it }, modifier = Modifier.weight(1f), singleLine = true, label = { Text("搜索本地歌曲") })
+                        OutlinedTextField(value = localMusicFilter, onValueChange = { localMusicFilter = it; localCurrentPage = 1; jumpPageInput = "1" }, modifier = Modifier.weight(1f), singleLine = true, label = { Text("搜索本地歌曲") })
                         OutlinedButton(onClick = scanLocalMusic, enabled = !isScanningLocalMusic) { Text(if (isScanningLocalMusic) "扫描中" else "扫描") }
                     }
                 }
-                val localVisible = localMusicTracks.filter { localMusicFilter.isBlank() || it.title.contains(localMusicFilter, true) || it.artist.contains(localMusicFilter, true) || it.album.contains(localMusicFilter, true) }
+                val localVisible = filteredLocalMusicTracks
+                val localPageSongs = localVisible.drop((currentPage - 1) * pageSize).take(pageSize)
                 if (localVisible.isEmpty()) item(key = "local-empty") { Text(if (isScanningLocalMusic) "正在扫描本地音乐…" else "没有找到歌曲。首次使用请点击扫描，或在下载设置中选择本地音乐文件夹。", color = SubInk, modifier = Modifier.fillMaxWidth().padding(16.dp)) }
-                items(localVisible, key = { "local-" + it.uri }) { track ->
+                items(localPageSongs, key = { "local-" + it.uri }) { track ->
                     Card(Modifier.fillMaxWidth().clickable {
                         val song = FlacSiteSong(track.uri.toString(), "local", track.title, track.artist, track.album, "", track.durationMs.toString(), track.coverUri)
                         previewQueue = localVisible.map { FlacSiteSong(it.uri.toString(), "local", it.title, it.artist, it.album, "", it.durationMs.toString(), it.coverUri) }
