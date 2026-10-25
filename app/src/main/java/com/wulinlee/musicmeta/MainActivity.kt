@@ -1787,13 +1787,10 @@ private fun MusicMetaApp() {
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                                         ) {
-                                            AsyncImage(
-                                                model = song.coverUrl.takeIf { it.isNotBlank() },
-                                                contentDescription = "音源封面",
-                                                modifier = Modifier
-                                                    .size(46.dp)
-                                                    .clip(RoundedCornerShape(10.dp))
-                                                    .background(SoftAccent),
+                                            SourceCoverImage(
+                                                song = song,
+                                                size = 46.dp,
+                                                coverResolver = resolveSourceCoverUrl,
                                             )
                                             Column(
                                                 modifier = Modifier.weight(1f),
@@ -1818,8 +1815,20 @@ private fun MusicMetaApp() {
                                                 }
                                             }
                                             IconButton(
-                                                onClick = { copySongAndArtist(song.title, song.artist) },
+                                                onClick = { playPreview(song) },
+                                                enabled = !isPreviewLoading && !isResolvingUrl && !isDownloading,
                                                 modifier = Modifier.size(32.dp).semantics {
+                                                    contentDescription = "试听音源"
+                                                },
+                                            ) {
+                                                PlayGlyph(
+                                                    isPlaying = previewSong?.let(sourceSongKey) == sourceSongKey(song) && isPreviewPlaying,
+                                                    isLoading = previewSong?.let(sourceSongKey) == sourceSongKey(song) && isPreviewLoading,
+                                                )
+                                            }
+                                            IconButton(
+                                                onClick = { copySongAndArtist(song.title, song.artist) },
+                                                modifier = Modifier.size(30.dp).semantics {
                                                     contentDescription = "复制歌曲名和艺人"
                                                 },
                                             ) { CopyGlyph() }
@@ -1927,6 +1936,103 @@ private fun MusicMetaApp() {
         }
 
         }
+    }
+
+    if (previewSong != null) {
+        val activePreviewSong = previewSong!!
+        AlertDialog(
+            onDismissRequest = stopPreview,
+            title = { Text("试听预览", fontWeight = FontWeight.SemiBold) },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(9.dp),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        AsyncImage(
+                            model = previewCoverUrl.takeIf { it.isNotBlank() },
+                            contentDescription = "正在试听的歌曲封面",
+                            placeholder = painterResource(id = R.drawable.musicmeta_cover),
+                            error = painterResource(id = R.drawable.musicmeta_cover),
+                            modifier = Modifier.size(76.dp).clip(RoundedCornerShape(14.dp)).background(SoftAccent),
+                            contentScale = ContentScale.Crop,
+                        )
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text(
+                                activePreviewSong.title,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 15.sp,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                activePreviewSong.artist,
+                                color = SubInk,
+                                fontSize = 12.sp,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                if (activePreviewSong.platform.startsWith("gd:")) "GD Studio 音源"
+                                else if (activePreviewSong.platform == "kuwo") "酷我音源" else "网易云音源",
+                                color = Accent,
+                                fontSize = 10.sp,
+                            )
+                        }
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        if (isPreviewLoading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = Accent,
+                                strokeWidth = 2.dp,
+                            )
+                            Text("正在连接并播放…", color = SubInk, fontSize = 11.sp)
+                        } else {
+                            Text(
+                                if (isPreviewPlaying) "正在播放" else "播放已暂停",
+                                color = Accent,
+                                fontSize = 11.sp,
+                            )
+                        }
+                    }
+                    Text("歌词", color = Ink, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 230.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(PageBackground)
+                            .verticalScroll(rememberScrollState())
+                            .padding(11.dp),
+                    ) {
+                        Text(
+                            when {
+                                isPreviewLyricsLoading -> "正在查找歌词…"
+                                previewLyrics.isBlank() -> "暂未找到可用歌词。"
+                                else -> formatPreviewLyrics(previewLyrics)
+                            },
+                            color = if (previewLyrics.isBlank()) SubInk else Ink,
+                            fontSize = 12.sp,
+                            lineHeight = 19.sp,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = stopPreview) { Text("停止并关闭", color = Accent) }
+            },
+            containerColor = SurfaceColor,
+        )
     }
 
     if (showDownloadSettings) {
@@ -2136,7 +2242,12 @@ private fun ManualSourceSearchPanel(
     onPlatformChange: (String) -> Unit,
     onQualityChange: (String) -> Unit,
     onDownload: (FlacSiteSong) -> Unit,
+    onPlay: (FlacSiteSong) -> Unit,
     onCopy: (FlacSiteSong) -> Unit,
+    coverResolver: suspend (FlacSiteSong) -> String,
+    previewingSourceKey: String?,
+    isPreviewPlaying: Boolean,
+    isPreviewLoading: Boolean,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -2224,10 +2335,10 @@ private fun ManualSourceSearchPanel(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                AsyncImage(
-                                    model = song.coverUrl.takeIf { it.isNotBlank() },
-                                    contentDescription = "音源封面",
-                                    modifier = Modifier.size(42.dp).clip(RoundedCornerShape(9.dp)).background(SoftAccent),
+                                SourceCoverImage(
+                                    song = song,
+                                    size = 42.dp,
+                                    coverResolver = coverResolver,
                                 )
                                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                     Text(song.title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -2240,8 +2351,18 @@ private fun ManualSourceSearchPanel(
                                     }
                                 }
                                 IconButton(
+                                    onClick = { onPlay(song) },
+                                    enabled = !isPreviewLoading && !isResolvingUrl && !isDownloading,
+                                    modifier = Modifier.size(30.dp).semantics { contentDescription = "试听音源" },
+                                ) {
+                                    PlayGlyph(
+                                        isPlaying = previewingSourceKey == song.platform + ":" + song.id && isPreviewPlaying,
+                                        isLoading = previewingSourceKey == song.platform + ":" + song.id && isPreviewLoading,
+                                    )
+                                }
+                                IconButton(
                                     onClick = { onCopy(song) },
-                                    modifier = Modifier.size(30.dp).semantics {
+                                    modifier = Modifier.size(28.dp).semantics {
                                         contentDescription = "复制歌曲名和艺人"
                                     },
                                 ) { CopyGlyph() }
@@ -2263,6 +2384,89 @@ private fun ManualSourceSearchPanel(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SourceCoverImage(
+    song: FlacSiteSong,
+    size: Dp,
+    coverResolver: suspend (FlacSiteSong) -> String,
+) {
+    var resolvedCoverUrl by remember(song.platform, song.id, song.coverUrl) {
+        mutableStateOf(song.coverUrl)
+    }
+    LaunchedEffect(song.platform, song.id, song.coverUrl) {
+        if (resolvedCoverUrl.isBlank()) {
+            resolvedCoverUrl = runCatching { coverResolver(song) }.getOrDefault("")
+        }
+    }
+    AsyncImage(
+        model = resolvedCoverUrl.takeIf { it.isNotBlank() },
+        contentDescription = "音源封面",
+        placeholder = painterResource(id = R.drawable.musicmeta_cover),
+        error = painterResource(id = R.drawable.musicmeta_cover),
+        modifier = Modifier.size(size).clip(RoundedCornerShape(10.dp)).background(SoftAccent),
+        contentScale = ContentScale.Crop,
+    )
+}
+
+private fun formatPreviewLyrics(raw: String): String {
+    val timestampPrefix = Regex("^\\s*(?:\\[\\d{1,3}:\\d{2}(?:[.:]\\d{1,3})?])+") 
+    return raw.lineSequence()
+        .map { it.replace(timestampPrefix, "").trim() }
+        .filter { it.isNotBlank() }
+        .joinToString("\n")
+        .ifBlank { raw.trim() }
+}
+
+@Composable
+private fun PlayGlyph(isPlaying: Boolean, isLoading: Boolean) {
+    Canvas(modifier = Modifier.size(19.dp)) {
+        val tint = if (isLoading) SubInk else Accent
+        if (isLoading) {
+            drawCircle(color = tint, radius = size.minDimension * 0.28f, style = Stroke(width = 1.6.dp.toPx()))
+            drawLine(
+                color = tint,
+                start = Offset(size.width * 0.5f, size.height * 0.08f),
+                end = Offset(size.width * 0.5f, size.height * 0.30f),
+                strokeWidth = 1.6.dp.toPx(),
+                cap = StrokeCap.Round,
+            )
+        } else if (isPlaying) {
+            drawLine(tint, Offset(size.width * 0.35f, size.height * 0.24f), Offset(size.width * 0.35f, size.height * 0.76f), 2.5.dp.toPx(), cap = StrokeCap.Round)
+            drawLine(tint, Offset(size.width * 0.66f, size.height * 0.24f), Offset(size.width * 0.66f, size.height * 0.76f), 2.5.dp.toPx(), cap = StrokeCap.Round)
+        } else {
+            val path = Path().apply {
+                moveTo(size.width * 0.28f, size.height * 0.16f)
+                lineTo(size.width * 0.78f, size.height * 0.50f)
+                lineTo(size.width * 0.28f, size.height * 0.84f)
+                close()
+            }
+            drawPath(path, tint)
+        }
+    }
+}
+
+@Composable
+private fun ErrorGlyph(enabled: Boolean) {
+    Canvas(modifier = Modifier.size(22.dp)) {
+        val tint = if (enabled) Accent else SubInk
+        val stroke = 1.7.dp.toPx()
+        drawCircle(
+            color = tint,
+            radius = size.minDimension * 0.39f,
+            center = Offset(size.width / 2f, size.height / 2f),
+            style = Stroke(width = stroke),
+        )
+        drawLine(
+            color = tint,
+            start = Offset(size.width / 2f, size.height * 0.29f),
+            end = Offset(size.width / 2f, size.height * 0.55f),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round,
+        )
+        drawCircle(color = tint, radius = 1.1.dp.toPx(), center = Offset(size.width / 2f, size.height * 0.71f))
     }
 }
 
