@@ -53,6 +53,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.awaitEachGesture
+import androidx.compose.ui.input.pointer.awaitFirstDown
+import androidx.compose.ui.input.pointer.awaitPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.res.painterResource
@@ -81,42 +85,63 @@ import kotlin.math.atan2
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
-private fun Modifier.overlayDragGesture(
+internal fun Modifier.overlayDragGesture(
+    key: Any? = Unit,
     onDrag: (Float, Float) -> Unit,
     onCircularDrag: () -> Unit,
-): Modifier = pointerInput(onDrag, onCircularDrag) {
+): Modifier = pointerInput(key) {
+    val touchSlop = viewConfiguration.touchSlop
     val minimumCircularDistance = 160.dp.toPx()
-    var previousAngle = Float.NaN
-    var accumulatedRotation = 0f
-    var totalDistance = 0f
-    var triggered = false
-    detectDragGestures(
-        onDragStart = {
-            previousAngle = Float.NaN
-            accumulatedRotation = 0f
-            totalDistance = 0f
-            triggered = false
-        },
-        onDrag = { change, dragAmount ->
-            change.consume()
-            totalDistance += sqrt(dragAmount.x * dragAmount.x + dragAmount.y * dragAmount.y)
-            if (dragAmount.x * dragAmount.x + dragAmount.y * dragAmount.y >= 4f) {
-                val angle = atan2(dragAmount.y, dragAmount.x)
-                if (previousAngle.isFinite()) {
-                    var deltaAngle = angle - previousAngle
-                    if (deltaAngle > 3.14159265f) deltaAngle -= 6.2831853f
-                    if (deltaAngle < -3.14159265f) deltaAngle += 6.2831853f
-                    accumulatedRotation += deltaAngle
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        val pointerId = down.id
+        var lastPosition = down.position
+        var dragged = false
+        var previousAngle = Float.NaN
+        var accumulatedRotation = 0f
+        var totalDistance = 0f
+        var triggered = false
+        while (true) {
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            val change = event.changes.firstOrNull { it.id == pointerId } ?: break
+            if (!change.pressed) break
+            val dx = change.position.x - lastPosition.x
+            val dy = change.position.y - lastPosition.y
+            if (!dragged) {
+                val totalX = change.position.x - down.position.x
+                val totalY = change.position.y - down.position.y
+                val totalFromStart = sqrt(totalX * totalX + totalY * totalY)
+                if (totalFromStart > touchSlop) {
+                    dragged = true
+                    totalDistance = totalFromStart
+                    val angle = atan2(totalX, totalY)
+                    previousAngle = angle
+                    onDrag(totalX, totalY)
+                    change.consume()
                 }
-                previousAngle = angle
+            } else {
+                val distance = sqrt(dx * dx + dy * dy)
+                totalDistance += distance
+                if (distance >= 2f) {
+                    val angle = atan2(dy, dx)
+                    if (previousAngle.isFinite()) {
+                        var deltaAngle = angle - previousAngle
+                        if (deltaAngle > 3.14159265f) deltaAngle -= 6.2831853f
+                        if (deltaAngle < -3.14159265f) deltaAngle += 6.2831853f
+                        accumulatedRotation += deltaAngle
+                    }
+                    previousAngle = angle
+                }
+                onDrag(dx, dy)
+                change.consume()
+                if (!triggered && totalDistance >= minimumCircularDistance && abs(accumulatedRotation) >= 5.4f) {
+                    triggered = true
+                    onCircularDrag()
+                }
             }
-            onDrag(dragAmount.x, dragAmount.y)
-            if (!triggered && totalDistance >= minimumCircularDistance && abs(accumulatedRotation) >= 5.4f) {
-                triggered = true
-                onCircularDrag()
-            }
-        },
-    )
+            lastPosition = change.position
+        }
+    }
 }
 
 private class FloatingOverlayViewTreeOwner : LifecycleOwner, SavedStateRegistryOwner {
