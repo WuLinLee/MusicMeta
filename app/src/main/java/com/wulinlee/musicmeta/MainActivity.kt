@@ -552,56 +552,6 @@ private fun MusicMetaApp() {
     val latestPagingAvailable = rememberUpdatedState(!busy && pageItemCount > pageSize)
     val latestPage = rememberUpdatedState(currentPage)
     val latestPageCount = rememberUpdatedState(pageCount)
-    val latestRequestPage = rememberUpdatedState(requestPage)
-
-    val pagePullConnection = remember(pullThresholdPx) {
-        object : NestedScrollConnection {
-            override fun onPostScroll(
-                consumed: Offset,
-                available: Offset,
-                source: NestedScrollSource,
-            ): Offset {
-                if (!latestPagingAvailable.value) {
-                    pullDistance.value = 0f
-                    return Offset.Zero
-                }
-                // Keep the last drag distance through the fling callback so the
-                // release can still trigger a page change at the boundary.
-                if (source != NestedScrollSource.UserInput) return Offset.Zero
-                val deltaY = available.y
-                if (deltaY == 0f) return Offset.Zero
-                val page = latestPage.value
-                val maxPage = latestPageCount.value
-                val canNavigate = if (deltaY > 0f) page < maxPage else page > 1
-                if (!canNavigate) {
-                    pullDistance.value = 0f
-                    return Offset.Zero
-                }
-                val previous = pullDistance.value
-                val accum = if (previous == 0f || (previous > 0f) == (deltaY > 0f)) {
-                    previous + deltaY
-                } else {
-                    deltaY
-                }
-                pullDistance.value = accum.coerceIn(-pullThresholdPx * 1.35f, pullThresholdPx * 1.35f)
-                return Offset.Zero
-            }
-
-            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                val distance = pullDistance.value
-                pullDistance.value = 0f
-                if (latestPagingAvailable.value && abs(distance) >= pullThresholdPx) {
-                    val current = latestPage.value
-                    val target = if (distance > 0f) current + 1 else current - 1
-                    if (target in 1..latestPageCount.value) {
-                        latestRequestPage.value(target)
-                    }
-                }
-                return Velocity.Zero
-            }
-        }
-    }
-
     val switchInputMode: (String) -> Unit = { mode ->
         if (mode != inputMode && !busy) {
             inputMode = mode
@@ -671,6 +621,57 @@ private fun MusicMetaApp() {
                 }
             } else {
                 status = "显示已加载歌曲中的筛选结果。"
+            }
+        }
+    }
+
+
+    val latestRequestPage = rememberUpdatedState(requestPage)
+
+    val pagePullConnection = remember(pullThresholdPx) {
+        object : NestedScrollConnection {
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource,
+            ): Offset {
+                if (!latestPagingAvailable.value) {
+                    pullDistance.value = 0f
+                    return Offset.Zero
+                }
+                // Keep the last drag distance through the fling callback so the
+                // release can still trigger a page change at the boundary.
+                if (source != NestedScrollSource.UserInput) return Offset.Zero
+                val deltaY = available.y
+                if (deltaY == 0f) return Offset.Zero
+                val page = latestPage.value
+                val maxPage = latestPageCount.value
+                val canNavigate = if (deltaY > 0f) page < maxPage else page > 1
+                if (!canNavigate) {
+                    pullDistance.value = 0f
+                    return Offset.Zero
+                }
+                val previous = pullDistance.value
+                val accum = if (previous == 0f || (previous > 0f) == (deltaY > 0f)) {
+                    previous + deltaY
+                } else {
+                    deltaY
+                }
+                pullDistance.value = accum.coerceIn(-pullThresholdPx * 1.35f, pullThresholdPx * 1.35f)
+                return Offset.Zero
+            }
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                val distance = pullDistance.value
+                pullDistance.value = 0f
+                if (latestPagingAvailable.value && abs(distance) >= pullThresholdPx) {
+                    val current = latestPage.value
+                    val target = if (distance > 0f) current + 1 else current - 1
+                    if (target in 1..latestPageCount.value) {
+                        latestRequestPage.value(target)
+                    }
+                }
+                return Velocity.Zero
             }
         }
     }
