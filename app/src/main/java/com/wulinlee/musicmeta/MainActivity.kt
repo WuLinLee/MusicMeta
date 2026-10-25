@@ -344,6 +344,7 @@ private fun MusicMetaApp() {
     var previewDurationMs by remember { mutableStateOf(0) }
     var miniPlayerOffset by remember { mutableStateOf(Offset.Zero) }
     val previewPlayer = remember { mutableStateOf<MediaPlayer?>(null) }
+    var previewPlaybackGeneration by remember { mutableStateOf(0L) }
 
     val overlayPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
@@ -753,6 +754,7 @@ private fun MusicMetaApp() {
     }
     val sourceSongKey: (FlacSiteSong) -> String = { song -> song.platform + ":" + song.id }
     val stopPreview: () -> Unit = {
+        previewPlaybackGeneration += 1L
         val player = previewPlayer.value
         if (player != null) {
             runCatching { player.stop() }
@@ -798,6 +800,8 @@ private fun MusicMetaApp() {
                 }
             }
         } else if (!isPreviewLoading) {
+            previewPlaybackGeneration += 1L
+            val playbackGeneration = previewPlaybackGeneration
             val oldPlayer = previewPlayer.value
             runCatching { oldPlayer?.stop() }
             runCatching { oldPlayer?.release() }
@@ -835,7 +839,9 @@ private fun MusicMetaApp() {
                             userAgent = fallbackUserAgent,
                         )
                     }
-                    if (previewSong?.let(sourceSongKey) != songKey) return@launch
+                    if (playbackGeneration != previewPlaybackGeneration ||
+                        previewSong?.let(sourceSongKey) != songKey
+                    ) return@launch
 
                     val referer = if (song.platform.startsWith("gd:")) {
                         "https://music.gdstudio.xyz/"
@@ -859,7 +865,10 @@ private fun MusicMetaApp() {
                             .build(),
                     )
                     player.setOnPreparedListener { prepared ->
-                        if (previewSong?.let(sourceSongKey) == songKey) {
+                        if (playbackGeneration == previewPlaybackGeneration &&
+                            previewPlayer.value === prepared &&
+                            previewSong?.let(sourceSongKey) == songKey
+                        ) {
                             previewDurationMs = runCatching { prepared.duration }.getOrDefault(0).coerceAtLeast(0)
                             previewPositionMs = runCatching { prepared.currentPosition }.getOrDefault(0).coerceAtLeast(0)
                             runCatching { prepared.start() }
@@ -882,12 +891,19 @@ private fun MusicMetaApp() {
                         }
                     }
                     player.setOnCompletionListener { completed ->
+                        if (playbackGeneration != previewPlaybackGeneration ||
+                            previewPlayer.value !== completed ||
+                            previewSong?.let(sourceSongKey) != songKey
+                        ) {
+                            runCatching { completed.release() }
+                            return@setOnCompletionListener
+                        }
                         isPreviewPlaying = false
                         isPreviewLoading = false
                         previewPositionMs = previewDurationMs
                         runCatching { completed.release() }
                         if (previewPlayer.value === completed) previewPlayer.value = null
-                        if (previewCurrentTrack != null) {
+                        if (previewCurrentTrack != null && previewCurrentPlaylistId != null) {
                             status = "《" + song.title + "》播放结束，正在准备下一首。"
                             previewNavigationHandler?.invoke(1)
                         } else {
@@ -895,6 +911,13 @@ private fun MusicMetaApp() {
                         }
                     }
                     player.setOnErrorListener { failed, what, extra ->
+                        if (playbackGeneration != previewPlaybackGeneration ||
+                            previewPlayer.value !== failed ||
+                            previewSong?.let(sourceSongKey) != songKey
+                        ) {
+                            runCatching { failed.release() }
+                            return@setOnErrorListener true
+                        }
                         isPreviewPlaying = false
                         isPreviewLoading = false
                         status = "试听失败，音源可能不支持在线播放。"
@@ -909,7 +932,9 @@ private fun MusicMetaApp() {
 
                     scope.launch {
                         val cover = withContext(Dispatchers.IO) { resolveSourceCoverUrl(song) }
-                        if (previewSong?.let(sourceSongKey) == songKey && cover.isNotBlank()) {
+                        if (playbackGeneration == previewPlaybackGeneration &&
+                            previewSong?.let(sourceSongKey) == songKey && cover.isNotBlank()
+                        ) {
                             previewCoverUrl = cover
                         }
                     }
@@ -926,7 +951,9 @@ private fun MusicMetaApp() {
                             }
                             tracks
                         }
-                        if (previewSong?.let(sourceSongKey) == songKey) {
+                        if (playbackGeneration == previewPlaybackGeneration &&
+                            previewSong?.let(sourceSongKey) == songKey
+                        ) {
                             previewLyrics = lyrics.original.trim()
                             previewTranslatedLyrics = lyrics.translated.trim()
                             showTranslatedPreviewLyric = false
@@ -936,7 +963,9 @@ private fun MusicMetaApp() {
                 } catch (error: Exception) {
                     runCatching { newPlayer?.release() }
                     if (previewPlayer.value === newPlayer) previewPlayer.value = null
-                    if (previewSong?.let(sourceSongKey) == songKey) {
+                    if (playbackGeneration == previewPlaybackGeneration &&
+                        previewSong?.let(sourceSongKey) == songKey
+                    ) {
                         isPreviewLoading = false
                         isPreviewLyricsLoading = false
                         status = "试听失败：" + (error.message?.takeIf { it.isNotBlank() } ?: "音源暂不可用")
