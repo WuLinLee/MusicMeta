@@ -2,11 +2,11 @@
 
 **MusicMeta（音笺）** 是一个 Android 音乐整理工具：读取网易云公开歌单或可匿名访问的红心歌单，搜索并核对候选音源，下载音频，并尽可能补齐封面、歌词和音频标签。
 
-> **当前正式版：1.08**（`versionCode = 12`）  
+> **当前开发目标：1.09**（`versionCode = 13`；发布状态以 GitHub Actions 和 Release 实际结果为准）  
 > 应用 ID：`com.wulinlee.musicmeta` · 最低 Android：10 / API 29 · 目标 SDK：35  
 > 技术栈：Kotlin、Jetpack Compose、Material 3、Coroutines、OkHttp、Coil、jaudiotagger。
 
-**交接时先看这里：** 仓库当前版本号、Git tag、Release 页面和 APK 必须视为四件不同的东西。发布前请确认 main 的最新提交、Actions 构建结果、`v1.08` tag 指向和 Release 附件都一致。不要只根据 README 上的版本号就声称 APK 已验证。
+**交接时先看这里：** 仓库当前版本号、Git tag、Release 页面和 APK 必须视为四件不同的东西。发布前请确认 main 的最新提交、Actions 构建结果、`v1.09` tag 指向和 Release 附件都一致。不要只根据 README 上的版本号就声称 APK 已验证。
 
 ## 目录
 
@@ -34,7 +34,7 @@
 - **下载格式**：MP3 128 kbps、MP3 320 kbps、FLAC。应用不进行格式转码，不应把低规格音频伪装为 FLAC 无损。
 - **歌曲整理**：补充可获得的封面、原文 / 翻译 / 罗马音 / 逐字歌词；将标签与封面写入音频；按设置另存 LRC 文件。
 - **文件保存**：支持默认 Download 子目录或用户通过 Android 文件夹选择器授权的目录，并按命名规则整理文件。
-- **迷你播放器**：应用内可拖动的小封面；播放 / 暂停、停止、进度拖动、候选列表上一首 / 下一首；同步歌词高亮，点击有时间戳的歌词可跳转。
+- **迷你播放器（1.09）**：可拖动小封面；展开面板向封面左侧横向延伸，宽度固定；只显示当前高亮歌词一句、播放 / 暂停和进度条，不再显示上一首 / 下一首、停止按钮或可滚动歌词框。
 - **错误报告**：左上角复制图标复制最近一次捕获的错误报告；没有错误报告时按钮禁用。分页区 Home 图标仍是“回到歌曲列表顶部”，不能改成错误报告或播放器操作。
 - **站点验证**：嵌入式 WebView 供用户手动完成来源站要求的验证。不绕过验证码、登录限制或其他访问控制。
 
@@ -112,9 +112,9 @@
 
 ## 播放器现状和改造方向
 
-### 1.08 的播放器到底是什么
+### 1.09 的播放器到底是什么
 
-当前播放入口仍在 `MainActivity.kt` 中，使用 Android `MediaPlayer` 播放已经解析的网络地址。播放器、歌词和进度状态由 Compose 层维护；封面控件通过 Compose 的拖动手势移动，播放详情提供进度、播放按钮、停止、上一首 / 下一首和歌词区域。
+当前播放入口仍在 `MainActivity.kt` 中，使用 Android `MediaPlayer` 播放已经解析的网络地址。播放器、歌词和进度状态由 Compose 层维护；封面控件通过 Compose 的拖动手势移动，展开面板横向延伸到封面左侧，采用独立深色底和高对比度强调色；只展示当前时间对应的一句高亮歌词、播放 / 暂停和进度条，避免小型歌词列表难以阅读。
 
 它的队列来源只是启动播放时可用的候选音源列表，并非一个独立且可持久化的播放队列。离开页面、Activity 生命周期变化、网络地址变化和播放器释放等情况需要格外小心。
 
@@ -203,7 +203,7 @@ app/build/outputs/apk/release/app-release-unsigned.apk
 
 版本定义在 [app/build.gradle.kts](app/build.gradle.kts)：
 
-- 当前 `versionName = "1.08"`
+- 当前 `versionName = "1.09"`
 - 当前 `versionCode = 12`
 
 下一版应提高 `versionCode`，同时更新 `versionName`、`RELEASE_NOTES.md` 和必要的 README 信息。
