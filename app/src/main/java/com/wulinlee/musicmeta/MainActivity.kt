@@ -6,6 +6,8 @@ import android.content.ClipboardManager
 import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
+import android.media.AudioAttributes
+import android.media.MediaPlayer
 import android.os.Bundle
 import android.os.Build
 import android.widget.Toast
@@ -70,6 +72,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -96,6 +99,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.width
@@ -237,6 +241,19 @@ private fun MusicMetaApp() {
     val captureError: (String, Throwable) -> Unit = { stage, error ->
         lastErrorReport = makeErrorReport(context, stage, error)
     }
+    val copyErrorReport: () -> Unit = {
+        val report = lastErrorReport
+        if (report != null) {
+            runCatching {
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("MusicMeta error report", report))
+            }.onSuccess {
+                status = "错误报告已复制到剪贴板，请粘贴发送给助手。"
+            }.onFailure { error ->
+                status = "复制失败：" + (error.message ?: "请重试")
+            }
+        }
+    }
     val copySongAndArtist: (String, String) -> Unit = { title, artist ->
         val textToCopy = listOf(title.trim(), artist.trim())
             .filter { it.isNotBlank() }
@@ -276,6 +293,20 @@ private fun MusicMetaApp() {
     var isResolvingUrl by remember { mutableStateOf(false) }
     var isDownloading by remember { mutableStateOf(false) }
     var verificationOpen by remember { mutableStateOf(false) }
+    var previewSong by remember { mutableStateOf<FlacSiteSong?>(null) }
+    var previewCoverUrl by remember { mutableStateOf("") }
+    var previewLyrics by remember { mutableStateOf("") }
+    var isPreviewLoading by remember { mutableStateOf(false) }
+    var isPreviewPlaying by remember { mutableStateOf(false) }
+    var isPreviewLyricsLoading by remember { mutableStateOf(false) }
+    val previewPlayer = remember { mutableStateOf<MediaPlayer?>(null) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            runCatching { previewPlayer.value?.release() }
+            previewPlayer.value = null
+        }
+    }
 
     val destinationPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree(),
@@ -652,6 +683,168 @@ private fun MusicMetaApp() {
     }
     val latestWebsiteDownload by rememberUpdatedState(onWebsiteDownload)
 
+    val resolveSourceCoverUrl: suspend (FlacSiteSong) -> String = { song ->
+        flacProvider.resolveCoverUrl(song).ifBlank {
+            metadataProvider.resolveSourceCoverUrl(song)
+        }
+    }
+    val sourceSongKey: (FlacSiteSong) -> String = { song -> song.platform + ":" + song.id }
+    val stopPreview: () -> Unit = {
+        val player = previewPlayer.value
+        if (player != null) {
+            runCatching { player.stop() }
+            runCatching { player.release() }
+        }
+        previewPlayer.value = null
+        previewSong = null
+        previewCoverUrl = ""
+        previewLyrics = ""
+        isPreviewLoading = false
+        isPreviewPlaying = false
+        isPreviewLyricsLoading = false
+    }
+    val playPreview: (FlacSiteSong) -> Unit = { song ->
+        val songKey = sourceSongKey(song)
+        if (previewSong?.let(sourceSongKey) == songKey && previewPlayer.value != null) {
+            val player = previewPlayer.value
+            if (player != null) {
+                runCatching {
+                    if (player.isPlaying) {
+                        player.pause()
+                        isPreviewPlaying = false
+                        status = "试听已暂停。"
+                    } else {
+                        player.start()
+                        isPreviewPlaying = true
+                        status = "正在试听《" + song.title + "》。"
+                    }
+                }.onFailure { error ->
+                    status = "试听控制失败：" + (error.message ?: "请重试")
+                }
+            }
+        } else if (!isPreviewLoading) {
+            val oldPlayer = previewPlayer.value
+            runCatching { oldPlayer?.stop() }
+            runCatching { oldPlayer?.release() }
+            previewPlayer.value = null
+            previewSong = song
+            previewCoverUrl = song.coverUrl
+            previewLyrics = ""
+            isPreviewPlaying = false
+            isPreviewLoading = true
+            isPreviewLyricsLoading = true
+            status = "正在准备《" + song.title + "》的试听……"
+            scope.launch {
+                var newPlayer: MediaPlayer? = null
+                try {
+                    val cookie = CookieManager.getInstance().getCookie(DEFAULT_SOURCE)
+                    val (audioUrl, usedGdStudio) = withContext(Dispatchers.IO) {
+                        flacProvider.resolveDownloadUrlWithFallback(
+                            song = song,
+                            format = "mp3",
+                            bitrate = "320",
+                            cookie = cookie,
+                            userAgent = fallbackUserAgent,
+                        )
+                    }
+                    if (previewSong?.let(sourceSongKey) != songKey) return@launch
+
+                    val referer = if (song.platform.startsWith("gd:")) {
+                        "https://music.gdstudio.xyz/"
+                    } else {
+                        DEFAULT_SOURCE
+                    }
+                    val headers = mutableMapOf(
+                        "User-Agent" to fallbackUserAgent,
+                        "Referer" to referer,
+                    )
+                    if (!cookie.isNullOrBlank() && !song.platform.startsWith("gd:")) {
+                        headers["Cookie"] = cookie
+                    }
+
+                    val player = MediaPlayer()
+                    newPlayer = player
+                    player.setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_MEDIA)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                            .build(),
+                    )
+                    player.setOnPreparedListener { prepared ->
+                        if (previewSong?.let(sourceSongKey) == songKey) {
+                            runCatching { prepared.start() }
+                                .onSuccess {
+                                    isPreviewPlaying = true
+                                    isPreviewLoading = false
+                                    status = if (usedGdStudio) {
+                                        "正在通过 GD Studio 试听《" + song.title + "》。"
+                                    } else {
+                                        "正在试听《" + song.title + "》。"
+                                    }
+                                }
+                                .onFailure { error ->
+                                    isPreviewLoading = false
+                                    status = "无法开始试听：" + (error.message ?: "音频暂不可用")
+                                    captureError("开始试听", error)
+                                }
+                        } else {
+                            runCatching { prepared.release() }
+                        }
+                    }
+                    player.setOnCompletionListener { completed ->
+                        isPreviewPlaying = false
+                        isPreviewLoading = false
+                        status = "试听结束：《" + song.title + "》。"
+                        runCatching { completed.release() }
+                        if (previewPlayer.value === completed) previewPlayer.value = null
+                    }
+                    player.setOnErrorListener { failed, what, extra ->
+                        isPreviewPlaying = false
+                        isPreviewLoading = false
+                        status = "试听失败，音源可能不支持在线播放。"
+                        captureError("试听音源", IOException("MediaPlayer error $what/$extra"))
+                        runCatching { failed.release() }
+                        if (previewPlayer.value === failed) previewPlayer.value = null
+                        true
+                    }
+                    player.setDataSource(context, Uri.parse(audioUrl), headers)
+                    previewPlayer.value = player
+                    player.prepareAsync()
+
+                    scope.launch {
+                        val cover = withContext(Dispatchers.IO) { resolveSourceCoverUrl(song) }
+                        if (previewSong?.let(sourceSongKey) == songKey && cover.isNotBlank()) {
+                            previewCoverUrl = cover
+                        }
+                    }
+                    scope.launch {
+                        val lyrics = withContext(Dispatchers.IO) {
+                            val primary = runCatching {
+                                flacProvider.fetchLyrics(song, cookie, fallbackUserAgent)
+                            }.getOrDefault("").trim()
+                            primary.ifBlank {
+                                runCatching { metadataProvider.resolveSourceLyrics(song) }.getOrDefault("")
+                            }
+                        }
+                        if (previewSong?.let(sourceSongKey) == songKey) {
+                            previewLyrics = lyrics
+                            isPreviewLyricsLoading = false
+                        }
+                    }
+                } catch (error: Exception) {
+                    runCatching { newPlayer?.release() }
+                    if (previewPlayer.value === newPlayer) previewPlayer.value = null
+                    if (previewSong?.let(sourceSongKey) == songKey) {
+                        isPreviewLoading = false
+                        isPreviewLyricsLoading = false
+                        status = "试听失败：" + (error.message?.takeIf { it.isNotBlank() } ?: "音源暂不可用")
+                        captureError("解析试听音源", error)
+                    }
+                }
+            }
+        }
+    }
+
     val downloadManualSearchResult: (FlacSiteSong) -> Unit = { song ->
         if (isResolvingUrl || isDownloading) {
             status = "当前下载任务还没完成，请稍候。"
@@ -781,7 +974,7 @@ private fun MusicMetaApp() {
                             val activePlaylist = if (targetMode == "liked") likedPlaylist else publicPlaylist
                             if (inputMode == targetMode && activePlaylist?.id == current.id) {
                                 pageCache = pageCache + (key to loadedPage.tracks)
-                                status = "第 " + targetPage + " / " + maxPage + " 页已加载。"
+                                status = "第 " + targetPage + " 页已加载。"
                             }
                         } catch (error: Exception) {
                             val detail = error.message?.takeIf { it.isNotBlank() } ?: "网络或接口暂不可用"
@@ -795,7 +988,7 @@ private fun MusicMetaApp() {
                         }
                     }
                 } else {
-                    status = "第 " + targetPage + " / " + maxPage + " 页"
+                    status = "已切换到第 " + targetPage + " 页。"
                 }
             } else {
                 status = "正在显示整份歌单的筛选结果。"
@@ -882,13 +1075,11 @@ private fun MusicMetaApp() {
             CenterAlignedTopAppBar(
                 navigationIcon = {
                     IconButton(
-                        onClick = {
-                            focusManager.clearFocus()
-                            scope.launch { listState.animateScrollToItem(0) }
-                        },
-                        modifier = Modifier.semantics { contentDescription = "回到顶部" },
+                        onClick = copyErrorReport,
+                        enabled = lastErrorReport != null,
+                        modifier = Modifier.semantics { contentDescription = "复制错误报告" },
                     ) {
-                        HomeGlyph()
+                        ErrorGlyph(enabled = lastErrorReport != null)
                     }
                 },
                 title = {
@@ -993,8 +1184,6 @@ private fun MusicMetaApp() {
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(1.dp),
                         ) {
-                            Text("${currentPage}/${pageCount}页", color = Accent, fontSize = 9.sp, maxLines = 1)
-                            Spacer(Modifier.size(3.dp))
                             Text("每页", color = SubInk, fontSize = 9.sp)
                             listOf(25, 50, 100).forEach { count ->
                                 TextButton(
@@ -1071,45 +1260,26 @@ private fun MusicMetaApp() {
                             }
                             IconButton(
                                 onClick = {
-                                    val report = lastErrorReport
-                                    if (report != null) {
-                                        runCatching {
-                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                            clipboard.setPrimaryClip(ClipData.newPlainText("MusicMeta error report", report))
-                                        }.onSuccess {
-                                            status = "错误报告已复制到剪贴板，请粘贴发送给助手。"
-                                        }.onFailure { error ->
-                                            status = "复制失败：" + (error.message ?: "请重试")
-                                        }
-                                    }
+                                    focusManager.clearFocus()
+                                    scope.launch { listState.animateScrollToItem(0) }
                                 },
-                                enabled = lastErrorReport != null,
-                                modifier = Modifier.size(28.dp).semantics { contentDescription = "复制错误报告" },
-                            ) { CopyGlyph(enabled = lastErrorReport != null) }
+                                modifier = Modifier.size(28.dp).semantics { contentDescription = "回到顶部" },
+                            ) { HomeGlyph() }
                         }
                     }
-                    if ((playlist == null || pageItemCount <= 0) && lastErrorReport != null) {
+                    if (playlist == null || pageItemCount <= 0) {
                         Row(
-                            modifier = Modifier.fillMaxWidth().height(28.dp).padding(horizontal = 8.dp),
+                            modifier = Modifier.fillMaxWidth().height(25.dp).padding(horizontal = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.End,
                         ) {
                             IconButton(
                                 onClick = {
-                                    val report = lastErrorReport
-                                    if (report != null) {
-                                        runCatching {
-                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                            clipboard.setPrimaryClip(ClipData.newPlainText("MusicMeta error report", report))
-                                        }.onSuccess {
-                                            status = "错误报告已复制到剪贴板，请粘贴发送给助手。"
-                                        }.onFailure { error ->
-                                            status = "复制失败：" + (error.message ?: "请重试")
-                                        }
-                                    }
+                                    focusManager.clearFocus()
+                                    scope.launch { listState.animateScrollToItem(0) }
                                 },
-                                modifier = Modifier.size(28.dp).semantics { contentDescription = "复制错误报告" },
-                            ) { CopyGlyph() }
+                                modifier = Modifier.size(28.dp).semantics { contentDescription = "回到顶部" },
+                            ) { HomeGlyph() }
                         }
                     }
                     if (busy) {
@@ -1330,7 +1500,12 @@ private fun MusicMetaApp() {
                         },
                         onQualityChange = setQuality,
                         onDownload = { song -> downloadManualSearchResult(song) },
+                        onPlay = { song -> playPreview(song) },
                         onCopy = { song -> copySongAndArtist(song.title, song.artist) },
+                        coverResolver = resolveSourceCoverUrl,
+                        previewingSourceKey = previewSong?.let(sourceSongKey),
+                        isPreviewPlaying = isPreviewPlaying,
+                        isPreviewLoading = isPreviewLoading,
                     )
                 }
             }
