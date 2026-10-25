@@ -369,6 +369,7 @@ private fun MusicMetaApp() {
     var previewDurationMs by remember { mutableStateOf(0) }
     var miniPlayerOffset by remember { mutableStateOf(Offset.Zero) }
     val previewPlayer = remember { mutableStateOf<MediaPlayer?>(null) }
+    val playPreviewRef = remember { mutableStateOf<(FlacSiteSong) -> Unit>({}) }
     var previewPlaybackGeneration by remember { mutableStateOf(0L) }
 
     val localFolderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -995,7 +996,7 @@ private fun MusicMetaApp() {
                             } else queue.getOrNull(index + 1)
                             if (next != null) {
                                 status = "本地歌曲播放结束，正在播放下一首。"
-                                playPreview(next)
+                                playPreviewRef.value(next)
                             } else {
                                 status = "本地播放列表已播放完毕。"
                             }
@@ -1074,6 +1075,10 @@ private fun MusicMetaApp() {
                 }
             }
         }
+    }
+
+    SideEffect {
+        playPreviewRef.value = playPreview
     }
 
     SideEffect {
@@ -1710,7 +1715,6 @@ private fun MusicMetaApp() {
                             )
                             listOf(25, 50, 100).forEach { count ->
                                 TextButton(
-                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
                                     onClick = {
                                         if (!busy && pageSize != count) {
                                             pageSize = count
