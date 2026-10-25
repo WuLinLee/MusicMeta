@@ -136,7 +136,8 @@ class MetadataProvider {
             value.trim().lowercase().filter { it.isLetterOrDigit() }
 
         val wantedTitle = normalize(title)
-        val wantedArtist = normalize(artist.substringBefore(" / "))
+        val rawArtist = normalize(artist.substringBefore(" / "))
+        val wantedArtist = rawArtist.takeUnless { it in setOf(normalize("未知艺术家"), "unknown", "unknownartist", "variousartists") }.orEmpty()
         val wantedAlbum = normalize(album)
         if (wantedTitle.isBlank()) return 0L
         return try {
