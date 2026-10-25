@@ -18,6 +18,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
@@ -74,7 +75,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -86,6 +89,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.documentfile.provider.DocumentFile
@@ -616,8 +621,11 @@ private fun MusicMetaApp() {
         topBar = {
             CenterAlignedTopAppBar(
                 navigationIcon = {
-                    IconButton(onClick = { scope.launch { listState.animateScrollToItem(0) } }) {
-                        Text("⌂", color = Accent, fontSize = 25.sp)
+                    IconButton(
+                        onClick = { scope.launch { listState.animateScrollToItem(0) } },
+                        modifier = Modifier.semantics { contentDescription = "回到顶部" },
+                    ) {
+                        HomeGlyph()
                     }
                 },
                 title = {
@@ -1013,12 +1021,12 @@ private fun MusicMetaApp() {
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(3.dp),
                         ) {
-                            TextButton(
+                            IconButton(
                                 onClick = { requestPage(currentPage - 1) },
                                 enabled = !busy && currentPage > 1,
-                                contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp),
+                                modifier = Modifier.semantics { contentDescription = "上一页" },
                             ) {
-                                Text("‹ 上一页", color = if (!busy && currentPage > 1) Ink else SubInk, fontSize = 10.sp, maxLines = 1)
+                                PageArrowGlyph(pointsLeft = true, tint = if (!busy && currentPage > 1) Ink else SubInk)
                             }
                             Row(
                                 modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
@@ -1044,12 +1052,12 @@ private fun MusicMetaApp() {
                                     }
                                 }
                             }
-                            TextButton(
+                            IconButton(
                                 onClick = { requestPage(currentPage + 1) },
                                 enabled = !busy && currentPage < pageCount,
-                                contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp),
+                                modifier = Modifier.semantics { contentDescription = "下一页" },
                             ) {
-                                Text("下一页 ›", color = if (!busy && currentPage < pageCount) Ink else SubInk, fontSize = 10.sp, maxLines = 1)
+                                PageArrowGlyph(pointsLeft = false, tint = if (!busy && currentPage < pageCount) Ink else SubInk)
                             }
                         }
                         Row(
@@ -1649,6 +1657,58 @@ private fun combineLyricsWithoutLabels(
         return LrcMerger.merge(source, translated)
     }
     return listOf(source, translated).filter { it.isNotBlank() }.joinToString("\n")
+}
+
+@Composable
+private fun PageArrowGlyph(pointsLeft: Boolean, tint: Color) {
+    Canvas(modifier = Modifier.size(22.dp)) {
+        val stroke = 2.dp.toPx()
+        val centerY = size.height / 2f
+        val tipX = size.width * if (pointsLeft) 0.24f else 0.76f
+        val shaftStartX = size.width * if (pointsLeft) 0.72f else 0.28f
+        val shaftEndX = size.width * if (pointsLeft) 0.28f else 0.72f
+        drawLine(
+            color = tint,
+            start = Offset(shaftStartX, centerY),
+            end = Offset(shaftEndX, centerY),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round,
+        )
+        val headX = size.width * if (pointsLeft) 0.48f else 0.52f
+        drawLine(
+            color = tint,
+            start = Offset(headX, size.height * 0.25f),
+            end = Offset(tipX, centerY),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round,
+        )
+        drawLine(
+            color = tint,
+            start = Offset(tipX, centerY),
+            end = Offset(headX, size.height * 0.75f),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round,
+        )
+    }
+}
+
+@Composable
+private fun HomeGlyph() {
+    Canvas(modifier = Modifier.size(23.dp)) {
+        val stroke = 2.dp.toPx()
+        val left = size.width * 0.17f
+        val right = size.width * 0.83f
+        val top = size.height * 0.20f
+        val wallTop = size.height * 0.47f
+        val base = size.height * 0.84f
+        val middle = size.width / 2f
+        drawLine(Accent, Offset(left, wallTop), Offset(middle, top), stroke, cap = StrokeCap.Round)
+        drawLine(Accent, Offset(middle, top), Offset(right, wallTop), stroke, cap = StrokeCap.Round)
+        drawLine(Accent, Offset(left + size.width * 0.08f, wallTop), Offset(left + size.width * 0.08f, base), stroke, cap = StrokeCap.Round)
+        drawLine(Accent, Offset(right - size.width * 0.08f, wallTop), Offset(right - size.width * 0.08f, base), stroke, cap = StrokeCap.Round)
+        drawLine(Accent, Offset(left + size.width * 0.08f, base), Offset(right - size.width * 0.08f, base), stroke, cap = StrokeCap.Round)
+        drawLine(Accent, Offset(middle, base), Offset(middle, size.height * 0.61f), stroke, cap = StrokeCap.Round)
+    }
 }
 
 @Composable
