@@ -20,6 +20,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -39,6 +40,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.rememberScrollState
@@ -79,12 +81,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -142,11 +148,9 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun MusicMetaApp() {
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
-    // Keep focus state only for the compact paging/search controls.
     var jumpFieldFocused by remember { mutableStateOf(false) }
-    var filterFieldFocused by remember { mutableStateOf(false) }
-    var sourceQueryFieldFocused by remember { mutableStateOf(false) }
     val folderPreferences = remember { context.getSharedPreferences("music_meta_settings", Context.MODE_PRIVATE) }
     remember(folderPreferences) {
         if (folderPreferences.getInt("download_defaults_version", 0) < 4) {
@@ -171,8 +175,14 @@ private fun MusicMetaApp() {
     val flacProvider = remember { FlacMusicProvider() }
     val publicListState = rememberLazyListState()
     val likedListState = rememberLazyListState()
-    var inputMode by remember { mutableStateOf(if (folderPreferences.getString("input_mode", "playlist") == "liked") "liked" else "playlist") }
-    val listState = if (inputMode == "liked") likedListState else publicListState
+    val searchListState = rememberLazyListState()
+    val savedInputMode = folderPreferences.getString("input_mode", "playlist") ?: "playlist"
+    var inputMode by remember { mutableStateOf(savedInputMode.takeIf { it in setOf("playlist", "liked", "search") } ?: "playlist") }
+    val listState = when (inputMode) {
+        "liked" -> likedListState
+        "search" -> searchListState
+        else -> publicListState
+    }
     var publicCurrentPage by remember { mutableStateOf(1) }
     var likedCurrentPage by remember { mutableStateOf(1) }
     val currentPage = if (inputMode == "liked") likedCurrentPage else publicCurrentPage
@@ -193,7 +203,11 @@ private fun MusicMetaApp() {
     var publicFilterText by remember { mutableStateOf("") }
     var likedFilterText by remember { mutableStateOf("") }
     val playlistInput = if (inputMode == "liked") likedUserIdInput else publicPlaylistInput
-    val playlist = if (inputMode == "liked") likedPlaylist else publicPlaylist
+    val playlist = when (inputMode) {
+        "liked" -> likedPlaylist
+        "search" -> null
+        else -> publicPlaylist
+    }
     val filterText = if (inputMode == "liked") likedFilterText else publicFilterText
     val setPlaylistInput: (String) -> Unit = { value ->
         if (inputMode == "liked") {
@@ -268,6 +282,7 @@ private fun MusicMetaApp() {
     val busy = isSyncing || isLoadingPage || isSearchingFlac || isResolvingUrl || isDownloading
 
     val syncPlaylist: () -> Unit = {
+        focusManager.clearFocus()
         val input = playlistInput.trim()
         if (input.isBlank()) {
             status = if (inputMode == "liked") "请输入网易云用户 ID。" else "先粘贴网易云公开歌单链接或 ID。"
@@ -303,6 +318,7 @@ private fun MusicMetaApp() {
     }
 
     val searchTrackSource: (MusicTrack) -> Unit = { track ->
+        focusManager.clearFocus()
         if (busy) {
             status = "当前任务还没完成，请稍候。"
         } else {
@@ -354,6 +370,7 @@ private fun MusicMetaApp() {
     }
 
     val searchSourceKeyword: () -> Unit = {
+        focusManager.clearFocus()
         val keyword = manualSearchQuery.trim()
         if (keyword.isBlank()) {
             status = "请输入要搜索的歌名或歌手。"
@@ -657,22 +674,24 @@ private fun MusicMetaApp() {
     val pageItemCount = if (filterText.isBlank()) playlist?.totalTrackCount ?: 0 else filteredKnownTracks.size
     val pageCount = maxOf(1, (pageItemCount + pageSize - 1) / pageSize)
     val switchInputMode: (String) -> Unit = { mode ->
-        if (mode != inputMode && !busy) {
+        if (mode in setOf("playlist", "liked", "search") && mode != inputMode && !busy) {
+            focusManager.clearFocus()
             inputMode = mode
             folderPreferences.edit().putString("input_mode", mode).apply()
             jumpPageInput = (if (mode == "liked") likedCurrentPage else publicCurrentPage).toString()
             selectedTrack = null
             flacResults = emptyList()
             manualSourceSearchActive = false
-            status = if ((if (mode == "liked") likedPlaylist else publicPlaylist) != null) {
-                if (mode == "liked") "已切换到红心歌单。" else "已切换到公开歌单。"
-            } else {
-                if (mode == "liked") "输入网易云用户 ID 同步红心歌单。" else "输入公开歌单链接或 ID 开始。"
+            status = when (mode) {
+                "search" -> "直接搜歌：输入歌名或歌手搜索音源。"
+                "liked" -> if (likedPlaylist != null) "已切换到红心歌单。" else "输入网易云用户 ID 同步红心歌单。"
+                else -> if (publicPlaylist != null) "已切换到公开歌单。" else "输入公开歌单链接或 ID 开始。"
             }
         }
     }
 
     val requestPage: (Int) -> Unit = { requestedPage ->
+        focusManager.clearFocus()
         val current = playlist
         if (current != null && !busy) {
             val maxPage = pageCount
@@ -744,13 +763,15 @@ private fun MusicMetaApp() {
                 navigationIcon = {
                     IconButton(
                         onClick = {
+                            focusManager.clearFocus()
                             scope.launch {
-                                val firstSongIndex = if (manualSourceSearchActive) 7 else 6
-                                if (playlist != null) {
-                                    listState.animateScrollToItem(firstSongIndex)
-                                } else {
-                                    listState.animateScrollToItem(0)
+                                val targetIndex = when {
+                                    playlist != null -> 5 // Keep the "歌曲列表" heading just above track one.
+                                    manualSourceSearchActive -> 2
+                                    else -> 1
                                 }
+                                val lastAvailableIndex = (listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
+                                listState.animateScrollToItem(targetIndex.coerceAtMost(lastAvailableIndex))
                             }
                         },
                         modifier = Modifier.semantics { contentDescription = "回到顶部" },
@@ -853,7 +874,7 @@ private fun MusicMetaApp() {
                             }
                         }
                         Row(
-                            modifier = Modifier.fillMaxWidth().height(32.dp).padding(horizontal = 8.dp),
+                            modifier = Modifier.fillMaxWidth().height(28.dp).padding(horizontal = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(1.dp),
                         ) {
@@ -883,17 +904,44 @@ private fun MusicMetaApp() {
                                 }
                             }
                             Spacer(Modifier.weight(1f))
-                            OutlinedTextField(
-                                value = jumpPageInput,
-                                onValueChange = { jumpPageInput = it.filter(Char::isDigit).take(5) },
-                                modifier = Modifier.width(42.dp).height(30.dp).onFocusChanged { jumpFieldFocused = it.isFocused },
-                                singleLine = true,
-                                placeholder = { Text("页", fontSize = 9.sp) },
-                                shape = RoundedCornerShape(7.dp),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-                                keyboardActions = KeyboardActions(onDone = { jumpPageInput.toIntOrNull()?.let(requestPage) }),
-                                enabled = !busy && pageCount > 1,
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .width(48.dp)
+                                    .height(28.dp)
+                                    .clip(RoundedCornerShape(7.dp))
+                                    .background(PageBackground)
+                                    .border(
+                                        width = 1.dp,
+                                        color = if (jumpFieldFocused) Accent else Hairline,
+                                        shape = RoundedCornerShape(7.dp),
+                                    )
+                                    .padding(horizontal = 4.dp, vertical = 3.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                BasicTextField(
+                                    value = jumpPageInput,
+                                    onValueChange = { jumpPageInput = it.filter(Char::isDigit).take(5) },
+                                    modifier = Modifier.fillMaxWidth().onFocusChanged { jumpFieldFocused = it.isFocused },
+                                    singleLine = true,
+                                    textStyle = TextStyle(color = Ink, fontSize = 11.sp, textAlign = TextAlign.Center),
+                                    cursorBrush = SolidColor(Accent),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                                    keyboardActions = KeyboardActions(onDone = {
+                                        val target = jumpPageInput.toIntOrNull()
+                                        if (target == null) {
+                                            status = "请输入页码。"
+                                            focusManager.clearFocus()
+                                        } else requestPage(target)
+                                    }),
+                                    enabled = !busy && pageCount > 1,
+                                    decorationBox = { innerTextField ->
+                                        Box(contentAlignment = Alignment.Center) {
+                                            if (jumpPageInput.isEmpty()) Text("页", color = SubInk, fontSize = 9.sp)
+                                            innerTextField()
+                                        }
+                                    },
+                                )
+                            }
                             IconButton(
                                 onClick = {
                                     val target = jumpPageInput.toIntOrNull()
@@ -904,10 +952,10 @@ private fun MusicMetaApp() {
                             ) {
                                 EnterGlyph()
                             }
-                            TextButton(
-                                onClick = {
-                                    val report = lastErrorReport
-                                    if (report != null) {
+                            if (lastErrorReport != null) {
+                                TextButton(
+                                    onClick = {
+                                        val report = lastErrorReport ?: return@TextButton
                                         runCatching {
                                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                             clipboard.setPrimaryClip(ClipData.newPlainText("MusicMeta error report", report))
@@ -916,16 +964,15 @@ private fun MusicMetaApp() {
                                         }.onFailure { error ->
                                             status = "复制失败：" + (error.message ?: "请重试")
                                         }
-                                    }
-                                },
-                                enabled = lastErrorReport != null,
-                                contentPadding = PaddingValues(horizontal = 3.dp, vertical = 0.dp),
-                            ) {
-                                Text("复制错误报告", color = if (lastErrorReport != null) Accent else SubInk, fontSize = 9.sp, maxLines = 1)
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 3.dp, vertical = 0.dp),
+                                ) {
+                                    Text("复制报告", color = Accent, fontSize = 9.sp, maxLines = 1)
+                                }
                             }
                         }
                     }
-                    if (playlist == null || pageItemCount <= 0) {
+                    if ((playlist == null || pageItemCount <= 0) && lastErrorReport != null) {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
                             horizontalArrangement = Arrangement.End,
@@ -960,10 +1007,10 @@ private fun MusicMetaApp() {
                     }
                     Text(
                         text = status,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 1.dp),
                         color = SubInk,
-                        fontSize = 10.sp,
-                        lineHeight = 12.sp,
+                        fontSize = 9.sp,
+                        lineHeight = 11.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -988,8 +1035,13 @@ private fun MusicMetaApp() {
                             change.consume()
                         },
                         onDragEnd = {
-                            if (!busy && dragDistance < -72f) switchInputMode("liked")
-                            else if (!busy && dragDistance > 72f) switchInputMode("playlist")
+                            val modes = listOf("playlist", "liked", "search")
+                            val currentIndex = modes.indexOf(inputMode)
+                            if (!busy && dragDistance < -72f && currentIndex in 0 until modes.lastIndex) {
+                                switchInputMode(modes[currentIndex + 1])
+                            } else if (!busy && dragDistance > 72f && currentIndex > 0) {
+                                switchInputMode(modes[currentIndex - 1])
+                            }
                             dragDistance = 0f
                         },
                         onDragCancel = { dragDistance = 0f },
@@ -1031,78 +1083,87 @@ private fun MusicMetaApp() {
                         modifier = Modifier.padding(15.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             FilterChip(
                                 selected = inputMode == "playlist",
                                 onClick = { switchInputMode("playlist") },
                                 enabled = !busy,
-                                label = { Text("公开歌单") },
+                                label = { Text("公开歌单", fontSize = 12.sp) },
                             )
                             FilterChip(
                                 selected = inputMode == "liked",
                                 onClick = { switchInputMode("liked") },
                                 enabled = !busy,
-                                label = { Text("我的红心歌单") },
+                                label = { Text("红心歌单", fontSize = 12.sp) },
+                            )
+                            FilterChip(
+                                selected = inputMode == "search",
+                                onClick = { switchInputMode("search") },
+                                enabled = !busy,
+                                label = { Text("直接搜歌", fontSize = 12.sp) },
                             )
                         }
-                        OutlinedTextField(
-                            value = playlistInput,
-                            onValueChange = setPlaylistInput,
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            label = { Text(if (inputMode == "liked") "网易云用户 ID" else "网易云歌单链接或 ID") },
-                            placeholder = { Text(if (inputMode == "liked") "输入你的网易云个人主页 ID" else "粘贴分享链接，或输入纯数字 ID") },
-                            shape = RoundedCornerShape(15.dp),
-                            keyboardOptions = KeyboardOptions(
-                                keyboardType = KeyboardType.Uri,
-                                imeAction = ImeAction.Done,
-                            ),
-                            keyboardActions = KeyboardActions(onDone = { syncPlaylist() }),
-                            enabled = !busy,
-                        )
-                        Button(
-                            onClick = syncPlaylist,
-                            enabled = !busy && playlistInput.isNotBlank(),
-                            modifier = Modifier.fillMaxWidth().height(50.dp),
-                            shape = RoundedCornerShape(15.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Accent),
-                        ) {
-                            if (isSyncing) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(17.dp),
-                                    color = Color.White,
-                                    strokeWidth = 2.dp,
+                        if (inputMode == "search") {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                OutlinedTextField(
+                                    value = manualSearchQuery,
+                                    onValueChange = { manualSearchQuery = it },
+                                    modifier = Modifier.weight(1f),
+                                    singleLine = true,
+                                    label = { Text("直接搜歌") },
+                                    placeholder = { Text("输入歌名或歌手") },
+                                    shape = RoundedCornerShape(13.dp),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Search),
+                                    keyboardActions = KeyboardActions(onSearch = { searchSourceKeyword() }),
+                                    enabled = !busy,
                                 )
-                                Spacer(Modifier.size(9.dp))
-                                Text("正在同步")
-                            } else {
-                                Text(if (inputMode == "liked") "同步我的红心歌单" else "同步公开歌单", fontWeight = FontWeight.SemiBold)
+                                OutlinedButton(
+                                    onClick = { searchSourceKeyword() },
+                                    enabled = !busy && manualSearchQuery.isNotBlank(),
+                                    shape = RoundedCornerShape(13.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+                                ) {
+                                    Text("搜索", fontSize = 12.sp)
+                                }
                             }
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
+                        } else {
                             OutlinedTextField(
-                                value = manualSearchQuery,
-                                onValueChange = { manualSearchQuery = it },
-                                modifier = Modifier.weight(1f).onFocusChanged { sourceQueryFieldFocused = it.isFocused },
+                                value = playlistInput,
+                                onValueChange = setPlaylistInput,
+                                modifier = Modifier.fillMaxWidth(),
                                 singleLine = true,
-                                label = { Text("直接搜歌") },
-                                placeholder = { Text("歌名或歌手，不用先同步歌单") },
-                                shape = RoundedCornerShape(13.dp),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Search),
-                                keyboardActions = KeyboardActions(onSearch = { searchSourceKeyword() }),
+                                label = { Text(if (inputMode == "liked") "网易云用户 ID" else "网易云歌单链接或 ID") },
+                                placeholder = { Text(if (inputMode == "liked") "输入你的网易云个人主页 ID" else "粘贴分享链接，或输入纯数字 ID") },
+                                shape = RoundedCornerShape(15.dp),
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Uri,
+                                    imeAction = ImeAction.Done,
+                                ),
+                                keyboardActions = KeyboardActions(onDone = { syncPlaylist() }),
                                 enabled = !busy,
                             )
-                            OutlinedButton(
-                                onClick = { searchSourceKeyword() },
-                                enabled = !busy && manualSearchQuery.isNotBlank(),
-                                shape = RoundedCornerShape(13.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+                            Button(
+                                onClick = syncPlaylist,
+                                enabled = !busy && playlistInput.isNotBlank(),
+                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                                shape = RoundedCornerShape(15.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Accent),
                             ) {
-                                Text("搜歌", fontSize = 12.sp)
+                                if (isSyncing) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(17.dp),
+                                        color = Color.White,
+                                        strokeWidth = 2.dp,
+                                    )
+                                    Spacer(Modifier.size(9.dp))
+                                    Text("正在同步")
+                                } else {
+                                    Text(if (inputMode == "liked") "同步我的红心歌单" else "同步公开歌单", fontWeight = FontWeight.SemiBold)
+                                }
                             }
                         }
                     }
@@ -1252,7 +1313,7 @@ private fun MusicMetaApp() {
                             selectedTrack = null
                             flacResults = emptyList()
                         },
-                        modifier = Modifier.fillMaxWidth().onFocusChanged { filterFieldFocused = it.isFocused },
+                        modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         label = { Text("筛选歌曲") },
                         placeholder = { Text("按歌名或歌手查找") },
@@ -1557,7 +1618,7 @@ private fun MusicMetaApp() {
                 }
                 }
             } else {
-                item(key = "empty-playlist") {
+                if (inputMode != "search") item(key = "empty-playlist") {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(24.dp),
