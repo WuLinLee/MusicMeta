@@ -131,6 +131,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REQUESTED_RELEASE_TYPE: ${{ github.event_name == 'workflow_dispatch' && inputs.release_type || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release:') && 'formal') || 'preview' }}
+          REFRESH_EXISTING_RELEASE: ${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release: refresh v') }}
         run: |
           RELEASE_TYPE="$REQUESTED_RELEASE_TYPE"
           if [[ "$RELEASE_TYPE" == "formal" ]]; then
@@ -140,16 +141,23 @@ jobs:
               exit 1
             fi
             TAG="v$VERSION"
-            if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              echo "Release $TAG already exists; refusing to delete or replace a published release." >&2
-              exit 1
-            fi
             sed 's/预览版/正式版/g' RELEASE_NOTES.md > "$RUNNER_TEMP/formal-release-notes.md"
-            gh release create "$TAG" "$MUSICMETA_APK" \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "音笺 MusicMeta v$VERSION" \
-              --notes-file "$RUNNER_TEMP/formal-release-notes.md" \
-              --target "$GITHUB_SHA"
+            if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              if [[ "$REFRESH_EXISTING_RELEASE" != "true" ]]; then
+                echo "Release $TAG already exists; refusing to replace it without an explicit 'release: refresh v...' commit." >&2
+                exit 1
+              fi
+              echo "Explicitly refreshing $TAG from the current verified build."
+              git tag -f "$TAG" "$GITHUB_SHA"
+              git push --force origin "refs/tags/$TAG"
+              gh release upload "$TAG" "$MUSICMETA_APK" --clobber --repo "$GITHUB_REPOSITORY"
+            else
+              gh release create "$TAG" "$MUSICMETA_APK" \
+                --repo "$GITHUB_REPOSITORY" \
+                --title "音笺 MusicMeta v$VERSION" \
+                --notes-file "$RUNNER_TEMP/formal-release-notes.md" \
+                --target "$GITHUB_SHA"
+            fi
 
             PREVIEW_TAG="preview-$(git rev-parse --short "$GITHUB_SHA")"
             if gh release view "$PREVIEW_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
