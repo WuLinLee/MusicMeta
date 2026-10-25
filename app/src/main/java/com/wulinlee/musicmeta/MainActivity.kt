@@ -559,12 +559,14 @@ private fun MusicMetaApp() {
                                     cookie = cookie,
                                     userAgent = fallbackUserAgent,
                                 )
-                            }.getOrDefault("").trim()
-                        }.orEmpty()
-                        val safeAssets = if (sourceLyrics.isNotBlank()) {
+                            }.getOrDefault(PreviewLyrics())
+                        } ?: PreviewLyrics()
+                        val sourceTranslation = sourceLyrics.translated.ifBlank { metadataAssets.translatedLyrics }
+                        val safeAssets = if (sourceLyrics.original.isNotBlank()) {
                             metadataAssets.copy(
-                                originalLyrics = sourceLyrics,
-                                bilingualLyrics = LrcMerger.merge(sourceLyrics, metadataAssets.translatedLyrics),
+                                originalLyrics = sourceLyrics.original,
+                                translatedLyrics = sourceTranslation,
+                                bilingualLyrics = LrcMerger.merge(sourceLyrics.original, sourceTranslation),
                             )
                         } else {
                             metadataAssets
