@@ -678,7 +678,7 @@ private fun OverlayLyricsUi(
     val activeText = if (showTranslation && translatedLyrics.isNotBlank()) translatedLyrics else originalLyrics
     val currentLyric = when {
         activeText.isBlank() -> "正在等待歌词…"
-        else -> findMiniLyric(activeText, positionMs)
+        else -> findMiniLyric(activeText, positionMs + 180)
     }
     val progress = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
     Card(
@@ -700,7 +700,7 @@ private fun OverlayLyricsUi(
                 Box(
                     modifier = Modifier.size(28.dp).clip(CircleShape)
                         .clickable { onPrevious() }
-                        .semantics { contentDescription = "上一首，播放上一首歌的首个匹配音源" },
+                        .semantics { contentDescription = "按当前播放队列播放上一首" },
                     contentAlignment = Alignment.Center,
                 ) { OverlaySkipGlyph(previous = true) }
                 Box(
@@ -732,7 +732,7 @@ private fun OverlayLyricsUi(
                 Box(
                     modifier = Modifier.size(28.dp).clip(CircleShape)
                         .clickable { onNext() }
-                        .semantics { contentDescription = "下一首，播放下一首歌的首个匹配音源" },
+                        .semantics { contentDescription = "按当前播放队列播放下一首" },
                     contentAlignment = Alignment.Center,
                 ) { OverlaySkipGlyph(previous = false) }
             }
