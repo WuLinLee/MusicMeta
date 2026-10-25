@@ -2828,15 +2828,16 @@ private fun MusicMetaApp() {
                         }
                         Card(
                             modifier = Modifier.align(Alignment.CenterStart).width(panelWidth).height(64.dp)
-                                .pointerInput(activePreviewSong) {
-                                    detectDragGestures { change, dragAmount ->
-                                        change.consume()
+                                .overlayDragGesture(
+                                    key = listOf(activePreviewSong, minDragX, maxDragX, maxDragY, showPreviewDetails),
+                                    onDrag = { dx, dy ->
                                         miniPlayerOffset = Offset(
-                                            (miniPlayerOffset.x + dragAmount.x).coerceIn(minDragX, maxDragX),
-                                            (miniPlayerOffset.y + dragAmount.y).coerceIn(-maxDragY, 0f),
+                                            (miniPlayerOffset.x + dx).coerceIn(minDragX, maxDragX),
+                                            (miniPlayerOffset.y + dy).coerceIn(-maxDragY, 0f),
                                         )
-                                    }
-                                },
+                                    },
+                                    onCircularDrag = {},
+                                ),
                             shape = RoundedCornerShape(16.dp),
                             colors = CardDefaults.cardColors(containerColor = Color(0xFF17211F)),
                             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
@@ -2928,9 +2929,9 @@ private fun MusicMetaApp() {
                         }
                     }
                     Column(
-                        modifier = Modifier.align(Alignment.CenterEnd).width(64.dp).height(108.dp),
+                        modifier = Modifier.align(Alignment.CenterEnd).width(64.dp).height(108.dp).padding(top = 22.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
+                        verticalArrangement = Arrangement.Top,
                     ) {
                         Box(
                             modifier = Modifier
