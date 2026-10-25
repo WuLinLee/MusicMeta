@@ -1642,6 +1642,110 @@ private fun MusicMetaApp() {
             }
         }
     }
+    val activity = context as? MainActivity
+    val pendingOpenRequest = activity?.pendingOverlayOpenRequest
+    LaunchedEffect(
+        pendingOpenRequest?.requestId,
+        inputMode,
+        localMusicTracks,
+        localMusicFilter,
+        publicPlaylist?.id,
+        likedPlaylist?.id,
+        pageSize,
+        pageCache,
+        isScanningLocalMusic,
+        isSyncing,
+        busy,
+    ) {
+        val request = pendingOpenRequest ?: return@LaunchedEffect
+        val targetMode = request.mode.takeIf { it in setOf("local", "playlist", "liked", "search") }
+            ?: if (request.playlistId > 0L && likedPlaylist?.id == request.playlistId) "liked" else "playlist"
+
+        if (inputMode != targetMode) {
+            inputMode = targetMode
+            folderPreferences.edit().putString("input_mode", targetMode).apply()
+            manualSourceSearchActive = false
+            return@LaunchedEffect
+        }
+
+        if (targetMode == "local") {
+            if (localMusicTracks.isEmpty()) {
+                if (!isScanningLocalMusic) scanLocalMusic()
+                return@LaunchedEffect
+            }
+            val targetIndex = localMusicTracks.indexOfFirst { it.uri.toString() == request.trackId }
+            if (targetIndex < 0) {
+                status = "本地列表中没有找到正在播放的歌曲，可能文件夹已变更。"
+                activity.clearOverlayOpenRequest(request.requestId)
+                return@LaunchedEffect
+            }
+            if (localMusicFilter.isNotBlank()) {
+                localMusicFilter = ""
+                return@LaunchedEffect
+            }
+            manualSourceSearchActive = false
+            val targetPage = targetIndex / pageSize + 1
+            requestPage(targetPage)
+            withFrameNanos { }
+            val itemIndex = 3 + (targetIndex % pageSize)
+            runCatching { localListState.animateScrollToItem(itemIndex) }
+            status = "已定位到本地歌曲：" + request.title
+            activity.clearOverlayOpenRequest(request.requestId)
+            return@LaunchedEffect
+        }
+
+        if (targetMode == "search") {
+            manualSearchQuery = request.title
+            manualSourceSearchActive = flacResults.isNotEmpty()
+            status = "已打开直接搜歌页：" + request.title
+            withFrameNanos { }
+            runCatching { searchListState.animateScrollToItem(if (manualSourceSearchActive) 2 else 0) }
+            activity.clearOverlayOpenRequest(request.requestId)
+            return@LaunchedEffect
+        }
+
+        val activePlaylist = if (targetMode == "liked") likedPlaylist else publicPlaylist
+        if (activePlaylist == null || activePlaylist.id != request.playlistId) {
+            if (busy) return@LaunchedEffect
+            if (playlistInput.isBlank()) {
+                status = "已打开应用，但还没有加载该歌曲所属的歌单；请先同步歌单后重新使用双指手势定位。"
+                activity.clearOverlayOpenRequest(request.requestId)
+                return@LaunchedEffect
+            }
+            syncPlaylist()
+            return@LaunchedEffect
+        }
+
+        val trackId = request.trackId.toLongOrNull()
+        val baseIndex = trackId?.let { id -> activePlaylist.tracks.indexOfFirst { it.id == id } } ?: -1
+        val cachedIndex = if (baseIndex >= 0 || trackId == null) null else {
+            pageCache.entries.asSequence()
+                .filter { it.key.startsWith("$targetMode:${activePlaylist.id}:") }
+                .mapNotNull { entry ->
+                    val parts = entry.key.split(":")
+                    val cacheSize = parts.getOrNull(2)?.toIntOrNull() ?: return@mapNotNull null
+                    val cachePage = parts.getOrNull(3)?.toIntOrNull() ?: return@mapNotNull null
+                    val localIndex = entry.value.indexOfFirst { it.id == trackId }
+                    if (localIndex < 0) null else (cachePage - 1) * cacheSize + localIndex
+                }
+                .minOrNull()
+        }
+        val targetIndex = if (baseIndex >= 0) baseIndex else cachedIndex
+        if (targetIndex == null) {
+            status = "已打开应用，但当前已加载的歌单页中未找到《${request.title}》。"
+            activity.clearOverlayOpenRequest(request.requestId)
+            return@LaunchedEffect
+        }
+        if (targetMode == "liked") likedFilterText = "" else publicFilterText = ""
+        manualSourceSearchActive = false
+        val targetPage = targetIndex / pageSize + 1
+        requestPage(targetPage)
+        withFrameNanos { }
+        runCatching { listState.animateScrollToItem(5 + (targetIndex % pageSize)) }
+        status = "已定位到歌单歌曲：" + request.title
+        activity.clearOverlayOpenRequest(request.requestId)
+    }
+
     LaunchedEffect(pageSize, inputMode, playlist?.id) {
         val current = playlist
         if (current != null && filterText.isBlank() && !busy) {
