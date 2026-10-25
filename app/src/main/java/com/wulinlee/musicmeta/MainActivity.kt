@@ -8,6 +8,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.os.Build
+import android.widget.Toast
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -22,6 +23,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -105,7 +107,9 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.documentfile.provider.DocumentFile
 import coil.compose.AsyncImage
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -196,6 +200,7 @@ private fun MusicMetaApp() {
     var jumpPageInput by remember { mutableStateOf("1") }
     var pageCache by remember { mutableStateOf<Map<String, List<MusicTrack>>>(emptyMap()) }
     var isLoadingPage by remember { mutableStateOf(false) }
+    var isFilteringTracks by remember { mutableStateOf(false) }
     // Keep the two sources independent: a public playlist ID is not the same as
     // the user ID used to fetch a liked-song list, and both lists remain cached.
     var publicPlaylistInput by remember { mutableStateOf(folderPreferences.getString("last_public_playlist_input", "") ?: "") }
@@ -231,6 +236,23 @@ private fun MusicMetaApp() {
     var lastErrorReport by remember { mutableStateOf<String?>(null) }
     val captureError: (String, Throwable) -> Unit = { stage, error ->
         lastErrorReport = makeErrorReport(context, stage, error)
+    }
+    val copySongAndArtist: (String, String) -> Unit = { title, artist ->
+        val textToCopy = listOf(title.trim(), artist.trim())
+            .filter { it.isNotBlank() }
+            .joinToString(" - ")
+        if (textToCopy.isNotBlank()) {
+            runCatching {
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("歌曲和艺人", textToCopy))
+            }.onSuccess {
+                status = "已复制：" + textToCopy
+                Toast.makeText(context, "已复制歌曲和艺人", Toast.LENGTH_SHORT).show()
+            }.onFailure { error ->
+                status = "复制失败：" + (error.message ?: "请重试")
+                Toast.makeText(context, "复制失败", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
     var selectedTrack by remember { mutableStateOf<MusicTrack?>(null) }
     var flacPlatform by remember { mutableStateOf(folderPreferences.getString("source_platform", "wyy") ?: "wyy") }
@@ -686,13 +708,22 @@ private fun MusicMetaApp() {
     }
     val knownTracks = playlist?.let { current ->
         val prefix = "$inputMode:${current.id}:"
-        (current.tracks + pageCache.filterKeys { it.startsWith(prefix) }.values.flatten())
-            .distinctBy { it.id }
+        val cachedTracks = pageCache.entries
+            .filter { it.key.startsWith(prefix) }
+            .sortedBy { entry ->
+                val parts = entry.key.split(":")
+                val size = parts.getOrNull(2)?.toIntOrNull() ?: 100
+                val page = parts.getOrNull(3)?.toIntOrNull() ?: 1
+                (page - 1) * size
+            }
+            .flatMap { it.value }
+        (current.tracks + cachedTracks).distinctBy { it.id }
     }.orEmpty()
     val filteredKnownTracks = knownTracks.filter {
         filterText.isBlank() ||
             it.title.contains(filterText.trim(), ignoreCase = true) ||
-            it.artists.contains(filterText.trim(), ignoreCase = true)
+            it.artists.contains(filterText.trim(), ignoreCase = true) ||
+            it.album.contains(filterText.trim(), ignoreCase = true)
     }
     val pageItemCount = if (filterText.isBlank()) playlist?.totalTrackCount ?: 0 else filteredKnownTracks.size
     val pageCount = maxOf(1, (pageItemCount + pageSize - 1) / pageSize)
@@ -767,7 +798,7 @@ private fun MusicMetaApp() {
                     status = "第 " + targetPage + " / " + maxPage + " 页"
                 }
             } else {
-                status = "显示已加载歌曲中的筛选结果。"
+                status = "正在显示整份歌单的筛选结果。"
             }
         }
     }
@@ -779,6 +810,72 @@ private fun MusicMetaApp() {
         }
     }
 
+    LaunchedEffect(inputMode, playlist?.id, filterText) {
+        val current = playlist
+        val query = filterText.trim()
+        if (current == null || query.isBlank() || inputMode !in setOf("playlist", "liked")) {
+            isFilteringTracks = false
+            return@LaunchedEffect
+        }
+
+        delay(350)
+        val targetMode = inputMode
+        isFilteringTracks = true
+        try {
+            val batchCount = (current.totalTrackCount + 99) / 100
+            for (batch in 1..batchCount) {
+                val offset = (batch - 1) * 100
+                val expectedCount = minOf(100, current.totalTrackCount - offset)
+                val key = pageCacheKey(targetMode, current.id.toString(), 100, batch)
+                val hasWholeFirstBatch = batch == 1 && current.tracks.size >= expectedCount
+                if (pageCache[key].orEmpty().size >= expectedCount || hasWholeFirstBatch) continue
+
+                val loaded = withTimeout(28_000L) {
+                    withContext(Dispatchers.IO) {
+                        playlistProvider.load(
+                            input = current.id.toString(),
+                            likedByUserId = false,
+                            offset = offset,
+                            limit = 100,
+                        )
+                    }
+                }
+                val activePlaylist = if (targetMode == "liked") likedPlaylist else publicPlaylist
+                if (
+                    inputMode != targetMode ||
+                    activePlaylist?.id != current.id ||
+                    filterText.trim() != query
+                ) return@LaunchedEffect
+
+                pageCache = pageCache + (key to loaded.tracks)
+                status = "正在搜索整份歌单：已检查 ${minOf(offset + loaded.tracks.size, current.totalTrackCount)} / ${current.totalTrackCount} 首……"
+            }
+            val activePlaylist = if (targetMode == "liked") likedPlaylist else publicPlaylist
+            if (inputMode == targetMode && activePlaylist?.id == current.id && filterText.trim() == query) {
+                val prefix = "$targetMode:${current.id}:"
+                val allTracksForSearch = (current.tracks + pageCache.filterKeys { it.startsWith(prefix) }.values.flatten())
+                    .distinctBy { it.id }
+                val count = allTracksForSearch.count {
+                    it.title.contains(query, ignoreCase = true) ||
+                        it.artists.contains(query, ignoreCase = true) ||
+                        it.album.contains(query, ignoreCase = true)
+                }
+                status = "全歌单筛选完成：找到 $count 首匹配歌曲。"
+            }
+        } catch (error: Exception) {
+            if (error is CancellationException && (inputMode != targetMode || filterText.trim() != query)) {
+                throw error
+            }
+            if (inputMode == targetMode && filterText.trim() == query) {
+                val detail = error.message?.takeIf { it.isNotBlank() } ?: "网络或接口暂不可用"
+                status = "全歌单筛选未完成：" + detail + "。已加载的匹配结果仍可查看。"
+                captureError("全歌单筛选", error)
+            }
+        } finally {
+            isFilteringTracks = false
+        }
+    }
+
     Scaffold(
         containerColor = PageBackground,
         topBar = {
@@ -787,15 +884,7 @@ private fun MusicMetaApp() {
                     IconButton(
                         onClick = {
                             focusManager.clearFocus()
-                            scope.launch {
-                                val targetIndex = when {
-                                    playlist != null -> 5 // Keep the "歌曲列表" heading just above track one.
-                                    manualSourceSearchActive -> 2
-                                    else -> 1
-                                }
-                                val lastAvailableIndex = (listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
-                                listState.animateScrollToItem(targetIndex.coerceAtMost(lastAvailableIndex))
-                            }
+                            scope.launch { listState.animateScrollToItem(0) }
                         },
                         modifier = Modifier.semantics { contentDescription = "回到顶部" },
                     ) {
@@ -1241,67 +1330,8 @@ private fun MusicMetaApp() {
                         },
                         onQualityChange = setQuality,
                         onDownload = { song -> downloadManualSearchResult(song) },
+                        onCopy = { song -> copySongAndArtist(song.title, song.artist) },
                     )
-                }
-            }
-
-            item(key = "destination-folder") {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = SurfaceColor),
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(start = 15.dp, top = 13.dp, end = 12.dp, bottom = 13.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        Surface(
-                            modifier = Modifier.size(42.dp),
-                            color = SoftAccent,
-                            shape = RoundedCornerShape(13.dp),
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text("♫", color = Accent, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-                            }
-                        }
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(3.dp),
-                        ) {
-                            Text("保存位置", color = Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                            Text(
-                                destinationFolderName,
-                                color = SubInk,
-                                fontSize = 12.sp,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        Column(horizontalAlignment = Alignment.End) {
-                            OutlinedButton(
-                                onClick = { destinationPicker.launch(destinationTreeUri) },
-                                enabled = !busy,
-                                shape = RoundedCornerShape(12.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                            ) {
-                                Text("选择文件夹", fontSize = 12.sp)
-                            }
-                            if (destinationTreeUri != null) {
-                                TextButton(
-                                    onClick = {
-                                        folderPreferences.edit().remove("destination_tree_uri").apply()
-                                        destinationTreeUri = null
-                                        status = "已恢复默认目录：下载/-07-MusicMeta"
-                                    },
-                                    enabled = !busy,
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                                ) {
-                                    Text("恢复默认", color = SubInk, fontSize = 11.sp)
-                                }
-                            }
-                        }
-                    }
                 }
             }
 
@@ -1381,7 +1411,12 @@ private fun MusicMetaApp() {
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text("歌曲列表", fontSize = 19.sp, fontWeight = FontWeight.SemiBold, color = Ink)
-                            Text("核对版本后下载，自动写入标签", fontSize = 12.sp, color = SubInk)
+                            Text(
+                                if (isFilteringTracks) "正在搜索整份歌单 · 当前匹配 ${filteredKnownTracks.size} 首"
+                                else "核对版本后下载，自动写入标签",
+                                fontSize = 12.sp,
+                                color = SubInk,
+                            )
                         }
                         Surface(color = SoftAccent, shape = CircleShape) {
                             Text(
@@ -1434,7 +1469,11 @@ private fun MusicMetaApp() {
                             color = SurfaceColor,
                         ) {
                             Text(
-                                if (filterText.isBlank()) "这一页暂时没有歌曲，点一下页码可重试。" else "没有找到匹配的已加载歌曲。",
+                                when {
+                                    isFilteringTracks -> "正在搜索整份歌单，请稍候……"
+                                    filterText.isBlank() -> "这一页暂时没有歌曲，点一下页码可重试。"
+                                    else -> "没有找到匹配歌曲。"
+                                },
                                 color = SubInk,
                                 fontSize = 12.sp,
                                 modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -1451,6 +1490,7 @@ private fun MusicMetaApp() {
                             track = track,
                             busy = busy,
                             onFindSource = { searchTrackSource(track) },
+                            onCopy = { copySongAndArtist(track.title, track.artists) },
                         )
                         if (selectedTrack?.id == track.id) {
                     when {
@@ -1563,7 +1603,12 @@ private fun MusicMetaApp() {
                                                 .fillMaxWidth()
                                                 .clip(RoundedCornerShape(15.dp))
                                                 .background(PageBackground)
-                                                .padding(10.dp),
+                                                .padding(10.dp)
+                                                .pointerInput(song.id, song.platform) {
+                                                    detectTapGestures(onLongPress = {
+                                                        copySongAndArtist(song.title, song.artist)
+                                                    })
+                                                },
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                                         ) {
@@ -1597,6 +1642,12 @@ private fun MusicMetaApp() {
                                                     Text("GD Studio 兜底音源", color = Accent, fontSize = 10.sp)
                                                 }
                                             }
+                                            IconButton(
+                                                onClick = { copySongAndArtist(song.title, song.artist) },
+                                                modifier = Modifier.size(32.dp).semantics {
+                                                    contentDescription = "复制歌曲名和艺人"
+                                                },
+                                            ) { CopyGlyph() }
                                             Button(
                                                 onClick = {
                                                     if (!isResolvingUrl && !isDownloading) {
@@ -1910,6 +1961,7 @@ private fun ManualSourceSearchPanel(
     onPlatformChange: (String) -> Unit,
     onQualityChange: (String) -> Unit,
     onDownload: (FlacSiteSong) -> Unit,
+    onCopy: (FlacSiteSong) -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -1990,7 +2042,10 @@ private fun ManualSourceSearchPanel(
                         results.forEach { song ->
                             Row(
                                 modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(13.dp))
-                                    .background(PageBackground).padding(9.dp),
+                                    .background(PageBackground).padding(9.dp)
+                                    .pointerInput(song.id, song.platform) {
+                                        detectTapGestures(onLongPress = { onCopy(song) })
+                                    },
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
@@ -2009,6 +2064,12 @@ private fun ManualSourceSearchPanel(
                                         Text("GD Studio 兜底音源", color = Accent, fontSize = 9.sp)
                                     }
                                 }
+                                IconButton(
+                                    onClick = { onCopy(song) },
+                                    modifier = Modifier.size(30.dp).semantics {
+                                        contentDescription = "复制歌曲名和艺人"
+                                    },
+                                ) { CopyGlyph() }
                                 Button(
                                     onClick = { onDownload(song) },
                                     enabled = !isResolvingUrl && !isDownloading,
@@ -2224,9 +2285,12 @@ private fun TrackRow(
     track: MusicTrack,
     busy: Boolean,
     onFindSource: () -> Unit,
+    onCopy: () -> Unit,
 ) {
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().pointerInput(track.id) {
+            detectTapGestures(onLongPress = { onCopy() })
+        },
         shape = RoundedCornerShape(18.dp),
         color = SurfaceColor,
     ) {
