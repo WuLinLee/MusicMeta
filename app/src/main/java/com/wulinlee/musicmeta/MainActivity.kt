@@ -1009,27 +1009,47 @@ private fun MusicMetaApp() {
                             }
                         }
                         Row(
-                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(1.dp),
+                            horizontalArrangement = Arrangement.spacedBy(3.dp),
                         ) {
-                            pageNumbers.forEach { number ->
-                                if (number == -1) {
-                                    Text("…", color = SubInk, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 4.dp))
-                                } else {
-                                    TextButton(
-                                        onClick = { requestPage(number) },
-                                        enabled = !busy && number != currentPage,
-                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-                                    ) {
-                                        Text(
-                                            number.toString(),
-                                            color = if (number == currentPage) Accent else Ink,
-                                            fontWeight = if (number == currentPage) FontWeight.Bold else FontWeight.Normal,
-                                            fontSize = 12.sp,
-                                        )
+                            TextButton(
+                                onClick = { requestPage(currentPage - 1) },
+                                enabled = !busy && currentPage > 1,
+                                contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp),
+                            ) {
+                                Text("‹ 上一页", color = if (!busy && currentPage > 1) Ink else SubInk, fontSize = 10.sp, maxLines = 1)
+                            }
+                            Row(
+                                modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(1.dp),
+                            ) {
+                                pageNumbers.forEach { number ->
+                                    if (number == -1) {
+                                        Text("…", color = SubInk, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 4.dp))
+                                    } else {
+                                        TextButton(
+                                            onClick = { requestPage(number) },
+                                            enabled = !busy && number != currentPage,
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                        ) {
+                                            Text(
+                                                number.toString(),
+                                                color = if (number == currentPage) Accent else Ink,
+                                                fontWeight = if (number == currentPage) FontWeight.Bold else FontWeight.Normal,
+                                                fontSize = 12.sp,
+                                            )
+                                        }
                                     }
                                 }
+                            }
+                            TextButton(
+                                onClick = { requestPage(currentPage + 1) },
+                                enabled = !busy && currentPage < pageCount,
+                                contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp),
+                            ) {
+                                Text("下一页 ›", color = if (!busy && currentPage < pageCount) Ink else SubInk, fontSize = 10.sp, maxLines = 1)
                             }
                         }
                         Row(
