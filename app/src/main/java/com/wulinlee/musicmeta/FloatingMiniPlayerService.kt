@@ -128,6 +128,7 @@ class FloatingMiniPlayerService : LifecycleService() {
         const val COMMAND_NEXT = "next_track"
         const val COMMAND_TOGGLE_DETAILS = "toggle_details"
         const val COMMAND_TOGGLE_TRANSLATION = "toggle_translation"
+        const val COMMAND_TOGGLE_PLAYBACK_MODE = "toggle_playback_mode"
         const val COMMAND_SEEK = "seek"
         const val COMMAND_CLOSE = "close"
 
@@ -375,7 +376,7 @@ class FloatingMiniPlayerService : LifecycleService() {
     }
 
     private fun clampPosition() {
-        val minimumX = lyricsWidthPx() + dp(14)
+        val minimumX = if (expanded) lyricsWidthPx() + dp(14) else dp(8)
         val maximumX = (displayWidth - dp(8) - dp(64)).coerceAtLeast(minimumX)
         coverX = coverX.coerceIn(minimumX.coerceAtMost(maximumX), maximumX)
         val maximumY = (displayHeight - dp(106)).coerceAtLeast(dp(24))
@@ -429,6 +430,7 @@ class FloatingMiniPlayerService : LifecycleService() {
                     onTogglePlay = { sendCommand(this@FloatingMiniPlayerService, COMMAND_TOGGLE_PLAY) },
                     onLongPress = { toggleExpanded() },
                     onClose = { closePlayer() },
+                    onTogglePlaybackMode = { sendCommand(this@FloatingMiniPlayerService, COMMAND_TOGGLE_PLAYBACK_MODE) },
                     onDrag = { dx, dy -> moveBy(dx, dy) },
                 )
             }
@@ -539,6 +541,7 @@ private fun OverlayCoverUi(
     onTogglePlay: () -> Unit,
     onLongPress: () -> Unit,
     onClose: () -> Unit,
+    onTogglePlaybackMode: () -> Unit,
     onDrag: (Float, Float) -> Unit,
 ) {
     Column(
@@ -605,6 +608,14 @@ private fun OverlayCoverUi(
                 contentAlignment = Alignment.Center,
             ) {
                 OverlayPlayGlyph(isPlaying = isPlaying, isLoading = isLoading)
+            }
+        }
+        Box(modifier = Modifier.size(18.dp).clickable { onTogglePlaybackMode() }.semantics { contentDescription = "切换顺序、乱序、单曲循环" }, contentAlignment = Alignment.Center) {
+            Canvas(Modifier.size(15.dp)) {
+                val stroke = 1.6.dp.toPx()
+                drawArc(Color(0xFF9FF0C9), 205f, 250f, false, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke))
+                drawLine(Color(0xFF9FF0C9), Offset(size.width * .68f, size.height * .22f), Offset(size.width * .88f, size.height * .25f), stroke)
+                drawLine(Color(0xFF9FF0C9), Offset(size.width * .88f, size.height * .25f), Offset(size.width * .80f, size.height * .43f), stroke)
             }
         }
     }

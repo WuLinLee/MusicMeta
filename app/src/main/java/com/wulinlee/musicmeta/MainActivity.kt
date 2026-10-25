@@ -11,6 +11,7 @@ import android.net.Uri
 import android.provider.Settings
 import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.provider.MediaStore
 import android.os.Bundle
 import android.os.Build
 import android.widget.Toast
@@ -230,11 +231,13 @@ private fun MusicMetaApp() {
     val publicListState = rememberLazyListState()
     val likedListState = rememberLazyListState()
     val searchListState = rememberLazyListState()
+    val localListState = rememberLazyListState()
     val savedInputMode = folderPreferences.getString("input_mode", "playlist") ?: "playlist"
-    var inputMode by remember { mutableStateOf(savedInputMode.takeIf { it in setOf("playlist", "liked", "search") } ?: "playlist") }
+    var inputMode by remember { mutableStateOf(savedInputMode.takeIf { it in setOf("playlist", "liked", "search", "local") } ?: "playlist") }
     val listState = when (inputMode) {
         "liked" -> likedListState
         "search" -> searchListState
+        "local" -> localListState
         else -> publicListState
     }
     var publicCurrentPage by remember { mutableStateOf(1) }
@@ -344,6 +347,11 @@ private fun MusicMetaApp() {
     var floatingLyricsTranslatedByDefault by remember {
         mutableStateOf(folderPreferences.getBoolean("floating_lyrics_translated_by_default", true))
     }
+    var playbackMode by remember { mutableStateOf(folderPreferences.getInt("playback_mode", 0).coerceIn(0, 2)) }
+    var localMusicTracks by remember { mutableStateOf<List<LocalAudioTrack>>(emptyList()) }
+    var localMusicFilter by remember { mutableStateOf("") }
+    var isScanningLocalMusic by remember { mutableStateOf(false) }
+    var localMusicFolderUri by remember { mutableStateOf(folderPreferences.getString("local_music_tree_uri", null)?.let(Uri::parse)) }
     var previewSong by remember { mutableStateOf<FlacSiteSong?>(null) }
     var previewCurrentTrack by remember { mutableStateOf<MusicTrack?>(null) }
     var previewCurrentPlaylistId by remember { mutableStateOf<Long?>(null) }
@@ -363,6 +371,27 @@ private fun MusicMetaApp() {
     val previewPlayer = remember { mutableStateOf<MediaPlayer?>(null) }
     var previewPlaybackGeneration by remember { mutableStateOf(0L) }
 
+    val localFolderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) runCatching {
+            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            localMusicFolderUri = uri
+            folderPreferences.edit().putString("local_music_tree_uri", uri.toString()).apply()
+        }.onFailure { captureError("选择本地音乐文件夹", it) }
+    }
+    val scanLocalMusic: () -> Unit = {
+        if (!isScanningLocalMusic) {
+            isScanningLocalMusic = true
+            scope.launch {
+                try {
+                    localMusicTracks = LocalMusicScanner.scan(context, localMusicFolderUri)
+                    status = "本地音乐扫描完成，共 ${localMusicTracks.size} 首。"
+                } catch (error: Exception) {
+                    status = "扫描本地音乐失败：" + (error.message ?: "请检查文件夹权限")
+                    captureError("扫描本地音乐", error)
+                } finally { isScanningLocalMusic = false }
+            }
+        }
+    }
     val overlayPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
     ) {
@@ -1000,6 +1029,11 @@ private fun MusicMetaApp() {
                 FloatingMiniPlayerService.COMMAND_NEXT -> previewNavigationHandler?.invoke(1)
                 FloatingMiniPlayerService.COMMAND_TOGGLE_DETAILS -> showPreviewDetails = !showPreviewDetails
                 FloatingMiniPlayerService.COMMAND_TOGGLE_TRANSLATION -> showTranslatedPreviewLyric = !showTranslatedPreviewLyric
+                FloatingMiniPlayerService.COMMAND_TOGGLE_PLAYBACK_MODE -> {
+                    playbackMode = (playbackMode + 1) % 3
+                    folderPreferences.edit().putInt("playback_mode", playbackMode).apply()
+                    status = "播放模式：" + listOf("顺序播放", "乱序播放", "单曲循环")[playbackMode]
+                }
                 FloatingMiniPlayerService.COMMAND_SEEK -> {
                     val target = seekPosition.coerceAtLeast(0)
                     previewPositionMs = target
@@ -1313,7 +1347,7 @@ private fun MusicMetaApp() {
     val pageItemCount = if (filterText.isBlank()) playlist?.totalTrackCount ?: 0 else filteredKnownTracks.size
     val pageCount = maxOf(1, (pageItemCount + pageSize - 1) / pageSize)
     val switchInputMode: (String) -> Unit = { mode ->
-        if (mode in setOf("playlist", "liked", "search") && mode != inputMode && !busy) {
+        if (mode in setOf("playlist", "liked", "search", "local") && mode != inputMode && !busy) {
             focusManager.clearFocus()
             inputMode = mode
             folderPreferences.edit().putString("input_mode", mode).apply()
@@ -1753,7 +1787,7 @@ private fun MusicMetaApp() {
                             change.consume()
                         },
                         onDragEnd = {
-                            val modes = listOf("playlist", "liked", "search")
+                            val modes = listOf("playlist", "liked", "search", "local")
                             val currentIndex = modes.indexOf(inputMode)
                             if (!busy && dragDistance < -72f && currentIndex in 0 until modes.lastIndex) {
                                 switchInputMode(modes[currentIndex + 1])
@@ -1846,6 +1880,12 @@ private fun MusicMetaApp() {
                                 onClick = { switchInputMode("search") },
                                 enabled = !busy,
                                 label = { Text("直接搜歌", fontSize = 12.sp) },
+                            )
+                            FilterChip(
+                                selected = inputMode == "local",
+                                onClick = { switchInputMode("local") },
+                                enabled = !busy,
+                                label = { Text("本地音乐", fontSize = 12.sp) },
                             )
                         }
                         if (inputMode == "search") {
@@ -1944,6 +1984,30 @@ private fun MusicMetaApp() {
                 }
             }
 
+            if (inputMode == "local") {
+                item(key = "local-controls") {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(value = localMusicFilter, onValueChange = { localMusicFilter = it }, modifier = Modifier.weight(1f), singleLine = true, label = { Text("搜索本地歌曲") })
+                        OutlinedButton(onClick = scanLocalMusic, enabled = !isScanningLocalMusic) { Text(if (isScanningLocalMusic) "扫描中" else "扫描") }
+                    }
+                }
+                val localVisible = localMusicTracks.filter { localMusicFilter.isBlank() || it.title.contains(localMusicFilter, true) || it.artist.contains(localMusicFilter, true) || it.album.contains(localMusicFilter, true) }
+                if (localVisible.isEmpty()) item(key = "local-empty") { Text(if (isScanningLocalMusic) "正在扫描本地音乐…" else "没有找到歌曲。首次使用请点击扫描，或在下载设置中选择本地音乐文件夹。", color = SubInk, modifier = Modifier.fillMaxWidth().padding(16.dp)) }
+                items(localVisible, key = { "local-" + it.uri }) { track ->
+                    Card(Modifier.fillMaxWidth().clickable {
+                        val song = FlacSiteSong(track.uri.toString(), "local", track.title, track.artist, track.album, "", track.durationMs.toString(), track.coverUri)
+                        previewQueue = localVisible.map { FlacSiteSong(it.uri.toString(), "local", it.title, it.artist, it.album, "", it.durationMs.toString(), it.coverUri) }
+                        previewCurrentTrack = null; previewCurrentPlaylistId = null; selectedTrack = null
+                        playPreview(song)
+                    }, colors = CardDefaults.cardColors(containerColor = SurfaceColor)) {
+                        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            AsyncImage(model = track.coverUri.takeIf { it.isNotBlank() }, contentDescription = null, modifier = Modifier.size(46.dp).clip(RoundedCornerShape(10.dp)))
+                            Column(Modifier.weight(1f)) { Text(track.title, color = Ink, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(track.artist, color = SubInk, fontSize = 12.sp, maxLines = 1); if (track.album.isNotBlank()) Text(track.album, color = SubInk, fontSize = 10.sp, maxLines = 1) }
+                            Text("▶", color = Accent)
+                        }
+                    }
+                }
+            } else {
             val currentPlaylist = playlist
             if (currentPlaylist != null) {
                 item(key = "playlist-card") {
@@ -2367,6 +2431,7 @@ private fun MusicMetaApp() {
                     }
                 }
             }
+            }
         }
 
         if (previewSong != null && !(floatingOverlayEnabled && Settings.canDrawOverlays(context))) {
@@ -2637,6 +2702,10 @@ private fun MusicMetaApp() {
                                 .apply()
                         },
                     )
+                    Text("本地音乐文件夹", fontWeight = FontWeight.SemiBold, color = Ink)
+                    Text(localMusicFolderUri?.let { runCatching { DocumentFile.fromTreeUri(context, it)?.name }.getOrNull() } ?: "默认：下载/-07-MusicMeta 与 Music", color = SubInk, fontSize = 12.sp)
+                    OutlinedButton(onClick = { localFolderPicker.launch(localMusicFolderUri) }, modifier = Modifier.fillMaxWidth()) { Text("选择本地音乐文件夹") }
+                    OutlinedButton(onClick = scanLocalMusic, enabled = !isScanningLocalMusic, modifier = Modifier.fillMaxWidth()) { Text("重新扫描本地音乐") }
                     Text("下载目录", fontWeight = FontWeight.SemiBold, color = Ink)
                     Text(destinationFolderName, color = SubInk, fontSize = 12.sp)
                     OutlinedButton(
