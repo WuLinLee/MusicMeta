@@ -64,10 +64,40 @@ import androidx.compose.ui.unit.sp
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
-import androidx.lifecycle.ViewTreeLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.savedstate.SavedStateRegistry
+import androidx.savedstate.SavedStateRegistryController
+import androidx.savedstate.SavedStateRegistryOwner
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
+
+private class FloatingOverlayViewTreeOwner : LifecycleOwner, SavedStateRegistryOwner {
+    private val lifecycleRegistry = LifecycleRegistry(this)
+    private val savedStateController = SavedStateRegistryController.create(this)
+
+    override val lifecycle: Lifecycle
+        get() = lifecycleRegistry
+
+    override val savedStateRegistry: SavedStateRegistry
+        get() = savedStateController.savedStateRegistry
+
+    fun start() {
+        savedStateController.performAttach()
+        savedStateController.performRestore(null)
+        lifecycleRegistry.currentState = Lifecycle.State.CREATED
+        lifecycleRegistry.currentState = Lifecycle.State.STARTED
+        lifecycleRegistry.currentState = Lifecycle.State.RESUMED
+    }
+
+    fun destroy() {
+        lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
+    }
+}
 
 internal object FloatingMiniPlayerBridge {
     @Volatile
@@ -153,6 +183,7 @@ class FloatingMiniPlayerService : LifecycleService() {
     }
 
     private var windowManager: WindowManager? = null
+    private val overlayViewTreeOwner = FloatingOverlayViewTreeOwner()
     private var coverView: ComposeView? = null
     private var lyricsView: ComposeView? = null
     private var coverParams: WindowManager.LayoutParams? = null
@@ -190,6 +221,7 @@ class FloatingMiniPlayerService : LifecycleService() {
     override fun onCreate() {
         super.onCreate()
         serviceAlive = true
+        overlayViewTreeOwner.start()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         ensureNotificationChannel()
         updateDisplaySize()
@@ -220,6 +252,7 @@ class FloatingMiniPlayerService : LifecycleService() {
         mainHandler.removeCallbacks(progressTicker)
         removeOverlayViews()
         stopForeground(STOP_FOREGROUND_REMOVE)
+        overlayViewTreeOwner.destroy()
         serviceAlive = false
         super.onDestroy()
     }
@@ -374,7 +407,8 @@ class FloatingMiniPlayerService : LifecycleService() {
         if (coverView != null) return
         val wm = windowManager ?: return
         val view = ComposeView(this).apply {
-            ViewTreeLifecycleOwner.set(this, this@FloatingMiniPlayerService)
+            setViewTreeLifecycleOwner(overlayViewTreeOwner)
+            setViewTreeSavedStateRegistryOwner(overlayViewTreeOwner)
             setContent {
                 OverlayCoverUi(
                     coverUrl = coverUrl,
@@ -410,7 +444,8 @@ class FloatingMiniPlayerService : LifecycleService() {
         }
         if (lyricsView == null) {
             val view = ComposeView(this).apply {
-                ViewTreeLifecycleOwner.set(this, this@FloatingMiniPlayerService)
+                setViewTreeLifecycleOwner(overlayViewTreeOwner)
+                setViewTreeSavedStateRegistryOwner(overlayViewTreeOwner)
                 setContent {
                     OverlayLyricsUi(
                         originalLyrics = originalLyrics,
