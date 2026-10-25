@@ -2365,28 +2365,46 @@ private fun MusicMetaApp() {
                                 verticalArrangement = Arrangement.spacedBy(0.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
-                                Box(
-                                    modifier = Modifier.fillMaxWidth().weight(1f)
-                                        .clip(RoundedCornerShape(9.dp))
-                                        .background(Color(0xFF243631))
-                                        .clickable { showTranslatedPreviewLyric = !showTranslatedPreviewLyric }
-                                        .padding(horizontal = 8.dp, vertical = 2.dp)
-                                        .semantics {
-                                            contentDescription = if (previewTranslatedLyrics.isBlank()) "歌词，点击查看是否存在译文"
-                                                else "歌词，点击切换原文或译文"
-                                        },
-                                    contentAlignment = Alignment.Center,
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().weight(1f),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp),
                                 ) {
-                                    Text(
-                                        activeLyric,
-                                        color = Color(0xFF9FF0C9),
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp,
-                                        lineHeight = 15.sp,
-                                        textAlign = TextAlign.Center,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
+                                    Box(
+                                        modifier = Modifier.size(28.dp).clip(CircleShape)
+                                            .clickable { playAdjacentPreview(-1) }
+                                            .semantics { contentDescription = "上一首，播放歌单上一首的首个匹配音源" },
+                                        contentAlignment = Alignment.Center,
+                                    ) { MiniPlayerSkipGlyph(previous = true) }
+                                    Box(
+                                        modifier = Modifier.weight(1f).fillMaxSize()
+                                            .clip(RoundedCornerShape(9.dp))
+                                            .background(Color(0xFF243631))
+                                            .clickable { showTranslatedPreviewLyric = !showTranslatedPreviewLyric }
+                                            .padding(horizontal = 5.dp, vertical = 2.dp)
+                                            .semantics {
+                                                contentDescription = if (previewTranslatedLyrics.isBlank()) "歌词，点击查看是否存在译文"
+                                                    else "歌词，点击切换原文或译文"
+                                            },
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(
+                                            activeLyric,
+                                            color = Color(0xFF9FF0C9),
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp,
+                                            lineHeight = 15.sp,
+                                            textAlign = TextAlign.Center,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                    Box(
+                                        modifier = Modifier.size(28.dp).clip(CircleShape)
+                                            .clickable { playAdjacentPreview(1) }
+                                            .semantics { contentDescription = "下一首，播放歌单下一首的首个匹配音源" },
+                                        contentAlignment = Alignment.Center,
+                                    ) { MiniPlayerSkipGlyph(previous = false) }
                                 }
                                 val progress = if (previewDurationMs > 0)
                                     (previewPositionMs.toFloat() / previewDurationMs.toFloat()).coerceIn(0f, 1f)
@@ -2922,6 +2940,31 @@ private fun formatPreviewLyrics(raw: String): String {
 private fun formatPreviewTime(milliseconds: Int): String {
     val totalSeconds = milliseconds.coerceAtLeast(0) / 1000
     return (totalSeconds / 60).toString() + ":" + (totalSeconds % 60).toString().padStart(2, '0')
+}
+
+@Composable
+private fun MiniPlayerSkipGlyph(previous: Boolean) {
+    Canvas(modifier = Modifier.size(17.dp)) {
+        val tint = Color(0xFF9FF0C9)
+        val stroke = 1.8.dp.toPx()
+        val centerY = size.height / 2f
+        val tipX = if (previous) size.width * 0.24f else size.width * 0.76f
+        val barX = if (previous) size.width * 0.34f else size.width * 0.66f
+        drawLine(tint, Offset(barX, size.height * 0.20f), Offset(barX, size.height * 0.80f), stroke, cap = StrokeCap.Round)
+        val path = androidx.compose.ui.graphics.Path().apply {
+            if (previous) {
+                moveTo(size.width * 0.76f, size.height * 0.20f)
+                lineTo(tipX, centerY)
+                lineTo(size.width * 0.76f, size.height * 0.80f)
+            } else {
+                moveTo(size.width * 0.24f, size.height * 0.20f)
+                lineTo(tipX, centerY)
+                lineTo(size.width * 0.24f, size.height * 0.80f)
+            }
+            close()
+        }
+        drawPath(path, tint)
+    }
 }
 
 @Composable
