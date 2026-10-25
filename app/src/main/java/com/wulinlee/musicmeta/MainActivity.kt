@@ -310,6 +310,7 @@ private fun MusicMetaApp() {
     var isPreviewPlaying by remember { mutableStateOf(false) }
     var isPreviewLyricsLoading by remember { mutableStateOf(false) }
     var showPreviewDetails by remember { mutableStateOf(false) }
+    var showTranslatedPreviewLyric by remember { mutableStateOf(false) }
     var previewPositionMs by remember { mutableStateOf(0) }
     var previewDurationMs by remember { mutableStateOf(0) }
     var miniPlayerOffset by remember { mutableStateOf(Offset.Zero) }
@@ -723,6 +724,7 @@ private fun MusicMetaApp() {
         isPreviewPlaying = false
         isPreviewLyricsLoading = false
         showPreviewDetails = false
+        showTranslatedPreviewLyric = false
         previewPositionMs = 0
         previewDurationMs = 0
         miniPlayerOffset = Offset.Zero
@@ -762,6 +764,7 @@ private fun MusicMetaApp() {
             }
             previewCoverUrl = song.coverUrl
             previewLyrics = ""
+            showTranslatedPreviewLyric = false
             previewPositionMs = 0
             previewDurationMs = 0
             showPreviewDetails = false
@@ -2006,84 +2009,68 @@ private fun MusicMetaApp() {
             }
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val density = LocalDensity.current
-                val maxDragX = with(density) { (maxWidth - (if (showPreviewDetails) 356.dp else 76.dp)).toPx().coerceAtLeast(0f) }
-                val maxDragY = with(density) { (maxHeight - 76.dp).toPx().coerceAtLeast(0f) }
+                val dragWidth = if (showPreviewDetails) 142.dp else 76.dp
+                val maxDragX = with(density) { (maxWidth - dragWidth).toPx().coerceAtLeast(0f) }
+                val maxDragY = with(density) { (maxHeight - 108.dp).toPx().coerceAtLeast(0f) }
 
                 if (showPreviewDetails) {
                     val timedLyrics = remember(previewLyrics) { parseTimedPreviewLyrics(previewLyrics) }
-                    val activeLyricIndex = timedLyrics.indexOfLast { it.first <= previewPositionMs }
-                    val activeLyric = timedLyrics.getOrNull(activeLyricIndex)?.second
-                        ?: if (timedLyrics.isEmpty()) formatPreviewLyrics(previewLyrics).lineSequence().firstOrNull { it.isNotBlank() }.orEmpty()
-                        else "♪ 等待下一句歌词"
+                    val fallbackLyrics = remember(previewLyrics) {
+                        formatPreviewLyrics(previewLyrics).lineSequence().filter { it.isNotBlank() }.toList()
+                    }
+                    val activeTimestamp = timedLyrics.lastOrNull { it.first <= previewPositionMs }?.first
+                    val activeTimestampLyrics = activeTimestamp?.let { timestamp ->
+                        timedLyrics.filter { it.first == timestamp }.map { it.second }.distinct()
+                    }.orEmpty()
+                    val activeLyric = when {
+                        isPreviewLyricsLoading -> "正在找歌词…"
+                        previewLyrics.isBlank() -> "暂未找到歌词"
+                        timedLyrics.isNotEmpty() && activeTimestamp == null -> "♪ 等待下一句歌词"
+                        activeTimestampLyrics.isNotEmpty() -> activeTimestampLyrics.getOrNull(if (showTranslatedPreviewLyric) 1 else 0)
+                            ?: activeTimestampLyrics.first()
+                        else -> fallbackLyrics.getOrNull(if (showTranslatedPreviewLyric) 1 else 0)
+                            ?: fallbackLyrics.firstOrNull() ?: "♪"
+                    }
                     Card(
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
-                            .padding(end = 78.dp, bottom = 12.dp)
+                            .padding(end = 78.dp, bottom = 38.dp)
                             .offset {
                                 IntOffset(
                                     miniPlayerOffset.x.coerceIn(-maxDragX, 0f).roundToInt(),
                                     miniPlayerOffset.y.coerceIn(-maxDragY, 0f).roundToInt(),
                                 )
                             }
-                            .width(278.dp),
-                        shape = RoundedCornerShape(topStart = 18.dp, bottomStart = 18.dp, topEnd = 14.dp, bottomEnd = 14.dp),
+                            .width(64.dp)
+                            .heightIn(min = 90.dp, max = 142.dp),
+                        shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.cardColors(containerColor = Color(0xFF17211F)),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 10.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
                     ) {
                         Column(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 7.dp),
                             verticalArrangement = Arrangement.spacedBy(5.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    Text(
-                                        activePreviewSong.title,
-                                        color = Color(0xFFF5F7F6),
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 12.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    Text(
-                                        activePreviewSong.artist,
-                                        color = Color(0xFFB5C4BF),
-                                        fontSize = 10.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                                TextButton(
-                                    onClick = { showPreviewDetails = false },
-                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
-                                    modifier = Modifier.height(26.dp),
-                                ) {
-                                    Text("收起", color = Color(0xFFB5C4BF), fontSize = 10.sp)
-                                }
-                            }
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .heightIn(min = 30.dp, max = 42.dp)
+                                    .heightIn(min = 48.dp, max = 104.dp)
                                     .clip(RoundedCornerShape(9.dp))
                                     .background(Color(0xFF243631))
-                                    .padding(horizontal = 9.dp, vertical = 5.dp),
-                                contentAlignment = Alignment.CenterStart,
+                                    .clickable { showTranslatedPreviewLyric = !showTranslatedPreviewLyric }
+                                    .padding(horizontal = 3.dp, vertical = 5.dp)
+                                    .semantics { contentDescription = "歌词，点击切换原文或译文" },
+                                contentAlignment = Alignment.Center,
                             ) {
                                 Text(
-                                    when {
-                                        isPreviewLyricsLoading -> "正在找歌词…"
-                                        previewLyrics.isBlank() -> "暂未找到可用歌词"
-                                        activeLyric.isBlank() -> "♪"
-                                        else -> activeLyric
-                                    },
+                                    activeLyric,
                                     color = Color(0xFF9FF0C9),
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp,
-                                    lineHeight = 17.sp,
-                                    maxLines = 2,
+                                    fontSize = 11.sp,
+                                    lineHeight = 14.sp,
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 5,
                                     overflow = TextOverflow.Ellipsis,
                                 )
                             }
@@ -2096,33 +2083,11 @@ private fun MusicMetaApp() {
                                 },
                                 valueRange = 0f..previewDurationMs.coerceAtLeast(1).toFloat(),
                                 enabled = previewDurationMs > 0 && previewPlayer.value != null && !isPreviewLoading,
-                                modifier = Modifier.fillMaxWidth().height(18.dp),
+                                modifier = Modifier.fillMaxWidth().height(16.dp),
                             )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                            ) {
-                                Text(
-                                    "${formatPreviewTime(previewPositionMs)} / ${formatPreviewTime(previewDurationMs)}",
-                                    color = Color(0xFFB5C4BF),
-                                    fontSize = 9.sp,
-                                )
-                                IconButton(
-                                    onClick = { playPreview(activePreviewSong) },
-                                    enabled = !isPreviewLoading,
-                                    modifier = Modifier.size(30.dp).semantics {
-                                        contentDescription = if (isPreviewPlaying) "暂停播放" else "继续播放"
-                                    },
-                                ) {
-                                    PlayGlyph(isPlaying = isPreviewPlaying, isLoading = isPreviewLoading)
-                                }
-                            }
                         }
                     }
-                }
-
-                Box(
+                }                Column(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .padding(end = 12.dp, bottom = 12.dp)
@@ -2132,62 +2097,83 @@ private fun MusicMetaApp() {
                                 miniPlayerOffset.y.coerceIn(-maxDragY, 0f).roundToInt(),
                             )
                         }
-                        .size(64.dp)
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(SurfaceColor)
-                        .border(1.dp, Hairline, RoundedCornerShape(18.dp))
-                        .pointerInput(activePreviewSong, maxDragX, maxDragY) {
-                            detectDragGestures { change, dragAmount ->
-                                change.consume()
-                                miniPlayerOffset = Offset(
-                                    (miniPlayerOffset.x + dragAmount.x).coerceIn(-maxDragX, 0f),
-                                    (miniPlayerOffset.y + dragAmount.y).coerceIn(-maxDragY, 0f),
-                                )
-                            }
-                        },
+                        .width(64.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
-                    AsyncImage(
-                        model = previewCoverUrl.ifBlank { activePreviewSong.coverUrl }.takeIf { it.isNotBlank() },
-                        contentDescription = "轻点封面暂停或继续播放，拖动可移动迷你播放器",
-                        placeholder = painterResource(id = R.drawable.musicmeta_cover),
-                        error = painterResource(id = R.drawable.musicmeta_cover),
-                        modifier = Modifier.fillMaxSize().clickable { playPreview(activePreviewSong) },
-                        contentScale = ContentScale.Crop,
-                    )
-                    if (isPreviewLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.align(Alignment.Center).size(22.dp),
-                            color = Accent,
-                            strokeWidth = 2.dp,
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(SurfaceColor)
+                            .border(1.dp, Hairline, RoundedCornerShape(18.dp))
+                            .pointerInput(activePreviewSong, maxDragX, maxDragY) {
+                                detectDragGestures { change, dragAmount ->
+                                    change.consume()
+                                    miniPlayerOffset = Offset(
+                                        (miniPlayerOffset.x + dragAmount.x).coerceIn(-maxDragX, 0f),
+                                        (miniPlayerOffset.y + dragAmount.y).coerceIn(-maxDragY, 0f),
+                                    )
+                                }
+                            }
+                            .pointerInput(activePreviewSong) {
+                                detectTapGestures(
+                                    onTap = { playPreview(activePreviewSong) },
+                                    onDoubleTap = { showPreviewDetails = !showPreviewDetails },
+                                )
+                            },
+                    ) {
+                        AsyncImage(
+                            model = previewCoverUrl.ifBlank { activePreviewSong.coverUrl }.takeIf { it.isNotBlank() },
+                            contentDescription = "单击播放或暂停，双击展开或收起歌词，拖动移动播放器",
+                            placeholder = painterResource(id = R.drawable.musicmeta_cover),
+                            error = painterResource(id = R.drawable.musicmeta_cover),
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
                         )
-                    } else {
+                        if (isPreviewLoading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.align(Alignment.Center).size(22.dp),
+                                color = Accent,
+                                strokeWidth = 2.dp,
+                            )
+                        }
                         Surface(
                             modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(4.dp)
-                                .size(23.dp)
-                                .clickable { playPreview(activePreviewSong) },
+                                .align(Alignment.TopEnd)
+                                .padding(3.dp)
+                                .size(20.dp)
+                                .clickable { stopPreview() }
+                                .semantics { contentDescription = "关闭迷你播放器" },
                             color = Color(0xD90D1210),
-                            contentColor = Accent,
+                            contentColor = Color.White,
                             shape = CircleShape,
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                PlayGlyph(isPlaying = isPreviewPlaying, isLoading = false)
+                                Text("×", fontSize = 16.sp, color = Color.White, lineHeight = 18.sp)
                             }
                         }
                     }
-                    Surface(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(3.dp)
-                            .size(20.dp)
-                            .clickable { showPreviewDetails = !showPreviewDetails },
-                        color = Color(0xD90D1210),
-                        contentColor = Ink,
-                        shape = CircleShape,
+                    Row(
+                        modifier = Modifier.fillMaxWidth().height(22.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(if (showPreviewDetails) "⌄" else "↗", fontSize = 12.sp, color = Ink)
+                        Text(
+                            "${formatPreviewTime(previewPositionMs)}/${formatPreviewTime(previewDurationMs)}",
+                            color = SubInk,
+                            fontSize = 7.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Clip,
+                        )
+                        IconButton(
+                            onClick = { playPreview(activePreviewSong) },
+                            enabled = !isPreviewLoading,
+                            modifier = Modifier.size(22.dp).semantics {
+                                contentDescription = if (isPreviewPlaying) "暂停播放" else "继续播放"
+                            },
+                        ) {
+                            PlayGlyph(isPlaying = isPreviewPlaying, isLoading = isPreviewLoading)
                         }
                     }
                 }
