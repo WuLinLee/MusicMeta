@@ -970,29 +970,34 @@ private fun MusicMetaApp() {
                         isPreviewPlaying = false
                         isPreviewLoading = false
                         previewPositionMs = previewDurationMs
+                        if (playbackMode == 2) {
+                            runCatching {
+                                completed.seekTo(0)
+                                completed.start()
+                                isPreviewPlaying = true
+                                isPreviewLoading = false
+                                previewPositionMs = 0
+                                status = "单曲循环播放《${song.title}》。"
+                            }.onFailure {
+                                status = "单曲循环失败：" + (it.message ?: "请重试")
+                                runCatching { completed.release() }
+                                if (previewPlayer.value === completed) previewPlayer.value = null
+                            }
+                            return@setOnCompletionListener
+                        }
                         runCatching { completed.release() }
                         if (previewPlayer.value === completed) previewPlayer.value = null
                         if (song.platform == "local") {
-                            if (playbackMode == 2) {
-                                runCatching {
-                                    completed.seekTo(0)
-                                    completed.start()
-                                    isPreviewPlaying = true
-                                    isPreviewLoading = false
-                                    previewPositionMs = 0
-                                }.onFailure { status = "单曲循环失败：" + (it.message ?: "请重试") }
+                            val queue = previewQueue.filter { it.platform == "local" }
+                            val index = queue.indexOfFirst { it.id == song.id }
+                            val next = if (playbackMode == 1 && queue.size > 1) {
+                                queue.filterNot { it.id == song.id }.randomOrNull()
+                            } else queue.getOrNull(index + 1)
+                            if (next != null) {
+                                status = "本地歌曲播放结束，正在播放下一首。"
+                                playPreview(next)
                             } else {
-                                val queue = previewQueue.filter { it.platform == "local" }
-                                val index = queue.indexOfFirst { it.id == song.id }
-                                val next = if (playbackMode == 1 && queue.size > 1) {
-                                    queue.filterNot { it.id == song.id }.randomOrNull()
-                                } else queue.getOrNull(index + 1)
-                                if (next != null) {
-                                    status = "本地歌曲播放结束，正在播放下一首。"
-                                    playPreview(next)
-                                } else {
-                                    status = "本地播放列表已播放完毕。"
-                                }
+                                status = "本地播放列表已播放完毕。"
                             }
                         } else if (previewCurrentTrack != null && previewCurrentPlaylistId != null) {
                             status = "《" + song.title + "》播放结束，正在准备下一首。"
