@@ -550,7 +550,7 @@ private fun MusicMetaApp() {
         }
     }
 
-    val searchTrackSource: (MusicTrack) -> Unit = { track ->
+    val searchTrackSource: (MusicTrack, Boolean) -> Unit = { track, playFirstMatch ->
         focusManager.clearFocus()
         if (busy) {
             status = "当前任务还没完成，请稍候。"
@@ -573,10 +573,15 @@ private fun MusicMetaApp() {
                         )
                     }
                     flacResults = results.take(8)
-                    status = if (flacResults.isEmpty()) {
-                        "没有找到匹配音源。可以切换音源，或检查歌名后重试。"
+                    if (playFirstMatch && flacResults.isNotEmpty()) {
+                        playPreview(flacResults.first())
+                        status = "正在播放《" + track.title + "》的第一个匹配音源。"
                     } else {
-                        "找到 " + flacResults.size + " 个候选版本，请核对歌手和专辑后下载。"
+                        status = if (flacResults.isEmpty()) {
+                            "没有找到匹配音源。可以切换音源，或检查歌名后重试。"
+                        } else {
+                            "找到 " + flacResults.size + " 个候选版本，请核对歌手和专辑后下载。"
+                        }
                     }
                     scope.launch {
                         val rowIndex = listState.layoutInfo.visibleItemsInfo
@@ -2064,7 +2069,7 @@ private fun MusicMetaApp() {
                             ) { HomeGlyph() }
                         }
                     }
-                    if ((playlist == null && inputMode != "local") || pageItemCount <= 0 || pageCount <= 1) {
+                    if ((playlist == null && inputMode != "local") || pageItemCount <= 0) {
                         Row(
                             modifier = Modifier.fillMaxWidth().height(25.dp).padding(horizontal = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -2324,7 +2329,11 @@ private fun MusicMetaApp() {
                 val localPageSongs = localVisible.drop((currentPage - 1) * pageSize).take(pageSize)
                 if (localVisible.isEmpty()) item(key = "local-empty") { Text(if (isScanningLocalMusic) "正在扫描本地音乐…" else "没有找到歌曲。首次使用请点击扫描，或在下载设置中选择本地音乐文件夹。", color = SubInk, modifier = Modifier.fillMaxWidth().padding(16.dp)) }
                 items(localPageSongs, key = { "local-" + it.uri }) { track ->
-                    Card(Modifier.fillMaxWidth().clickable {
+                    Card(Modifier.fillMaxWidth()
+                        .pointerInput(track.uri) {
+                            detectTapGestures(onLongPress = { copySongAndArtist(track.title, track.artist) })
+                        }
+                        .clickable {
                         val song = FlacSiteSong(track.uri.toString(), "local", track.title, track.artist, track.album, "", track.durationMs.toString(), track.coverUri)
                         previewQueue = localVisible.map { FlacSiteSong(it.uri.toString(), "local", it.title, it.artist, it.album, "", it.durationMs.toString(), it.coverUri) }
                         previewCurrentTrack = null; previewCurrentPlaylistId = null; selectedTrack = null
@@ -2492,7 +2501,8 @@ private fun MusicMetaApp() {
                         TrackRow(
                             track = track,
                             busy = busy,
-                            onFindSource = { searchTrackSource(track) },
+                            onFindSource = { searchTrackSource(track, false) },
+                            onFindAndPlay = { searchTrackSource(track, true) },
                             onCopy = { copySongAndArtist(track.title, track.artists) },
                         )
                         if (selectedTrack?.id == track.id) {
@@ -2550,7 +2560,7 @@ private fun MusicMetaApp() {
                                                     if (flacPlatform != "kuwo") {
                                                         flacPlatform = "kuwo"
                                                         folderPreferences.edit().putString("source_platform", "kuwo").apply()
-                                                        selectedTrack?.let { searchTrackSource(it) }
+                                                        selectedTrack?.let { searchTrackSource(it, false) }
                                                     }
                                                 },
                                                 label = { Text("酷我") },
@@ -2814,7 +2824,16 @@ private fun MusicMetaApp() {
                             else -> "♪"
                         }
                         Card(
-                            modifier = Modifier.align(Alignment.CenterStart).width(panelWidth).height(64.dp),
+                            modifier = Modifier.align(Alignment.CenterStart).width(panelWidth).height(64.dp)
+                                .pointerInput(activePreviewSong) {
+                                    detectDragGestures { change, dragAmount ->
+                                        change.consume()
+                                        miniPlayerOffset = Offset(
+                                            (miniPlayerOffset.x + dragAmount.x).coerceIn(minDragX, maxDragX),
+                                            (miniPlayerOffset.y + dragAmount.y).coerceIn(-maxDragY, 0f),
+                                        )
+                                    }
+                                },
                             shape = RoundedCornerShape(16.dp),
                             colors = CardDefaults.cardColors(containerColor = Color(0xFF17211F)),
                             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
@@ -2908,18 +2927,8 @@ private fun MusicMetaApp() {
                     Column(
                         modifier = Modifier.align(Alignment.CenterEnd).width(64.dp).height(108.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalArrangement = Arrangement.Center,
                     ) {
-                        Box(
-                            modifier = Modifier.fillMaxWidth().height(18.dp),
-                            contentAlignment = Alignment.CenterEnd,
-                        ) {
-                            Box(
-                                modifier = Modifier.size(18.dp).clickable { stopPreview() }
-                                    .semantics { contentDescription = "关闭迷你播放器" },
-                                contentAlignment = Alignment.Center,
-                            ) { CloseGlyph() }
-                        }
                         Box(
                             modifier = Modifier
                                 .size(64.dp)
@@ -2938,14 +2947,14 @@ private fun MusicMetaApp() {
                                 .pointerInput(activePreviewSong) {
                                     detectTapGestures(
                                         onTap = { playPreview(activePreviewSong) },
-                                        onDoubleTap = { toggleLyricsPanel() },
+                                        onDoubleTap = { stopPreview() },
                                         onLongPress = { toggleLyricsPanel() },
                                     )
                                 },
                         ) {
                             AsyncImage(
                                 model = previewCoverUrl.ifBlank { activePreviewSong.coverUrl }.takeIf { it.isNotBlank() },
-                                contentDescription = "单击播放或暂停，长按展开或收起歌词，拖动移动播放器",
+                                contentDescription = "单击播放或暂停，双击关闭播放器，长按展开或收起歌词，拖动移动播放器",
                                 placeholder = painterResource(id = R.drawable.musicmeta_cover),
                                 error = painterResource(id = R.drawable.musicmeta_cover),
                                 modifier = Modifier.fillMaxSize(),
@@ -3780,6 +3789,7 @@ private fun TrackRow(
     track: MusicTrack,
     busy: Boolean,
     onFindSource: () -> Unit,
+    onFindAndPlay: () -> Unit,
     onCopy: () -> Unit,
 ) {
     Surface(
@@ -3826,6 +3836,15 @@ private fun TrackRow(
                 contentPadding = PaddingValues(horizontal = 11.dp, vertical = 8.dp),
             ) {
                 Text("找音源", fontSize = 12.sp)
+            }
+            IconButton(
+                onClick = onFindAndPlay,
+                enabled = !busy,
+                modifier = Modifier.size(34.dp).semantics {
+                    contentDescription = "查找并播放第一个匹配音源"
+                },
+            ) {
+                PlayGlyph(isPlaying = false, isLoading = false)
             }
         }
     }
