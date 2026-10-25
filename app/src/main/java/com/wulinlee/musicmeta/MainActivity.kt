@@ -2145,238 +2145,194 @@ private fun MusicMetaApp() {
             }
         }
 
-        if (previewSong != null) {
+        if (previewSong != null && !(floatingOverlayEnabled && Settings.canDrawOverlays(context))) {
             val activePreviewSong = previewSong!!
-            val activeQueueIndex = previewQueue.indexOfFirst {
-                sourceSongKey(it) == sourceSongKey(activePreviewSong)
-            }
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val density = LocalDensity.current
-                val playerAreaWidth = maxWidth
-                val dragWidth = if (showPreviewDetails) 356.dp else 76.dp
-                val maxDragX = with(density) { (maxWidth - dragWidth).toPx().coerceAtLeast(0f) }
-                val dragHeight = 108.dp
-                val maxDragY = with(density) { (maxHeight - dragHeight).toPx().coerceAtLeast(0f) }
-
-                if (showPreviewDetails) {
-                    val originalTimedLyrics = remember(previewLyrics) { parseTimedPreviewLyrics(previewLyrics) }
-                    val translatedTimedLyrics = remember(previewTranslatedLyrics) {
-                        parseTimedPreviewLyrics(previewTranslatedLyrics)
-                    }
-                    val originalFallbackLyrics = remember(previewLyrics) {
-                        formatPreviewLyrics(previewLyrics).lineSequence().filter { it.isNotBlank() }.toList()
-                    }
-                    val translatedFallbackLyrics = remember(previewTranslatedLyrics) {
-                        formatPreviewLyrics(previewTranslatedLyrics).lineSequence().filter { it.isNotBlank() }.toList()
-                    }
-                    val activeTrackLyrics = if (showTranslatedPreviewLyric) translatedTimedLyrics else originalTimedLyrics
-                    val activeFallbackLyrics = if (showTranslatedPreviewLyric) translatedFallbackLyrics else originalFallbackLyrics
-                    val activeLyric = when {
-                        isPreviewLyricsLoading -> "正在找歌词…"
-                        previewLyrics.isBlank() -> "暂未找到歌词"
-                        showTranslatedPreviewLyric && previewTranslatedLyrics.isBlank() -> "这首歌暂无译文"
-                        activeTrackLyrics.isNotEmpty() -> activeTrackLyrics.lastOrNull { it.first <= previewPositionMs }?.second
-                            ?: activeTrackLyrics.first().second
-                        activeFallbackLyrics.isNotEmpty() -> activeFallbackLyrics.first()
-                        else -> "♪"
-                    }
-                    Card(
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(end = 78.dp, bottom = 36.dp)
-                            .offset {
-                                IntOffset(
-                                    miniPlayerOffset.x.coerceIn(-maxDragX, 0f).roundToInt(),
-                                    miniPlayerOffset.y.coerceIn(-maxDragY, 0f).roundToInt(),
-                                )
-                            }
-                            .width(278.dp)
-                            .height(64.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF17211F)),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-                    ) {
-                        Column(
-                            modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 4.dp),
-                            verticalArrangement = Arrangement.spacedBy(0.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
+                val groupWidth = minOf(maxWidth, 356.dp)
+                val panelWidth = (groupWidth - 78.dp).coerceAtLeast(48.dp)
+                val maxDragX = with(density) { ((maxWidth - groupWidth) / 2).toPx().coerceAtLeast(0f) }
+                val maxDragY = with(density) { (maxHeight - 120.dp).toPx().coerceAtLeast(0f) }
+                val toggleLyricsPanel = { showPreviewDetails = !showPreviewDetails }
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 12.dp)
+                        .width(groupWidth)
+                        .height(108.dp)
+                        .offset {
+                            IntOffset(
+                                miniPlayerOffset.x.coerceIn(-maxDragX, maxDragX).roundToInt(),
+                                miniPlayerOffset.y.coerceIn(-maxDragY, 0f).roundToInt(),
+                            )
+                        },
+                ) {
+                    if (showPreviewDetails) {
+                        val originalTimedLyrics = remember(previewLyrics) { parseTimedPreviewLyrics(previewLyrics) }
+                        val translatedTimedLyrics = remember(previewTranslatedLyrics) { parseTimedPreviewLyrics(previewTranslatedLyrics) }
+                        val originalFallbackLyrics = remember(previewLyrics) {
+                            formatPreviewLyrics(previewLyrics).lineSequence().filter { it.isNotBlank() }.toList()
+                        }
+                        val translatedFallbackLyrics = remember(previewTranslatedLyrics) {
+                            formatPreviewLyrics(previewTranslatedLyrics).lineSequence().filter { it.isNotBlank() }.toList()
+                        }
+                        val activeTrackLyrics = if (showTranslatedPreviewLyric) translatedTimedLyrics else originalTimedLyrics
+                        val activeFallbackLyrics = if (showTranslatedPreviewLyric) translatedFallbackLyrics else originalFallbackLyrics
+                        val activeLyric = when {
+                            isPreviewLyricsLoading -> "正在找歌词…"
+                            previewLyrics.isBlank() -> "暂未找到歌词"
+                            showTranslatedPreviewLyric && previewTranslatedLyrics.isBlank() -> "这首歌暂无译文"
+                            activeTrackLyrics.isNotEmpty() -> activeTrackLyrics.lastOrNull { it.first <= previewPositionMs }?.second
+                                ?: activeTrackLyrics.first().second
+                            activeFallbackLyrics.isNotEmpty() -> activeFallbackLyrics.first()
+                            else -> "♪"
+                        }
+                        Card(
+                            modifier = Modifier.align(Alignment.CenterStart).width(panelWidth).height(64.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF17211F)),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(9.dp))
-                                    .background(Color(0xFF243631))
-                                    .clickable { showTranslatedPreviewLyric = !showTranslatedPreviewLyric }
-                                    .padding(horizontal = 8.dp, vertical = 2.dp)
-                                    .semantics {
-                                        contentDescription = if (previewTranslatedLyrics.isBlank())
-                                            "歌词，点击尝试显示译文" else "歌词，点击切换原文或译文"
-                                    },
-                                contentAlignment = Alignment.Center,
+                            Column(
+                                modifier = Modifier.fillMaxSize().padding(horizontal = 9.dp, vertical = 4.dp),
+                                verticalArrangement = Arrangement.spacedBy(0.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
-                                Text(
-                                    activeLyric,
-                                    color = Color(0xFF9FF0C9),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp,
-                                    lineHeight = 15.sp,
-                                    textAlign = TextAlign.Center,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                            val progress = if (previewDurationMs > 0)
-                                (previewPositionMs.toFloat() / previewDurationMs.toFloat()).coerceIn(0f, 1f)
-                            else 0f
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(14.dp)
-                                    .pointerInput(previewDurationMs, activePreviewSong) {
-                                        detectTapGestures { tap ->
-                                            if (previewDurationMs > 0 && size.width > 0) {
-                                                val fraction = (tap.x / size.width.toFloat()).coerceIn(0f, 1f)
-                                                val target = (fraction * previewDurationMs).toInt()
-                                                previewPositionMs = target
-                                                runCatching { previewPlayer.value?.seekTo(target) }
+                                Box(
+                                    modifier = Modifier.fillMaxWidth().weight(1f)
+                                        .clip(RoundedCornerShape(9.dp))
+                                        .background(Color(0xFF243631))
+                                        .clickable { showTranslatedPreviewLyric = !showTranslatedPreviewLyric }
+                                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                                        .semantics {
+                                            contentDescription = if (previewTranslatedLyrics.isBlank()) "歌词，点击查看是否存在译文"
+                                                else "歌词，点击切换原文或译文"
+                                        },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        activeLyric,
+                                        color = Color(0xFF9FF0C9),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        lineHeight = 15.sp,
+                                        textAlign = TextAlign.Center,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                val progress = if (previewDurationMs > 0)
+                                    (previewPositionMs.toFloat() / previewDurationMs.toFloat()).coerceIn(0f, 1f)
+                                else 0f
+                                Box(
+                                    modifier = Modifier.fillMaxWidth().height(14.dp)
+                                        .pointerInput(previewDurationMs, activePreviewSong) {
+                                            detectTapGestures { tap ->
+                                                if (previewDurationMs > 0 && size.width > 0) {
+                                                    val fraction = (tap.x / size.width.toFloat()).coerceIn(0f, 1f)
+                                                    val target = (fraction * previewDurationMs).toInt()
+                                                    previewPositionMs = target
+                                                    runCatching { previewPlayer.value?.seekTo(target) }
+                                                }
                                             }
+                                        }
+                                        .pointerInput(previewDurationMs, activePreviewSong) {
+                                            detectHorizontalDragGestures { change, _ ->
+                                                change.consume()
+                                                if (previewDurationMs > 0 && size.width > 0) {
+                                                    val fraction = (change.position.x / size.width.toFloat()).coerceIn(0f, 1f)
+                                                    val target = (fraction * previewDurationMs).toInt()
+                                                    previewPositionMs = target
+                                                    runCatching { previewPlayer.value?.seekTo(target) }
+                                                }
+                                            }
+                                        },
+                                    contentAlignment = Alignment.CenterStart,
+                                ) {
+                                    Canvas(modifier = Modifier.fillMaxSize()) {
+                                        val y = size.height / 2f
+                                        val strokeWidth = 3.dp.toPx()
+                                        drawLine(Color(0xFF3B514B), Offset(0f, y), Offset(size.width, y), strokeWidth, cap = StrokeCap.Round)
+                                        if (progress > 0f) {
+                                            drawLine(Color(0xFF9FF0C9), Offset(0f, y), Offset(size.width * progress, y), strokeWidth, cap = StrokeCap.Round)
                                         }
                                     }
-                                    .pointerInput(previewDurationMs, activePreviewSong) {
-                                        detectHorizontalDragGestures { change, _ ->
-                                            change.consume()
-                                            if (previewDurationMs > 0 && size.width > 0) {
-                                                val fraction = (change.position.x / size.width.toFloat()).coerceIn(0f, 1f)
-                                                val target = (fraction * previewDurationMs).toInt()
-                                                previewPositionMs = target
-                                                runCatching { previewPlayer.value?.seekTo(target) }
-                                            }
-                                        }
-                                    },
-                                contentAlignment = Alignment.CenterStart,
-                            ) {
-                                Canvas(modifier = Modifier.fillMaxSize()) {
-                                    val y = size.height / 2f
-                                    val strokeWidth = 3.dp.toPx()
-                                    drawLine(
-                                        color = Color(0xFF3B514B),
-                                        start = Offset(0f, y),
-                                        end = Offset(size.width, y),
-                                        strokeWidth = strokeWidth,
-                                        cap = StrokeCap.Round,
-                                    )
-                                    if (progress > 0f) {
-                                        drawLine(
-                                            color = Color(0xFF9FF0C9),
-                                            start = Offset(0f, y),
-                                            end = Offset(size.width * progress, y),
-                                            strokeWidth = strokeWidth,
-                                            cap = StrokeCap.Round,
+                                }
+                            }
+                        }
+                    }
+                    Column(
+                        modifier = Modifier.align(Alignment.CenterEnd).width(64.dp).height(108.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().height(18.dp),
+                            contentAlignment = Alignment.CenterEnd,
+                        ) {
+                            Box(
+                                modifier = Modifier.size(18.dp).clickable { stopPreview() }
+                                    .semantics { contentDescription = "关闭迷你播放器" },
+                                contentAlignment = Alignment.Center,
+                            ) { CloseGlyph() }
+                        }
+                        Box(
+                            modifier = Modifier
+                                .size(64.dp)
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(SurfaceColor)
+                                .border(1.dp, Hairline, RoundedCornerShape(18.dp))
+                                .pointerInput(activePreviewSong) {
+                                    detectDragGestures { change, dragAmount ->
+                                        change.consume()
+                                        miniPlayerOffset = Offset(
+                                            (miniPlayerOffset.x + dragAmount.x).coerceIn(-maxDragX, maxDragX),
+                                            (miniPlayerOffset.y + dragAmount.y).coerceIn(-maxDragY, 0f),
                                         )
                                     }
                                 }
-                            }
-                        }
-                    }
-                }
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(end = 12.dp, bottom = 12.dp)
-                        .offset {
-                            IntOffset(
-                                miniPlayerOffset.x.coerceIn(-maxDragX, 0f).roundToInt(),
-                                miniPlayerOffset.y.coerceIn(-maxDragY, 0f).roundToInt(),
-                            )
-                        }
-                        .width(64.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(64.dp)
-                            .clip(RoundedCornerShape(18.dp))
-                            .background(SurfaceColor)
-                            .border(1.dp, Hairline, RoundedCornerShape(18.dp))
-                            .pointerInput(activePreviewSong, maxDragX, maxDragY) {
-                                detectDragGestures { change, dragAmount ->
-                                    change.consume()
-                                    miniPlayerOffset = Offset(
-                                        (miniPlayerOffset.x + dragAmount.x).coerceIn(-maxDragX, 0f),
-                                        (miniPlayerOffset.y + dragAmount.y).coerceIn(-maxDragY, 0f),
+                                .pointerInput(activePreviewSong) {
+                                    detectTapGestures(
+                                        onTap = { playPreview(activePreviewSong) },
+                                        onDoubleTap = { toggleLyricsPanel() },
+                                        onLongPress = { toggleLyricsPanel() },
                                     )
-                                }
-                            }
-                            .pointerInput(activePreviewSong) {
-                                detectTapGestures(
-                                    onTap = { playPreview(activePreviewSong) },
-                                    onDoubleTap = {
-                                        val expanding = !showPreviewDetails
-                                        if (expanding) {
-                                            val expandedMaxDragX = with(density) {
-                                                (playerAreaWidth - 356.dp).toPx().coerceAtLeast(0f)
-                                            }
-                                            miniPlayerOffset = Offset(
-                                                miniPlayerOffset.x.coerceIn(-expandedMaxDragX, 0f),
-                                                miniPlayerOffset.y,
-                                            )
-                                        }
-                                        showPreviewDetails = expanding
-                                    },
-                                )
-                            },
-                    ) {
-                        AsyncImage(
-                            model = previewCoverUrl.ifBlank { activePreviewSong.coverUrl }.takeIf { it.isNotBlank() },
-                            contentDescription = "单击播放或暂停，双击展开或收起歌词，拖动移动播放器",
-                            placeholder = painterResource(id = R.drawable.musicmeta_cover),
-                            error = painterResource(id = R.drawable.musicmeta_cover),
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop,
-                        )
-                        if (isPreviewLoading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.align(Alignment.Center).size(22.dp),
-                                color = Accent,
-                                strokeWidth = 2.dp,
-                            )
-                        }
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(5.dp)
-                                .size(20.dp)
-                                .clickable { stopPreview() }
-                                .semantics { contentDescription = "关闭迷你播放器" },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            CloseGlyph()
-                        }
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth().height(22.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center,
-                    ) {
-                        Text(
-                            "${formatPreviewTime(previewPositionMs)}/${formatPreviewTime(previewDurationMs)}",
-                            color = SubInk,
-                            fontSize = 7.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Clip,
-                        )
-                        Box(
-                            modifier = Modifier
-                                .size(22.dp)
-                                .clickable(enabled = !isPreviewLoading) { playPreview(activePreviewSong) }
-                                .semantics {
-                                    contentDescription = if (isPreviewPlaying) "暂停播放" else "继续播放"
                                 },
-                            contentAlignment = Alignment.Center,
                         ) {
-                            PlayGlyph(isPlaying = isPreviewPlaying, isLoading = isPreviewLoading)
+                            AsyncImage(
+                                model = previewCoverUrl.ifBlank { activePreviewSong.coverUrl }.takeIf { it.isNotBlank() },
+                                contentDescription = "单击播放或暂停，长按展开或收起歌词，拖动移动播放器",
+                                placeholder = painterResource(id = R.drawable.musicmeta_cover),
+                                error = painterResource(id = R.drawable.musicmeta_cover),
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop,
+                            )
+                            if (isPreviewLoading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.align(Alignment.Center).size(22.dp),
+                                    color = Accent,
+                                    strokeWidth = 2.dp,
+                                )
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth().height(22.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                        ) {
+                            Text(
+                                formatPreviewTime(previewPositionMs) + "/" + formatPreviewTime(previewDurationMs),
+                                color = SubInk,
+                                fontSize = 7.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Clip,
+                            )
+                            Box(
+                                modifier = Modifier.size(22.dp)
+                                    .clickable(enabled = !isPreviewLoading) { playPreview(activePreviewSong) }
+                                    .semantics { contentDescription = if (isPreviewPlaying) "暂停播放" else "继续播放" },
+                                contentAlignment = Alignment.Center,
+                            ) { PlayGlyph(isPlaying = isPreviewPlaying, isLoading = isPreviewLoading) }
                         }
                     }
                 }
