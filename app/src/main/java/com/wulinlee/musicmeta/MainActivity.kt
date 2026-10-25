@@ -348,6 +348,11 @@ private fun MusicMetaApp() {
         mutableStateOf(folderPreferences.getBoolean("floating_lyrics_translated_by_default", true))
     }
     var playbackMode by remember { mutableStateOf(folderPreferences.getInt("playback_mode", 0).coerceIn(0, 2)) }
+    val cyclePlaybackMode: () -> Unit = {
+        playbackMode = (playbackMode + 1) % 3
+        folderPreferences.edit().putInt("playback_mode", playbackMode).apply()
+        status = "播放模式：" + listOf("顺序播放", "乱序播放", "单曲循环")[playbackMode]
+    }
     var localMusicTracks by remember { mutableStateOf<List<LocalAudioTrack>>(emptyList()) }
     var localMusicFilter by remember { mutableStateOf("") }
     var isScanningLocalMusic by remember { mutableStateOf(false) }
@@ -890,7 +895,7 @@ private fun MusicMetaApp() {
             miniPlayerOffset = Offset.Zero
             isPreviewPlaying = false
             isPreviewLoading = true
-            isPreviewLyricsLoading = song.platform != "local"
+            isPreviewLyricsLoading = true
             status = if (song.platform == "local") "正在准备播放本地歌曲《" + song.title + "》……" else "正在准备播放《" + song.title + "》的试听……"
             scope.launch {
                 var newPlayer: MediaPlayer? = null
@@ -988,20 +993,12 @@ private fun MusicMetaApp() {
                         }
                         runCatching { completed.release() }
                         if (previewPlayer.value === completed) previewPlayer.value = null
-                        if (song.platform == "local") {
-                            val queue = previewQueue.filter { it.platform == "local" }
-                            val index = queue.indexOfFirst { it.id == song.id }
-                            val next = if (playbackMode == 1 && queue.size > 1) {
-                                queue.filterNot { it.id == song.id }.randomOrNull()
-                            } else queue.getOrNull(index + 1)
-                            if (next != null) {
-                                status = "本地歌曲播放结束，正在播放下一首。"
-                                playPreviewRef.value(next)
+                        if (song.platform == "local" || (previewCurrentTrack != null && previewCurrentPlaylistId != null) || previewQueue.size > 1) {
+                            status = if (song.platform == "local") {
+                                "本地歌曲播放结束，正在切换下一首。"
                             } else {
-                                status = "本地播放列表已播放完毕。"
+                                "《" + song.title + "》播放结束，正在切换下一首。"
                             }
-                        } else if (previewCurrentTrack != null && previewCurrentPlaylistId != null) {
-                            status = "《" + song.title + "》播放结束，正在准备下一首。"
                             previewNavigationHandler?.invoke(1)
                         } else {
                             status = "播放结束：《" + song.title + "》。"
@@ -1031,7 +1028,7 @@ private fun MusicMetaApp() {
                     previewPlayer.value = player
                     player.prepareAsync()
 
-                    if (song.platform != "local") scope.launch {
+                    if (song.platform != "local" || song.coverUrl.isBlank()) scope.launch {
                         val cover = withContext(Dispatchers.IO) { resolveSourceCoverUrl(song) }
                         if (playbackGeneration == previewPlaybackGeneration &&
                             previewSong?.let(sourceSongKey) == songKey && cover.isNotBlank()
@@ -1039,11 +1036,34 @@ private fun MusicMetaApp() {
                             previewCoverUrl = cover
                         }
                     }
-                    if (song.platform != "local") scope.launch {
+                    scope.launch {
                         val lyrics = withContext(Dispatchers.IO) {
+                            val nativeNetEaseId = if (song.platform == "wyy") {
+                                song.id.toLongOrNull()?.takeIf { it > 0L } ?: 0L
+                            } else 0L
                             var tracks = runCatching {
-                                flacProvider.fetchLyrics(song, cookie, fallbackUserAgent)
+                                metadataProvider.resolveNetEaseLyrics(
+                                    title = song.title,
+                                    artist = song.artist,
+                                    album = song.album,
+                                    durationMs = if (song.platform == "local") song.time.toLongOrNull() ?: 0L else 0L,
+                                    neteaseId = nativeNetEaseId,
+                                )
                             }.getOrDefault(PreviewLyrics())
+
+                            // Prefer NetEase lyrics for both local and streamed tracks, filling gaps
+                            // from the selected audio source only when NetEase lyrics are incomplete.
+                            if (song.platform != "local" &&
+                                (tracks.original.isBlank() || tracks.translated.isBlank())
+                            ) {
+                                val sourceLyrics = runCatching {
+                                    flacProvider.fetchLyrics(song, cookie, fallbackUserAgent)
+                                }.getOrDefault(PreviewLyrics())
+                                tracks = PreviewLyrics(
+                                    original = tracks.original.ifBlank { sourceLyrics.original },
+                                    translated = tracks.translated.ifBlank { sourceLyrics.translated },
+                                )
+                            }
                             if (tracks.original.isBlank()) {
                                 tracks = tracks.copy(
                                     original = runCatching { metadataProvider.resolveSourceLyrics(song) }
@@ -1089,11 +1109,7 @@ private fun MusicMetaApp() {
                 FloatingMiniPlayerService.COMMAND_NEXT -> previewNavigationHandler?.invoke(1)
                 FloatingMiniPlayerService.COMMAND_TOGGLE_DETAILS -> showPreviewDetails = !showPreviewDetails
                 FloatingMiniPlayerService.COMMAND_TOGGLE_TRANSLATION -> showTranslatedPreviewLyric = !showTranslatedPreviewLyric
-                FloatingMiniPlayerService.COMMAND_TOGGLE_PLAYBACK_MODE -> {
-                    playbackMode = (playbackMode + 1) % 3
-                    folderPreferences.edit().putInt("playback_mode", playbackMode).apply()
-                    status = "播放模式：" + listOf("顺序播放", "乱序播放", "单曲循环")[playbackMode]
-                }
+                FloatingMiniPlayerService.COMMAND_TOGGLE_PLAYBACK_MODE -> cyclePlaybackMode()
                 FloatingMiniPlayerService.COMMAND_SEEK -> {
                     val target = seekPosition.coerceAtLeast(0)
                     previewPositionMs = target
@@ -1120,6 +1136,8 @@ private fun MusicMetaApp() {
         previewLyrics,
         previewTranslatedLyrics,
         previewDurationMs,
+        previewPositionMs,
+        playbackMode,
         isPreviewPlaying,
         isPreviewLoading,
         showPreviewDetails,
@@ -1140,6 +1158,7 @@ private fun MusicMetaApp() {
                 isLoading = isPreviewLoading,
                 expanded = showPreviewDetails,
                 showTranslation = showTranslatedPreviewLyric,
+                playbackMode = playbackMode,
             )
         } else {
             FloatingMiniPlayerService.stop(context)
@@ -1244,7 +1263,7 @@ private fun MusicMetaApp() {
             it.album.contains(filterText.trim(), ignoreCase = true)
     }
     val navigatePlaylistPreview: (Int) -> Unit = remember(
-        knownTracks, filteredKnownTracks, playlist?.id, inputMode, filterText, pageSize, pageCache,
+        knownTracks, filteredKnownTracks, playlist?.id, inputMode, filterText, pageSize, pageCache, playbackMode,
     ) {
         { direction ->
             if (isSearchingFlac || isResolvingUrl || isDownloading || isPreviewLoading) {
@@ -1254,18 +1273,16 @@ private fun MusicMetaApp() {
                 val currentPlaylist = playlist
                 val activePlaylistId = previewCurrentPlaylistId
                 if (currentTrack == null || currentPlaylist == null || activePlaylistId != currentPlaylist.id) {
-                    status = "上一首 / 下一首需要从当前歌单的曲目试听开始。"
+                    status = "当前播放歌曲不在所选歌单中，无法定位歌单相邻曲目。"
                 } else {
                     val modeAtRequest = inputMode
                     val playlistIdAtRequest = currentPlaylist.id
                     val expectedTrackId = currentTrack.id
-                    val targetPosition: Int? = if (filterText.isNotBlank()) {
-                        val queue = filteredKnownTracks
-                        val index = queue.indexOfFirst { it.id == expectedTrackId }
-                        if (index < 0) null else index + direction
+                    val currentIndex: Int? = if (filterText.isNotBlank()) {
+                        filteredKnownTracks.indexOfFirst { it.id == expectedTrackId }.takeIf { it >= 0 }
                     } else {
                         val fromBase = currentPlaylist.tracks.indexOfFirst { it.id == expectedTrackId }
-                        if (fromBase >= 0) {
+                        val locatedIndex = if (fromBase >= 0) {
                             fromBase
                         } else {
                             pageCache.entries.asSequence()
@@ -1278,7 +1295,17 @@ private fun MusicMetaApp() {
                                     if (localIndex < 0) null else (cachePage - 1) * cacheSize + localIndex
                                 }
                                 .minOrNull() ?: -1
-                        }.let { currentIndex -> if (currentIndex < 0) null else currentIndex + direction }
+                        }
+                        locatedIndex.takeIf { it >= 0 }
+                    }
+                    val navigationQueueSize = if (filterText.isNotBlank()) {
+                        filteredKnownTracks.size
+                    } else currentPlaylist.totalTrackCount
+                    val targetPosition: Int? = when {
+                        currentIndex == null -> null
+                        playbackMode == 1 && direction > 0 && navigationQueueSize > 1 ->
+                            (0 until navigationQueueSize).filter { it != currentIndex }.randomOrNull()
+                        else -> currentIndex + direction
                     }
                     if (targetPosition == null) {
                         status = "当前曲目不在已加载的歌单列表中，无法定位上一首 / 下一首。"
@@ -1401,8 +1428,47 @@ private fun MusicMetaApp() {
         }
     }
 
+    val navigatePreview: (Int) -> Unit = { direction ->
+        val activeSong = previewSong
+        when {
+            isSearchingFlac || isResolvingUrl || isDownloading || isPreviewLoading -> {
+                status = "正在准备当前歌曲，请稍候。"
+            }
+            activeSong == null -> status = "当前没有正在播放的歌曲。"
+            activeSong.platform == "local" -> {
+                val queue = previewQueue.filter { it.platform == "local" }
+                val currentIndex = queue.indexOfFirst { it.id == activeSong.id }
+                val next = if (playbackMode == 1 && direction > 0 && queue.size > 1) {
+                    queue.filterNot { it.id == activeSong.id }.randomOrNull()
+                } else {
+                    queue.getOrNull(currentIndex + direction)
+                }
+                if (next != null) {
+                    status = "正在切换本地歌曲：" + next.title
+                    playPreviewRef.value(next)
+                } else {
+                    status = if (direction < 0) "已经是本地列表第一首。" else "已经是本地列表最后一首。"
+                }
+            }
+            previewCurrentTrack != null && previewCurrentPlaylistId != null ->
+                navigatePlaylistPreview(direction)
+            else -> {
+                val queue = previewQueue
+                val currentIndex = queue.indexOfFirst { sourceSongKey(it) == sourceSongKey(activeSong) }
+                val next = if (playbackMode == 1 && direction > 0 && queue.size > 1) {
+                    queue.filterNot { sourceSongKey(it) == sourceSongKey(activeSong) }.randomOrNull()
+                } else queue.getOrNull(currentIndex + direction)
+                if (next != null) {
+                    status = "正在切换音源队列：" + next.title
+                    playPreviewRef.value(next)
+                } else {
+                    status = if (direction < 0) "当前队列没有上一首。" else "当前队列没有下一首。"
+                }
+            }
+        }
+    }
     SideEffect {
-        previewNavigationHandler = navigatePlaylistPreview
+        previewNavigationHandler = navigatePreview
     }
     val pageItemCount = if (filterText.isBlank()) playlist?.totalTrackCount ?: 0 else filteredKnownTracks.size
     val pageCount = maxOf(1, (pageItemCount + pageSize - 1) / pageSize)
@@ -1418,6 +1484,7 @@ private fun MusicMetaApp() {
             status = when (mode) {
                 "search" -> "直接搜歌：输入歌名或歌手搜索音源。"
                 "liked" -> if (likedPlaylist != null) "已切换到红心歌单。" else "输入网易云用户 ID 同步红心歌单。"
+                "local" -> "已切换到本地歌曲列表。"
                 else -> if (publicPlaylist != null) "已切换到公开歌单。" else "输入公开歌单链接或 ID 开始。"
             }
         }
@@ -1945,7 +2012,7 @@ private fun MusicMetaApp() {
                                 selected = inputMode == "local",
                                 onClick = { switchInputMode("local") },
                                 enabled = !busy,
-                                label = { Text("本地音乐", fontSize = 12.sp) },
+                                label = { Text("本地", fontSize = 12.sp) },
                             )
                         }
                         if (inputMode == "search") {
@@ -2500,7 +2567,14 @@ private fun MusicMetaApp() {
                 val density = LocalDensity.current
                 val groupWidth = minOf(maxWidth, 356.dp)
                 val panelWidth = (groupWidth - 78.dp).coerceAtLeast(48.dp)
-                val maxDragX = with(density) { ((maxWidth - groupWidth) / 2).toPx().coerceAtLeast(0f) }
+                val maxGroupDragX = with(density) { ((maxWidth - groupWidth) / 2).toPx().coerceAtLeast(0f) }
+                val coverBaseLeft = (maxWidth - groupWidth) / 2 + groupWidth - 64.dp
+                val minDragX = with(density) {
+                    if (showPreviewDetails) -maxGroupDragX else -coverBaseLeft.toPx()
+                }
+                val maxDragX = with(density) {
+                    if (showPreviewDetails) maxGroupDragX else (maxWidth - coverBaseLeft - 64.dp).toPx()
+                }
                 val maxDragY = with(density) { (maxHeight - 120.dp).toPx().coerceAtLeast(0f) }
                 val toggleLyricsPanel = { showPreviewDetails = !showPreviewDetails }
                 Box(
@@ -2511,7 +2585,7 @@ private fun MusicMetaApp() {
                         .height(108.dp)
                         .offset {
                             IntOffset(
-                                miniPlayerOffset.x.coerceIn(-maxDragX, maxDragX).roundToInt(),
+                                miniPlayerOffset.x.coerceIn(minDragX, maxDragX).roundToInt(),
                                 miniPlayerOffset.y.coerceIn(-maxDragY, 0f).roundToInt(),
                             )
                         },
@@ -2525,13 +2599,13 @@ private fun MusicMetaApp() {
                         val translatedFallbackLyrics = remember(previewTranslatedLyrics) {
                             formatPreviewLyrics(previewTranslatedLyrics).lineSequence().filter { it.isNotBlank() }.toList()
                         }
-                        val activeTrackLyrics = if (showTranslatedPreviewLyric) translatedTimedLyrics else originalTimedLyrics
-                        val activeFallbackLyrics = if (showTranslatedPreviewLyric) translatedFallbackLyrics else originalFallbackLyrics
+                        val useTranslatedLyrics = showTranslatedPreviewLyric && previewTranslatedLyrics.isNotBlank()
+                        val activeTrackLyrics = if (useTranslatedLyrics) translatedTimedLyrics else originalTimedLyrics
+                        val activeFallbackLyrics = if (useTranslatedLyrics) translatedFallbackLyrics else originalFallbackLyrics
                         val activeLyric = when {
                             isPreviewLyricsLoading -> "正在找歌词…"
                             previewLyrics.isBlank() -> "暂未找到歌词"
-                            showTranslatedPreviewLyric && previewTranslatedLyrics.isBlank() -> "这首歌暂无译文"
-                            activeTrackLyrics.isNotEmpty() -> activeTrackLyrics.lastOrNull { it.first <= previewPositionMs }?.second
+                            activeTrackLyrics.isNotEmpty() -> activeTrackLyrics.lastOrNull { it.first <= previewPositionMs + 180 }?.second
                                 ?: activeTrackLyrics.first().second
                             activeFallbackLyrics.isNotEmpty() -> activeFallbackLyrics.first()
                             else -> "♪"
@@ -2653,7 +2727,7 @@ private fun MusicMetaApp() {
                                     detectDragGestures { change, dragAmount ->
                                         change.consume()
                                         miniPlayerOffset = Offset(
-                                            (miniPlayerOffset.x + dragAmount.x).coerceIn(-maxDragX, maxDragX),
+                                            (miniPlayerOffset.x + dragAmount.x).coerceIn(minDragX, maxDragX),
                                             (miniPlayerOffset.y + dragAmount.y).coerceIn(-maxDragY, 0f),
                                         )
                                     }
@@ -2687,10 +2761,16 @@ private fun MusicMetaApp() {
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.Center,
                         ) {
+                            Box(
+                                modifier = Modifier.size(14.dp).clickable { cyclePlaybackMode() }
+                                    .semantics { contentDescription = "播放模式：" + listOf("顺序播放", "乱序播放", "单曲循环")[playbackMode] + "，点击切换" },
+                                contentAlignment = Alignment.Center,
+                            ) { MiniPlaybackModeGlyph(playbackMode) }
                             Text(
                                 formatPreviewTime(previewPositionMs) + "/" + formatPreviewTime(previewDurationMs),
+                                modifier = Modifier.weight(1f),
                                 color = SubInk,
-                                fontSize = 7.sp,
+                                fontSize = 6.sp,
                                 maxLines = 1,
                                 overflow = TextOverflow.Clip,
                             )
@@ -3151,6 +3231,41 @@ private fun formatPreviewLyrics(raw: String): String {
 private fun formatPreviewTime(milliseconds: Int): String {
     val totalSeconds = milliseconds.coerceAtLeast(0) / 1000
     return (totalSeconds / 60).toString() + ":" + (totalSeconds % 60).toString().padStart(2, '0')
+}
+
+@Composable
+private fun MiniPlaybackModeGlyph(mode: Int) {
+    Box(modifier = Modifier.size(14.dp), contentAlignment = Alignment.Center) {
+        Canvas(modifier = Modifier.size(13.dp)) {
+            val tint = Accent
+            val stroke = 1.5.dp.toPx()
+            when (mode) {
+                1 -> {
+                    drawLine(tint, Offset(size.width * 0.12f, size.height * 0.25f), Offset(size.width * 0.82f, size.height * 0.75f), stroke, cap = StrokeCap.Round)
+                    drawLine(tint, Offset(size.width * 0.12f, size.height * 0.75f), Offset(size.width * 0.82f, size.height * 0.25f), stroke, cap = StrokeCap.Round)
+                    drawLine(tint, Offset(size.width * 0.62f, size.height * 0.24f), Offset(size.width * 0.83f, size.height * 0.25f), stroke, cap = StrokeCap.Round)
+                    drawLine(tint, Offset(size.width * 0.82f, size.height * 0.25f), Offset(size.width * 0.77f, size.height * 0.45f), stroke, cap = StrokeCap.Round)
+                    drawLine(tint, Offset(size.width * 0.62f, size.height * 0.76f), Offset(size.width * 0.83f, size.height * 0.75f), stroke, cap = StrokeCap.Round)
+                    drawLine(tint, Offset(size.width * 0.82f, size.height * 0.75f), Offset(size.width * 0.77f, size.height * 0.55f), stroke, cap = StrokeCap.Round)
+                }
+                2 -> {
+                    drawArc(tint, 35f, 285f, false, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke))
+                    drawLine(tint, Offset(size.width * 0.77f, size.height * 0.12f), Offset(size.width * 0.90f, size.height * 0.34f), stroke, cap = StrokeCap.Round)
+                    drawLine(tint, Offset(size.width * 0.90f, size.height * 0.34f), Offset(size.width * 0.66f, size.height * 0.32f), stroke, cap = StrokeCap.Round)
+                }
+                else -> {
+                    drawLine(tint, Offset(size.width * 0.12f, size.height * 0.25f), Offset(size.width * 0.58f, size.height * 0.25f), stroke, cap = StrokeCap.Round)
+                    drawLine(tint, Offset(size.width * 0.12f, size.height * 0.50f), Offset(size.width * 0.58f, size.height * 0.50f), stroke, cap = StrokeCap.Round)
+                    drawLine(tint, Offset(size.width * 0.12f, size.height * 0.75f), Offset(size.width * 0.58f, size.height * 0.75f), stroke, cap = StrokeCap.Round)
+                    drawLine(tint, Offset(size.width * 0.58f, size.height * 0.25f), Offset(size.width * 0.85f, size.height * 0.50f), stroke, cap = StrokeCap.Round)
+                    drawLine(tint, Offset(size.width * 0.85f, size.height * 0.50f), Offset(size.width * 0.58f, size.height * 0.75f), stroke, cap = StrokeCap.Round)
+                }
+            }
+        }
+        if (mode == 2) {
+            Text("1", color = Accent, fontSize = 7.sp, fontWeight = FontWeight.Bold)
+        }
+    }
 }
 
 @Composable
