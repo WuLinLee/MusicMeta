@@ -875,14 +875,18 @@ private fun MusicMetaApp() {
                 var newPlayer: MediaPlayer? = null
                 try {
                     val cookie = CookieManager.getInstance().getCookie(DEFAULT_SOURCE)
-                    val (audioUrl, usedGdStudio) = withContext(Dispatchers.IO) {
-                        flacProvider.resolveDownloadUrlWithFallback(
-                            song = song,
-                            format = "mp3",
-                            bitrate = "320",
-                            cookie = cookie,
-                            userAgent = fallbackUserAgent,
-                        )
+                    val (audioUrl, usedGdStudio) = if (song.platform == "local") {
+                        song.id to false
+                    } else {
+                        withContext(Dispatchers.IO) {
+                            flacProvider.resolveDownloadUrlWithFallback(
+                                song = song,
+                                format = "mp3",
+                                bitrate = "320",
+                                cookie = cookie,
+                                userAgent = fallbackUserAgent,
+                            )
+                        }
                     }
                     if (playbackGeneration != previewPlaybackGeneration ||
                         previewSong?.let(sourceSongKey) != songKey
@@ -948,7 +952,29 @@ private fun MusicMetaApp() {
                         previewPositionMs = previewDurationMs
                         runCatching { completed.release() }
                         if (previewPlayer.value === completed) previewPlayer.value = null
-                        if (previewCurrentTrack != null && previewCurrentPlaylistId != null) {
+                        if (song.platform == "local") {
+                            if (playbackMode == 2) {
+                                runCatching {
+                                    completed.seekTo(0)
+                                    completed.start()
+                                    isPreviewPlaying = true
+                                    isPreviewLoading = false
+                                    previewPositionMs = 0
+                                }.onFailure { status = "单曲循环失败：" + (it.message ?: "请重试") }
+                            } else {
+                                val queue = previewQueue.filter { it.platform == "local" }
+                                val index = queue.indexOfFirst { it.id == song.id }
+                                val next = if (playbackMode == 1 && queue.size > 1) {
+                                    queue.filterNot { it.id == song.id }.randomOrNull()
+                                } else queue.getOrNull(index + 1)
+                                if (next != null) {
+                                    status = "本地歌曲播放结束，正在播放下一首。"
+                                    playPreview(next)
+                                } else {
+                                    status = "本地播放列表已播放完毕。"
+                                }
+                            }
+                        } else if (previewCurrentTrack != null && previewCurrentPlaylistId != null) {
                             status = "《" + song.title + "》播放结束，正在准备下一首。"
                             previewNavigationHandler?.invoke(1)
                         } else {
@@ -971,11 +997,15 @@ private fun MusicMetaApp() {
                         if (previewPlayer.value === failed) previewPlayer.value = null
                         true
                     }
-                    player.setDataSource(context, Uri.parse(audioUrl), headers)
+                    if (song.platform == "local") {
+                        player.setDataSource(context, Uri.parse(audioUrl))
+                    } else {
+                        player.setDataSource(context, Uri.parse(audioUrl), headers)
+                    }
                     previewPlayer.value = player
                     player.prepareAsync()
 
-                    scope.launch {
+                    if (song.platform != "local") scope.launch {
                         val cover = withContext(Dispatchers.IO) { resolveSourceCoverUrl(song) }
                         if (playbackGeneration == previewPlaybackGeneration &&
                             previewSong?.let(sourceSongKey) == songKey && cover.isNotBlank()
@@ -983,7 +1013,7 @@ private fun MusicMetaApp() {
                             previewCoverUrl = cover
                         }
                     }
-                    scope.launch {
+                    if (song.platform != "local") scope.launch {
                         val lyrics = withContext(Dispatchers.IO) {
                             var tracks = runCatching {
                                 flacProvider.fetchLyrics(song, cookie, fallbackUserAgent)
