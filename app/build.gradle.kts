@@ -10,8 +10,8 @@ android {
         applicationId = "com.wulinlee.musicmeta"
         minSdk = 29
         targetSdk = 35
-        versionCode = 12
-        versionName = "1.08"
+        versionCode = 13
+        versionName = "1.09"
     }
     buildTypes {
         debug {
