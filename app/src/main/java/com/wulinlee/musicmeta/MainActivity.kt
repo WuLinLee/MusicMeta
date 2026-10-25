@@ -1482,7 +1482,7 @@ private fun MusicMetaApp() {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    PullArrowGlyph(pointsUp = pullingToPrevious, tint = Accent)
+                    PullArrowGlyph(pointsUp = !pullingToPrevious, tint = Accent)
                     Column(
                         modifier = Modifier.width(180.dp),
                         verticalArrangement = Arrangement.spacedBy(5.dp),
