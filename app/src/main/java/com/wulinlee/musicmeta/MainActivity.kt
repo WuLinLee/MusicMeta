@@ -192,8 +192,6 @@ private fun MusicMetaApp() {
         if (inputMode == "liked") likedFilterText = value else publicFilterText = value
         currentPage = 1
         jumpPageInput = "1"
-        selectedTrack = null
-        flacResults = emptyList()
     }
     var isSyncing by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("输入公开歌单 ID 或链接开始。无需登录网易云账号。") }
@@ -924,7 +922,11 @@ private fun MusicMetaApp() {
                 item(key = "track-filter") {
                     OutlinedTextField(
                         value = filterText,
-                        onValueChange = setFilterText,
+                        onValueChange = {
+                            setFilterText(it)
+                            selectedTrack = null
+                            flacResults = emptyList()
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         label = { Text("筛选歌曲") },
