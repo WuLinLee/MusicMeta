@@ -2011,7 +2011,8 @@ private fun MusicMetaApp() {
                 val density = LocalDensity.current
                 val dragWidth = if (showPreviewDetails) 142.dp else 76.dp
                 val maxDragX = with(density) { (maxWidth - dragWidth).toPx().coerceAtLeast(0f) }
-                val maxDragY = with(density) { (maxHeight - 108.dp).toPx().coerceAtLeast(0f) }
+                val dragHeight = if (showPreviewDetails) 180.dp else 108.dp
+                val maxDragY = with(density) { (maxHeight - dragHeight).toPx().coerceAtLeast(0f) }
 
                 if (showPreviewDetails) {
                     val timedLyrics = remember(previewLyrics) { parseTimedPreviewLyrics(previewLyrics) }
@@ -2121,7 +2122,19 @@ private fun MusicMetaApp() {
                             .pointerInput(activePreviewSong) {
                                 detectTapGestures(
                                     onTap = { playPreview(activePreviewSong) },
-                                    onDoubleTap = { showPreviewDetails = !showPreviewDetails },
+                                    onDoubleTap = {
+                                        val expanding = !showPreviewDetails
+                                        if (expanding) {
+                                            val expandedMaxDragX = with(density) {
+                                                (maxWidth - 142.dp).toPx().coerceAtLeast(0f)
+                                            }
+                                            miniPlayerOffset = Offset(
+                                                miniPlayerOffset.x.coerceIn(-expandedMaxDragX, 0f),
+                                                miniPlayerOffset.y,
+                                            )
+                                        }
+                                        showPreviewDetails = expanding
+                                    },
                                 )
                             },
                     ) {
