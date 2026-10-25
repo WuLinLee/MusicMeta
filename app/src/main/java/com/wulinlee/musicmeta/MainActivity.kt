@@ -564,13 +564,15 @@ private fun MusicMetaApp() {
             scope.launch {
                 try {
                     val cookie = CookieManager.getInstance().getCookie(DEFAULT_SOURCE)
-                    val results = withContext(Dispatchers.IO) {
-                        flacProvider.search(
-                            keyword = keyword,
-                            platform = flacPlatform,
-                            cookie = cookie,
-                            userAgent = fallbackUserAgent,
-                        )
+                    val results = withTimeout(28_000L) {
+                        withContext(Dispatchers.IO) {
+                            flacProvider.search(
+                                keyword = keyword,
+                                platform = flacPlatform,
+                                cookie = cookie,
+                                userAgent = fallbackUserAgent,
+                            )
+                        }
                     }
                     flacResults = results.take(8)
                     if (playFirstMatch && flacResults.isNotEmpty()) {
@@ -623,13 +625,15 @@ private fun MusicMetaApp() {
             scope.launch {
                 try {
                     val cookie = CookieManager.getInstance().getCookie(DEFAULT_SOURCE)
-                    val results = withContext(Dispatchers.IO) {
-                        flacProvider.search(
-                            keyword = keyword,
-                            platform = flacPlatform,
-                            cookie = cookie,
-                            userAgent = fallbackUserAgent,
-                        )
+                    val results = withTimeout(28_000L) {
+                        withContext(Dispatchers.IO) {
+                            flacProvider.search(
+                                keyword = keyword,
+                                platform = flacPlatform,
+                                cookie = cookie,
+                                userAgent = fallbackUserAgent,
+                            )
+                        }
                     }
                     flacResults = results.take(8)
                     status = if (flacResults.isEmpty()) {
@@ -1413,14 +1417,16 @@ private fun MusicMetaApp() {
                             scope.launch {
                                 try {
                                     val cookie = CookieManager.getInstance().getCookie(DEFAULT_SOURCE)
-                                    val matches = withContext(Dispatchers.IO) {
-                                        flacProvider.search(
-                                            keyword = listOf(targetTrack.title, targetTrack.artists)
-                                                .filter { it.isNotBlank() }.joinToString(" "),
-                                            platform = flacPlatform,
-                                            cookie = cookie,
-                                            userAgent = fallbackUserAgent,
-                                        )
+                                    val matches = withTimeout(28_000L) {
+                                        withContext(Dispatchers.IO) {
+                                            flacProvider.search(
+                                                keyword = listOf(targetTrack.title, targetTrack.artists)
+                                                    .filter { it.isNotBlank() }.joinToString(" "),
+                                                platform = flacPlatform,
+                                                cookie = cookie,
+                                                userAgent = fallbackUserAgent,
+                                            )
+                                        }
                                     }.take(8)
                                     if (inputMode != modeAtRequest || previewCurrentTrack?.id != expectedTrackId ||
                                         previewCurrentPlaylistId != playlistIdAtRequest
@@ -1442,10 +1448,17 @@ private fun MusicMetaApp() {
                                         playPreview(matches.first())
                                     }
                                 } catch (error: Exception) {
-                                    if (inputMode == modeAtRequest && previewCurrentTrack?.id == expectedTrackId) {
+                                    // Always release the busy gate for this navigation when the
+                                    // active track is still ours. A stale request must not leave
+                                    // "下一首" locked forever after a page/context change.
+                                    if (previewCurrentTrack?.id == expectedTrackId &&
+                                        previewCurrentPlaylistId == playlistIdAtRequest
+                                    ) {
                                         isSearchingFlac = false
-                                        status = "查找下一首音源失败：" + (error.message?.takeIf { it.isNotBlank() } ?: "请重试")
-                                        captureError("上一首 / 下一首试听", error)
+                                        if (inputMode == modeAtRequest) {
+                                            status = "查找下一首音源失败：" + (error.message?.takeIf { it.isNotBlank() } ?: "请重试")
+                                            captureError("上一首 / 下一首试听", error)
+                                        }
                                     }
                                 }
                             }
@@ -1461,13 +1474,15 @@ private fun MusicMetaApp() {
                                 try {
                                     val batchOffset = (targetPosition / 100) * 100
                                     val batchLimit = minOf(100, currentPlaylist.totalTrackCount - batchOffset)
-                                    val loadedPage = withContext(Dispatchers.IO) {
-                                        playlistProvider.load(
-                                            input = playlistIdAtRequest.toString(),
-                                            likedByUserId = false,
-                                            offset = batchOffset,
-                                            limit = batchLimit.coerceAtLeast(1),
-                                        )
+                                    val loadedPage = withTimeout(28_000L) {
+                                        withContext(Dispatchers.IO) {
+                                            playlistProvider.load(
+                                                input = playlistIdAtRequest.toString(),
+                                                likedByUserId = false,
+                                                offset = batchOffset,
+                                                limit = batchLimit.coerceAtLeast(1),
+                                            )
+                                        }
                                     }
                                     if (inputMode != modeAtRequest || previewCurrentTrack?.id != expectedTrackId ||
                                         previewCurrentPlaylistId != playlistIdAtRequest
@@ -1522,7 +1537,7 @@ private fun MusicMetaApp() {
                     status = if (direction < 0) "已经是本地列表第一首。" else "已经是本地列表最后一首。"
                 }
             }
-            previewCurrentTrack != null && previewCurrentPlaylistId != null ->
+            previewCurrentTrack != null && previewCurrentPlaylistId != null && playlist?.id == previewCurrentPlaylistId ->
                 navigatePlaylistPreview(direction)
             else -> {
                 val queue = previewQueue
