@@ -251,7 +251,7 @@ class PublicPlaylistProvider {
             .host("music.163.com")
             .addPathSegments("api/v6/playlist/detail")
             .addQueryParameter("id", playlistId.toString())
-            .addQueryParameter("n", "1000")
+            .addQueryParameter("n", "1")
             .build()
 
         val json = JSONObject(get(detailUrl.toString(), "https://music.163.com/"))
