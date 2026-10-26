@@ -23,7 +23,7 @@ permissions:
 
 jobs:
   build:
-    if: github.event_name != 'push' || (!startsWith(github.event.head_commit.message, 'chore:') && !startsWith(github.event.head_commit.message, 'fix: correct milestone'))
+    if: ${{ github.event_name != 'push' || (!startsWith(github.event.head_commit.message, 'chore:') && !startsWith(github.event.head_commit.message, 'fix: correct milestone')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -204,7 +204,7 @@ jobs:
           done < <(gh release list --limit 1000 --json tagName --jq '.[].tagName')
 
   prune_releases:
-    if: github.ref == 'refs/heads/main'
+    if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
