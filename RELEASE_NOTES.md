@@ -8,6 +8,6 @@
 
 GD Studio API 文档要求注明出处“GD音乐台 (music.gdstudio.xyz)”，并声明 CC BY-NC 4.0 / 非商业使用限制。请遵守服务条款与适用版权规则。
 
-自动化验收包括 \`:app:testDebugUnitTest\`、\`:app:assembleRelease\`、APK 对齐、签名与包名检查。CI 成功不代表所有服务端音源均可用，也不代表已经完成真实设备的完整端到端测试。
+自动化验收包括 `:app:testDebugUnitTest`、`:app:assembleRelease`、APK 对齐、签名与包名检查。CI 成功不代表所有服务端音源均可用，也不代表已经完成真实设备的完整端到端测试。
 
 安装提醒：若本次 APK 的签名与已安装版本不同，Android 会拒绝覆盖安装；以该次 Actions 日志中的证书指纹为准。
