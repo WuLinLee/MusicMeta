@@ -132,7 +132,7 @@ internal object MusicMetaPersistence {
                 add(playlistTrackKey(playlistMode, playlistId, trackId))
             }
         }
-        val updated = (previousKeys + additions).filter(String::isNotBlank).distinct().takeLast(MAX_RECENT_TRACKS)
+        val updated = (previousKeys.filterNot { it in additions } + additions).filter(String::isNotBlank).distinct().takeLast(MAX_RECENT_TRACKS)
         val editor = preferences.edit().putString(
             RECENT_TRACK_KEYS,
             JSONArray().apply { updated.forEach { put(it) } }.toString(),
