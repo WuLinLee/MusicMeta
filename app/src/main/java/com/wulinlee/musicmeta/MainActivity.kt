@@ -251,6 +251,11 @@ private fun MusicMetaApp() {
         }
     }
     remember(folderPreferences) {
+        if (!folderPreferences.getBoolean("v1_21_overlay_default_migrated", false)) {
+            val editor = folderPreferences.edit().putBoolean("v1_21_overlay_default_migrated", true)
+            if (Settings.canDrawOverlays(context)) editor.putBoolean("floating_overlay_enabled", true)
+            editor.apply()
+        }
         if (!folderPreferences.getBoolean("v1_12_naming_default_migrated", false)) {
             val savedNamingFormat = folderPreferences.getString("naming_format", null)
             val editor = folderPreferences.edit()
@@ -277,19 +282,29 @@ private fun MusicMetaApp() {
         "local" -> localListState
         else -> publicListState
     }
-    var publicCurrentPage by remember { mutableStateOf(1) }
-    var likedCurrentPage by remember { mutableStateOf(1) }
-    var localCurrentPage by remember { mutableStateOf(1) }
+    var publicCurrentPage by remember { mutableStateOf(folderPreferences.getInt("public_current_page", 1).coerceAtLeast(1)) }
+    var likedCurrentPage by remember { mutableStateOf(folderPreferences.getInt("liked_current_page", 1).coerceAtLeast(1)) }
+    var localCurrentPage by remember { mutableStateOf(folderPreferences.getInt("local_current_page", 1).coerceAtLeast(1)) }
     val currentPage = when (inputMode) {
         "liked" -> likedCurrentPage
         "local" -> localCurrentPage
         else -> publicCurrentPage
     }
     val setCurrentPage: (Int) -> Unit = { value ->
+        val page = value.coerceAtLeast(1)
         when (inputMode) {
-            "liked" -> likedCurrentPage = value
-            "local" -> localCurrentPage = value
-            else -> publicCurrentPage = value
+            "liked" -> {
+                likedCurrentPage = page
+                folderPreferences.edit().putInt("liked_current_page", page).apply()
+            }
+            "local" -> {
+                localCurrentPage = page
+                folderPreferences.edit().putInt("local_current_page", page).apply()
+            }
+            else -> {
+                publicCurrentPage = page
+                folderPreferences.edit().putInt("public_current_page", page).apply()
+            }
         }
     }
     val savedPageSize = folderPreferences.getInt("songs_per_page", 25)
@@ -368,6 +383,7 @@ private fun MusicMetaApp() {
     var flacPlatform by remember { mutableStateOf(folderPreferences.getString("source_platform", "wyy") ?: "wyy") }
     var selectedQuality by remember { mutableStateOf(folderPreferences.getString("quality", "320k") ?: "320k") }
     var showDownloadSettings by remember { mutableStateOf(false) }
+    var showClearCacheConfirm by remember { mutableStateOf(false) }
     var namingFormat by remember { mutableStateOf(folderPreferences.getString("naming_format", "song_title") ?: "song_title") }
     var downloadLyrics by remember { mutableStateOf(folderPreferences.getBoolean("download_lyrics", false)) }
     var writeAudioTags by remember { mutableStateOf(folderPreferences.getBoolean("write_audio_tags", true)) }
@@ -386,7 +402,7 @@ private fun MusicMetaApp() {
     var isResolvingUrl by remember { mutableStateOf(false) }
     var isDownloading by remember { mutableStateOf(false) }
     var verificationOpen by remember { mutableStateOf(false) }
-    var floatingOverlayEnabled by remember { mutableStateOf(folderPreferences.getBoolean("floating_overlay_enabled", false)) }
+    var floatingOverlayEnabled by remember { mutableStateOf(folderPreferences.getBoolean("floating_overlay_enabled", Settings.canDrawOverlays(context))) }
     var floatingLyricsExpandedByDefault by remember {
         mutableStateOf(folderPreferences.getBoolean("floating_lyrics_expanded_by_default", true))
     }
@@ -400,6 +416,12 @@ private fun MusicMetaApp() {
         status = "播放模式：" + listOf("顺序播放", "乱序播放", "单曲循环")[playbackMode]
     }
     var localMusicTracks by remember { mutableStateOf<List<LocalAudioTrack>>(emptyList()) }
+    var isRestoringCaches by remember { mutableStateOf(true) }
+    var highlightedPlaylistMode by remember { mutableStateOf("") }
+    var highlightedPlaylistTrackId by remember { mutableStateOf<Long?>(null) }
+    var highlightedLocalTrackUri by remember { mutableStateOf("") }
+    var recentlyPlayedKeys by remember { mutableStateOf<List<String>>(emptyList()) }
+    var recentPlaylistPositions by remember { mutableStateOf<Map<String, List<Int>>>(emptyMap()) }
     var localMusicFilter by remember { mutableStateOf("") }
     var isScanningLocalMusic by remember { mutableStateOf(false) }
     var localMusicFolderUri by remember { mutableStateOf(folderPreferences.getString("local_music_tree_uri", null)?.let(Uri::parse)) }
@@ -423,6 +445,23 @@ private fun MusicMetaApp() {
     val playPreviewRef = remember { mutableStateOf<(FlacSiteSong) -> Unit>({}) }
     var previewPlaybackGeneration by remember { mutableStateOf(0L) }
 
+    LaunchedEffect(folderPreferences) {
+        try {
+            val restored = withContext(Dispatchers.IO) {
+                MusicMetaPersistence.loadCaches(context, folderPreferences)
+            }
+            publicPlaylist = restored.publicPlaylist
+            likedPlaylist = restored.likedPlaylist
+            pageCache = restored.pageCache
+            localMusicTracks = restored.localTracks
+        } catch (error: Exception) {
+            status = "恢复本地缓存失败：" + (error.message ?: "可重新同步歌单或扫描本地音乐")
+            captureError("恢复本地缓存", error)
+        } finally {
+            isRestoringCaches = false
+        }
+    }
+
     val localFolderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) runCatching {
             context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -435,10 +474,17 @@ private fun MusicMetaApp() {
             isScanningLocalMusic = true
             scope.launch {
                 try {
-                    localMusicTracks = LocalMusicScanner.scan(context, localMusicFolderUri)
-                     localCurrentPage = 1
-                     jumpPageInput = "1"
-                    status = "本地音乐扫描完成，共 ${localMusicTracks.size} 首。"
+                    val scannedTracks = withContext(Dispatchers.IO) {
+                        LocalMusicScanner.scan(context, localMusicFolderUri)
+                    }
+                    localMusicTracks = scannedTracks
+                    withContext(Dispatchers.IO) {
+                        MusicMetaPersistence.saveLocalTracks(context, scannedTracks)
+                    }
+                    localCurrentPage = 1
+                    folderPreferences.edit().putInt("local_current_page", 1).apply()
+                    jumpPageInput = "1"
+                    status = "本地音乐扫描完成，共 " + localMusicTracks.size + " 首；下次启动会自动恢复。"
                 } catch (error: Exception) {
                     status = "扫描本地音乐失败：" + (error.message ?: "请检查文件夹权限")
                     captureError("扫描本地音乐", error)
@@ -511,7 +557,7 @@ private fun MusicMetaApp() {
         } ?: "下载/-07-MusicMeta（默认）"
     }
 
-    val busy = isSyncing || isLoadingPage || isSearchingFlac || isResolvingUrl || isDownloading
+    val busy = isRestoringCaches || isSyncing || isLoadingPage || isSearchingFlac || isResolvingUrl || isDownloading
 
     val syncPlaylist: () -> Unit = {
         focusManager.clearFocus()
@@ -525,16 +571,20 @@ private fun MusicMetaApp() {
             status = "正在读取歌单信息……"
             scope.launch {
                 try {
+                    val syncMode = inputMode
                     val loaded = withTimeout(28_000L) {
-                        withContext(Dispatchers.IO) { playlistProvider.load(input, likedByUserId = inputMode == "liked", offset = 0, limit = 100) }
+                        withContext(Dispatchers.IO) { playlistProvider.load(input, likedByUserId = syncMode == "liked", offset = 0, limit = 100) }
                     }
-                    if (inputMode == "liked") likedPlaylist = loaded else publicPlaylist = loaded
+                    withContext(Dispatchers.IO) {
+                        MusicMetaPersistence.savePlaylist(folderPreferences, syncMode, loaded)
+                    }
+                    if (syncMode == "liked") likedPlaylist = loaded else publicPlaylist = loaded
                     selectedTrack = null
                     flacResults = emptyList()
                     setCurrentPage(1)
                     jumpPageInput = "1"
                     manualSourceSearchActive = false
-                    pageCache = emptyMap()
+                    pageCache = pageCache.filterKeys { !it.startsWith("$syncMode:") }
                     setFilterText("")
                     scope.launch { listState.scrollToItem(0) }
                     status = "已读取歌单信息，共 " + loaded.totalTrackCount + " 首。可调整每页数量或输入页码快速跳转。"
@@ -908,6 +958,12 @@ private fun MusicMetaApp() {
     }
     val playPreview: (FlacSiteSong) -> Unit = { song ->
         val songKey = sourceSongKey(song)
+        val recentPlaylistTrack = selectedTrack
+        val recentPlaylist = playlist.takeIf { recentPlaylistTrack != null }
+        val recentPlaylistMode = inputMode
+        val recentPlaylistPosition = if (recentPlaylist != null && recentPlaylistTrack != null) {
+            findPlaylistTrackPosition(recentPlaylistTrack.id, recentPlaylist, pageCache, recentPlaylistMode)
+        } else null
         if (previewSong?.let(sourceSongKey) == songKey && previewPlayer.value != null) {
             val player = previewPlayer.value
             if (player != null) {
@@ -1011,6 +1067,20 @@ private fun MusicMetaApp() {
                                         "正在通过 GD Studio 试听《" + song.title + "》。"
                                     } else {
                                         "正在播放《" + song.title + "》。"
+                                    }
+                                    recentlyPlayedKeys = rememberRecentTrackKeys(
+                                        previousKeys = recentlyPlayedKeys,
+                                        sourceKey = songKey,
+                                        playlistMode = recentPlaylistMode.takeIf { recentPlaylist != null && recentPlaylistTrack != null },
+                                        playlistId = recentPlaylist?.id,
+                                        trackId = recentPlaylistTrack?.id,
+                                    )
+                                    if (recentPlaylistMode.isNotBlank() && recentPlaylist != null && recentPlaylistPosition != null) {
+                                        val positionKey = "$recentPlaylistMode:${recentPlaylist.id}"
+                                        recentPlaylistPositions = recentPlaylistPositions.toMutableMap().apply {
+                                            val updated = (get(positionKey).orEmpty().filterNot { it == recentPlaylistPosition } + recentPlaylistPosition).takeLast(12)
+                                            put(positionKey, updated)
+                                        }
                                     }
                                 }
                                 .onFailure { error ->
@@ -1173,9 +1243,9 @@ private fun MusicMetaApp() {
                     runCatching { previewPlayer.value?.seekTo(target) }
                 }
                 FloatingMiniPlayerService.COMMAND_CLOSE -> {
+                    // Closing this floating session must not forget the user's overlay preference.
                     stopPreview()
-                    floatingOverlayEnabled = false
-                    folderPreferences.edit().putBoolean("floating_overlay_enabled", false).apply()
+                    FloatingMiniPlayerService.stop(context)
                 }
             }
         }
@@ -1242,8 +1312,8 @@ private fun MusicMetaApp() {
 
     LaunchedEffect(floatingOverlayEnabled) {
         if (floatingOverlayEnabled && !Settings.canDrawOverlays(context)) {
+            // Keep the preference: granting the permission again should restore the overlay.
             floatingOverlayEnabled = false
-            folderPreferences.edit().putBoolean("floating_overlay_enabled", false).apply()
         }
     }
     val playAdjacentPreview: (Int) -> Unit = { direction ->
@@ -1318,6 +1388,16 @@ private fun MusicMetaApp() {
     val pageCacheKey: (String, String, Int, Int) -> String = { mode, id, size, page ->
         "$mode:$id:$size:$page"
     }
+
+    LaunchedEffect(pageCache, isRestoringCaches) {
+        if (isRestoringCaches) return@LaunchedEffect
+        delay(350)
+        val snapshot = pageCache
+        withContext(Dispatchers.IO) {
+            MusicMetaPersistence.savePageCache(folderPreferences, snapshot)
+        }
+    }
+
     val knownTracks = playlist?.let { current ->
         val prefix = "$inputMode:${current.id}:"
         val cachedTracks = pageCache.entries
@@ -1346,6 +1426,8 @@ private fun MusicMetaApp() {
         pageSize,
         pageCache,
         playbackMode,
+        recentlyPlayedKeys,
+        recentPlaylistPositions,
         previewCurrentTrack?.id,
         previewCurrentPlaylistId,
         isSearchingFlac,
@@ -1391,8 +1473,31 @@ private fun MusicMetaApp() {
                     } else currentPlaylist.totalTrackCount
                     val targetPosition: Int? = when {
                         currentIndex == null -> null
-                        playbackMode == 1 && direction > 0 && navigationQueueSize > 1 ->
-                            (0 until navigationQueueSize).filter { it != currentIndex }.randomOrNull()
+                        playbackMode == 1 && direction > 0 && navigationQueueSize > 1 -> run {
+                            val playlistRecentPrefix = "playlist:$modeAtRequest:$playlistIdAtRequest:"
+                            val recentPlaylistKeys = recentlyPlayedKeys
+                                .filter { it.startsWith(playlistRecentPrefix) }
+                                .toSet()
+                            val recentPositions = if (filterText.isBlank()) {
+                                recentPlaylistPositions["$modeAtRequest:$playlistIdAtRequest"].orEmpty().toSet()
+                            } else emptySet()
+                            shuffleCandidatePositions(
+                                totalCount = navigationQueueSize,
+                                currentIndex = currentIndex ?: -1,
+                                recentPositions = recentPositions,
+                                recentTrackKeys = recentPlaylistKeys,
+                                trackKeyAt = { position ->
+                                    val candidate = if (filterText.isNotBlank()) {
+                                        filteredKnownTracks.getOrNull(position)
+                                    } else {
+                                        playlistTrackAtPosition(position, currentPlaylist, pageCache, modeAtRequest)
+                                    }
+                                    candidate?.let {
+                                        MusicMetaPersistence.playlistTrackKey(modeAtRequest, playlistIdAtRequest, it.id)
+                                    }
+                                },
+                            ).randomOrNull()
+                        }
                         else -> currentIndex + direction
                     }
                     if (targetPosition == null) {
@@ -1538,7 +1643,7 @@ private fun MusicMetaApp() {
                 val queue = previewQueue.filter { it.platform == "local" }
                 val currentIndex = queue.indexOfFirst { it.id == activeSong.id }
                 val next = if (playbackMode == 1 && direction > 0 && queue.size > 1) {
-                    queue.filterNot { it.id == activeSong.id }.randomOrNull()
+                    shuffleCandidates(queue, sourceSongKey(activeSong), recentlyPlayedKeys.toSet(), sourceSongKey).randomOrNull()
                 } else {
                     queue.getOrNull(currentIndex + direction)
                 }
@@ -1555,7 +1660,7 @@ private fun MusicMetaApp() {
                 val queue = previewQueue
                 val currentIndex = queue.indexOfFirst { sourceSongKey(it) == sourceSongKey(activeSong) }
                 val next = if (playbackMode == 1 && direction > 0 && queue.size > 1) {
-                    queue.filterNot { sourceSongKey(it) == sourceSongKey(activeSong) }.randomOrNull()
+                    shuffleCandidates(queue, sourceSongKey(activeSong), recentlyPlayedKeys.toSet(), sourceSongKey).randomOrNull()
                 } else queue.getOrNull(currentIndex + direction)
                 if (next != null) {
                     status = "正在切换音源队列：" + next.title
@@ -1676,6 +1781,7 @@ private fun MusicMetaApp() {
         pendingOpenRequest?.requestId,
         inputMode,
         localMusicTracks,
+        isRestoringCaches,
         localMusicFilter,
         publicPlaylist?.id,
         likedPlaylist?.id,
@@ -1686,6 +1792,7 @@ private fun MusicMetaApp() {
         busy,
     ) {
         val request = pendingOpenRequest ?: return@LaunchedEffect
+        if (isRestoringCaches) return@LaunchedEffect
         val targetMode = request.mode.takeIf { it in setOf("local", "playlist", "liked", "search") }
             ?: if (request.playlistId > 0L && likedPlaylist?.id == request.playlistId) "liked" else "playlist"
 
@@ -1697,6 +1804,7 @@ private fun MusicMetaApp() {
         }
 
         if (targetMode == "local") {
+            highlightedLocalTrackUri = request.trackId
             if (localMusicTracks.isEmpty()) {
                 if (!isScanningLocalMusic) scanLocalMusic()
                 return@LaunchedEffect
@@ -1714,6 +1822,7 @@ private fun MusicMetaApp() {
             manualSourceSearchActive = false
             val targetPage = targetIndex / pageSize + 1
             localCurrentPage = targetPage
+            folderPreferences.edit().putInt("local_current_page", targetPage).apply()
             jumpPageInput = targetPage.toString()
             selectedTrack = null
             flacResults = emptyList()
@@ -1762,6 +1871,10 @@ private fun MusicMetaApp() {
                 .minOrNull()
         }
         val targetIndex = if (baseIndex >= 0) baseIndex else cachedIndex
+        if (targetIndex != null && trackId != null) {
+            highlightedPlaylistMode = targetMode
+            highlightedPlaylistTrackId = trackId
+        }
         if (targetIndex == null) {
             status = "已打开应用，但当前已加载的歌单页中未找到《${request.title}》。"
             activity.clearOverlayOpenRequest(request.requestId)
@@ -1929,7 +2042,7 @@ private fun MusicMetaApp() {
                     IconButton(
                         onClick = { showDownloadSettings = true },
                         enabled = !busy,
-                        modifier = Modifier.size(38.dp).semantics { contentDescription = "下载设置" },
+                        modifier = Modifier.size(38.dp).semantics { contentDescription = "设置与维护" },
                     ) { SettingsGlyph() }
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
@@ -2348,31 +2461,60 @@ private fun MusicMetaApp() {
             if (inputMode == "local") {
                 item(key = "local-controls") {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedTextField(value = localMusicFilter, onValueChange = { localMusicFilter = it; localCurrentPage = 1; jumpPageInput = "1" }, modifier = Modifier.weight(1f), singleLine = true, label = { Text("搜索本地歌曲") })
-                        OutlinedButton(onClick = scanLocalMusic, enabled = !isScanningLocalMusic) { Text(if (isScanningLocalMusic) "扫描中" else "扫描") }
+                        OutlinedTextField(value = localMusicFilter, onValueChange = { localMusicFilter = it; setCurrentPage(1); jumpPageInput = "1" }, modifier = Modifier.weight(1f), singleLine = true, label = { Text("搜索本地歌曲") })
+                        OutlinedButton(onClick = scanLocalMusic, enabled = !isRestoringCaches && !isScanningLocalMusic) {
+                            Text(if (isRestoringCaches) "恢复中" else if (isScanningLocalMusic) "扫描中" else "扫描")
+                        }
                     }
                 }
                 val localVisible = filteredLocalMusicTracks
                 val localPageSongs = localVisible.drop((currentPage - 1) * pageSize).take(pageSize)
-                if (localVisible.isEmpty()) item(key = "local-empty") { Text(if (isScanningLocalMusic) "正在扫描本地音乐…" else "没有找到歌曲。首次使用请点击扫描，或在下载设置中选择本地音乐文件夹。", color = SubInk, modifier = Modifier.fillMaxWidth().padding(16.dp)) }
+                if (localVisible.isEmpty()) item(key = "local-empty") {
+                    Text(
+                        when {
+                            isRestoringCaches -> "正在恢复上次的本地曲库…"
+                            isScanningLocalMusic -> "正在扫描本地音乐…"
+                            else -> "没有找到歌曲。首次使用请点击扫描，或在设置中选择本地音乐文件夹。"
+                        },
+                        color = SubInk,
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    )
+                }
                 items(localPageSongs, key = { "local-" + it.uri }) { track ->
-                    Card(Modifier.fillMaxWidth().pointerInput(track.uri) {
-                        detectTapGestures(
-                            onTap = {
-                                val song = FlacSiteSong(track.uri.toString(), "local", track.title, track.artist, track.album, "", track.durationMs.toString(), track.coverUri)
-                                previewQueue = localVisible.map { FlacSiteSong(it.uri.toString(), "local", it.title, it.artist, it.album, "", it.durationMs.toString(), it.coverUri) }
-                                previewCurrentTrack = null
-                                previewCurrentPlaylistId = null
-                                selectedTrack = null
-                                playPreview(song)
+                    val isActuallyPlaying = previewSong?.platform == "local" &&
+                        previewSong?.id == track.uri.toString() && isPreviewPlaying
+                    val isLocalHighlight = highlightedLocalTrackUri == track.uri.toString() ||
+                        (previewSong?.platform == "local" && previewSong?.id == track.uri.toString())
+                    val rowShape = RoundedCornerShape(18.dp)
+                    Card(
+                        Modifier.fillMaxWidth()
+                            .then(if (isLocalHighlight) Modifier.border(1.5.dp, Accent, rowShape) else Modifier)
+                            .pointerInput(track.uri) {
+                                detectTapGestures(
+                                    onTap = {
+                                        val song = FlacSiteSong(track.uri.toString(), "local", track.title, track.artist, track.album, "", track.durationMs.toString(), track.coverUri)
+                                        highlightedLocalTrackUri = track.uri.toString()
+                                        previewQueue = localVisible.map { FlacSiteSong(it.uri.toString(), "local", it.title, it.artist, it.album, "", it.durationMs.toString(), it.coverUri) }
+                                        previewCurrentTrack = null
+                                        previewCurrentPlaylistId = null
+                                        selectedTrack = null
+                                        playPreview(song)
+                                    },
+                                    onLongPress = { copySongAndArtist(track.title, track.artist) },
+                                )
                             },
-                            onLongPress = { copySongAndArtist(track.title, track.artist) },
-                        )
-                    }, colors = CardDefaults.cardColors(containerColor = SurfaceColor)) {
+                        shape = rowShape,
+                        colors = CardDefaults.cardColors(containerColor = if (isLocalHighlight) SoftAccent else SurfaceColor),
+                    ) {
                         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             AsyncImage(model = track.coverUri.takeIf { it.isNotBlank() }, contentDescription = null, modifier = Modifier.size(46.dp).clip(RoundedCornerShape(10.dp)))
-                            Column(Modifier.weight(1f)) { Text(track.title, color = Ink, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(track.artist, color = SubInk, fontSize = 12.sp, maxLines = 1); if (track.album.isNotBlank()) Text(track.album, color = SubInk, fontSize = 10.sp, maxLines = 1) }
-                            Text("▶", color = Accent)
+                            Column(Modifier.weight(1f)) {
+                                Text(track.title, color = Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(track.artist, color = SubInk, fontSize = 12.sp, maxLines = 1)
+                                if (track.album.isNotBlank()) Text(track.album, color = SubInk, fontSize = 10.sp, maxLines = 1)
+                                if (isLocalHighlight) Text(if (isActuallyPlaying) "正在播放" else "已定位", color = Accent, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                            Text(if (isActuallyPlaying) "♫" else "▶", color = Accent)
                         }
                     }
                 }
@@ -2528,12 +2670,22 @@ private fun MusicMetaApp() {
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
+                        val isActuallyPlaying = isPreviewPlaying &&
+                            previewCurrentPlaylistId == currentPlaylist.id &&
+                            previewCurrentTrack?.id == track.id
+                        val isLocated = highlightedPlaylistMode == inputMode && highlightedPlaylistTrackId == track.id
+                        val rowHighlightLabel = when {
+                            isActuallyPlaying -> "正在播放"
+                            isLocated -> "已定位"
+                            else -> null
+                        }
                         TrackRow(
                             track = track,
                             busy = busy,
                             onFindSource = { searchTrackSource(track, false) },
                             onFindAndPlay = { searchTrackSource(track, true) },
                             onCopy = { copySongAndArtist(track.title, track.artists) },
+                            highlightLabel = rowHighlightLabel,
                         )
                         if (selectedTrack?.id == track.id) {
                     when {
@@ -3049,7 +3201,7 @@ private fun MusicMetaApp() {
     if (showDownloadSettings) {
         AlertDialog(
             onDismissRequest = { showDownloadSettings = false },
-            title = { Text("下载设置", fontWeight = FontWeight.SemiBold) },
+            title = { Text("设置与维护", fontWeight = FontWeight.SemiBold) },
             text = {
                 Column(
                     modifier = Modifier.fillMaxWidth().heightIn(max = 570.dp).verticalScroll(rememberScrollState()),
@@ -3129,6 +3281,16 @@ private fun MusicMetaApp() {
                             Text(label, color = Ink, fontSize = 13.sp)
                         }
                     }
+                    Text("缓存与维护", fontWeight = FontWeight.SemiBold, color = Ink)
+                    OutlinedButton(
+                        onClick = { showClearCacheConfirm = true },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("一键清除临时缓存") }
+                    Text(
+                        "只清理临时文件与图片缓存；不会删除已下载歌曲、已保存歌单、本地扫描结果或设置。",
+                        color = SubInk,
+                        fontSize = 11.sp,
+                    )
                     Text("下载文件夹规则", fontWeight = FontWeight.SemiBold, color = Ink)
                     listOf(
                         "none" to "不使用",
@@ -3204,6 +3366,32 @@ private fun MusicMetaApp() {
                 TextButton(onClick = { showDownloadSettings = false }) {
                     Text("完成", color = Accent)
                 }
+            },
+            containerColor = SurfaceColor,
+        )
+    }
+
+    if (showClearCacheConfirm) {
+        AlertDialog(
+            onDismissRequest = { showClearCacheConfirm = false },
+            title = { Text("清除临时缓存？", fontWeight = FontWeight.SemiBold) },
+            text = { Text("将清理图片和临时缓存文件，不会删除歌曲文件、已保存歌单、本地曲库缓存或下载设置。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showClearCacheConfirm = false
+                        scope.launch {
+                            val clearedBytes = withContext(Dispatchers.IO) {
+                                MusicMetaPersistence.clearTemporaryCache(context)
+                            }
+                            status = "临时缓存已清理，释放约 " + (clearedBytes / 1024) + " KB。"
+                            Toast.makeText(context, "临时缓存已清理", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                ) { Text("清除缓存", color = Accent) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearCacheConfirm = false }) { Text("取消", color = SubInk) }
             },
             containerColor = SurfaceColor,
         )
@@ -3809,13 +3997,17 @@ private fun TrackRow(
     onFindSource: () -> Unit,
     onFindAndPlay: () -> Unit,
     onCopy: () -> Unit,
+    highlightLabel: String? = null,
 ) {
+    val rowShape = RoundedCornerShape(18.dp)
     Surface(
-        modifier = Modifier.fillMaxWidth().pointerInput(track.id) {
-            detectTapGestures(onLongPress = { onCopy() })
-        },
-        shape = RoundedCornerShape(18.dp),
-        color = SurfaceColor,
+        modifier = Modifier.fillMaxWidth()
+            .then(if (highlightLabel != null) Modifier.border(1.5.dp, Accent, rowShape) else Modifier)
+            .pointerInput(track.id) {
+                detectTapGestures(onLongPress = { onCopy() })
+            },
+        shape = rowShape,
+        color = if (highlightLabel != null) SoftAccent else SurfaceColor,
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 10.dp),
@@ -3846,6 +4038,9 @@ private fun TrackRow(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
+                if (highlightLabel != null) {
+                    Text(highlightLabel, color = Accent, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                }
             }
             OutlinedButton(
                 onClick = onFindSource,
