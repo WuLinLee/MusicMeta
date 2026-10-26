@@ -14,6 +14,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.util.DisplayMetrics
+import android.view.Choreographer
 import android.view.Gravity
 import android.view.WindowManager
 import androidx.compose.foundation.Canvas
@@ -56,7 +57,9 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.positionChangeIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -87,9 +90,12 @@ internal fun Modifier.overlayDragGesture(
     key: Any? = Unit,
     onDrag: (Float, Float) -> Unit,
     onCircularDrag: () -> Unit,
+    onDragEnd: () -> Unit = {},
 ): Modifier = pointerInput(key) {
     val touchSlop = viewConfiguration.touchSlop
-    val minimumCircularDistance = 160.dp.toPx()
+    // Require three complete turns and meaningful movement to reduce accidental activation.
+    val minimumCircularDistance = 360.dp.toPx()
+    val requiredCircularRotation = 6f * 3.14159265f
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
         val pointerId = down.id
@@ -100,53 +106,57 @@ internal fun Modifier.overlayDragGesture(
         var totalX = 0f
         var totalY = 0f
         var triggered = false
-        while (true) {
-            val event = awaitPointerEvent(PointerEventPass.Initial)
-            val change = event.changes.firstOrNull { it.id == pointerId } ?: break
-            if (!change.pressed) break
+        try {
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Initial)
+                val change = event.changes.firstOrNull { it.id == pointerId } ?: break
+                if (!change.pressed) break
 
-            // This delta follows the pointer's movement instead of deriving it from two
-            // absolute local coordinates. That matters while WindowManager moves the same
-            // window underneath the finger during a drag.
-            val movement = change.positionChangeIgnoreConsumed()
-            val dx = movement.x
-            val dy = movement.y
-            if (!dragged) {
-                totalX += dx
-                totalY += dy
-                val totalFromStart = sqrt(totalX * totalX + totalY * totalY)
-                if (totalFromStart > touchSlop) {
-                    dragged = true
-                    totalDistance = totalFromStart
-                    // Start counting turns only from observed movement directions.
-                    previousAngle = Float.NaN
-                    onDrag(totalX, totalY)
-                    change.consume()
-                }
-            } else {
-                val distance = sqrt(dx * dx + dy * dy)
-                totalDistance += distance
-                if (distance >= 2f) {
-                    val angle = atan2(dy, dx)
-                    if (previousAngle.isFinite()) {
-                        var deltaAngle = angle - previousAngle
-                        if (deltaAngle > 3.14159265f) deltaAngle -= 6.2831853f
-                        if (deltaAngle < -3.14159265f) deltaAngle += 6.2831853f
-                        accumulatedRotation += deltaAngle
+                // Use movement deltas rather than absolute local positions: the WindowManager
+                // window can move underneath the finger while the gesture is being processed.
+                val movement = change.positionChangeIgnoreConsumed()
+                val dx = movement.x
+                val dy = movement.y
+                if (!dragged) {
+                    totalX += dx
+                    totalY += dy
+                    val totalFromStart = sqrt(totalX * totalX + totalY * totalY)
+                    if (totalFromStart > touchSlop) {
+                        dragged = true
+                        totalDistance = totalFromStart
+                        previousAngle = Float.NaN
+                        onDrag(totalX, totalY)
+                        change.consume()
                     }
-                    previousAngle = angle
-                }
-                onDrag(dx, dy)
-                change.consume()
-                if (!triggered && totalDistance >= minimumCircularDistance && abs(accumulatedRotation) >= 5.4f) {
-                    triggered = true
-                    onCircularDrag()
+                } else {
+                    val distance = sqrt(dx * dx + dy * dy)
+                    totalDistance += distance
+                    if (distance >= 2f) {
+                        val angle = atan2(dy, dx)
+                        if (previousAngle.isFinite()) {
+                            var deltaAngle = angle - previousAngle
+                            if (deltaAngle > 3.14159265f) deltaAngle -= 6.2831853f
+                            if (deltaAngle < -3.14159265f) deltaAngle += 6.2831853f
+                            accumulatedRotation += deltaAngle
+                        }
+                        previousAngle = angle
+                    }
+                    onDrag(dx, dy)
+                    change.consume()
+                    if (!triggered &&
+                        totalDistance >= minimumCircularDistance &&
+                        abs(accumulatedRotation) >= requiredCircularRotation
+                    ) {
+                        triggered = true
+                        onCircularDrag()
+                    }
                 }
             }
+        } finally {
+            if (dragged) onDragEnd()
         }
     }
 }
-
 private class FloatingOverlayViewTreeOwner : LifecycleOwner, SavedStateRegistryOwner {
     private val lifecycleRegistry = LifecycleRegistry(this)
     private val savedStateController = SavedStateRegistryController.create(this)
@@ -306,7 +316,19 @@ class FloatingMiniPlayerService : LifecycleService() {
     private var displayWidth = 0
     private var displayHeight = 0
     private var density = 1f
+    private var positionUpdateScheduled = false
+    private var dragRemainderX = 0f
+    private var dragRemainderY = 0f
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val positionFrameCallback = Choreographer.FrameCallback {
+        positionUpdateScheduled = false
+        updateWindowPositions()
+    }
+    private fun scheduleWindowPositionUpdate() {
+        if (positionUpdateScheduled) return
+        positionUpdateScheduled = true
+        Choreographer.getInstance().postFrameCallback(positionFrameCallback)
+    }
     private val progressTicker = object : Runnable {
         override fun run() {
             if (!Settings.canDrawOverlays(this@FloatingMiniPlayerService)) {
@@ -365,6 +387,10 @@ class FloatingMiniPlayerService : LifecycleService() {
 
     override fun onDestroy() {
         mainHandler.removeCallbacks(progressTicker)
+        if (positionUpdateScheduled) {
+            Choreographer.getInstance().removeFrameCallback(positionFrameCallback)
+            positionUpdateScheduled = false
+        }
         removeOverlayViews()
         stopForeground(STOP_FOREGROUND_REMOVE)
         overlayViewTreeOwner.destroy()
@@ -501,12 +527,24 @@ class FloatingMiniPlayerService : LifecycleService() {
     }
 
     private fun moveBy(dx: Float, dy: Float) {
-        updateDisplaySize()
-        coverX += dx.roundToInt()
-        coverY += dy.roundToInt()
+        // Keep fractional pixels across input samples; rounding every sample discarded tiny
+        // movements and made the cross-app overlay feel slightly sticky.
+        val minX = if (expanded) lyricsWidthPx() + dp(14) else dp(8)
+        val maxX = (displayWidth - dp(8) - dp(64)).coerceAtLeast(minX)
+        val nextX = (coverX + dragRemainderX + dx).coerceIn(minX.toFloat(), maxX.toFloat())
+        coverX = nextX.roundToInt()
+        dragRemainderX = nextX - coverX
+
+        val minY = dp(24)
+        val maxY = (displayHeight - dp(106)).coerceAtLeast(minY)
+        val nextY = (coverY + dragRemainderY + dy).coerceIn(minY.toFloat(), maxY.toFloat())
+        coverY = nextY.roundToInt()
+        dragRemainderY = nextY - coverY
+
         clampPosition()
-        savePosition()
-        updateWindowPositions()
+        // WindowManager updates and preference writes are expensive on some devices. Batch
+        // layout updates by display frame and save only when the pointer gesture ends.
+        scheduleWindowPositionUpdate()
     }
 
     private fun createLayoutParams(width: Int, height: Int, x: Int, y: Int): WindowManager.LayoutParams =
@@ -549,6 +587,11 @@ class FloatingMiniPlayerService : LifecycleService() {
                     playbackMode = playbackMode,
                     onOpenApp = { openAppAndLocateSong() },
                     onDrag = { dx, dy -> moveBy(dx, dy) },
+                    onDragEnd = {
+                        dragRemainderX = 0f
+                        dragRemainderY = 0f
+                        savePosition()
+                    },
                     originalLyrics = originalLyrics,
                     translatedLyrics = translatedLyrics,
                     showTranslation = showTranslation,
@@ -650,7 +693,13 @@ private fun OverlayPlayerUi(
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     onCircularDrag: () -> Unit,
+    onDragEnd: () -> Unit,
 ) {
+    val haptics = LocalHapticFeedback.current
+    val handleLongPress = {
+        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        onLongPress()
+    }
     val lyricsWidth = lyricsWidthDp.dp
     Box(
         modifier = Modifier
@@ -670,6 +719,8 @@ private fun OverlayPlayerUi(
                 onNext = onNext,
                 onDrag = onDrag,
                 onCircularDrag = onCircularDrag,
+                onLongPress = handleLongPress,
+                onDragEnd = onDragEnd,
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(top = 2.dp)
@@ -684,7 +735,7 @@ private fun OverlayPlayerUi(
             positionMs = positionMs,
             durationMs = durationMs,
             onTogglePlay = onTogglePlay,
-            onLongPress = onLongPress,
+            onLongPress = handleLongPress,
             onClose = onClose,
             onTogglePlaybackMode = onTogglePlaybackMode,
             playbackMode = playbackMode,
@@ -725,6 +776,7 @@ private fun OverlayCoverUi(
                 .overlayDragGesture(
                     onDrag = onDrag,
                     onCircularDrag = onOpenApp,
+                    onDragEnd = onDragEnd,
                 )
                 .pointerInput(Unit) {
                     detectTapGestures(
@@ -812,6 +864,8 @@ private fun OverlayLyricsUi(
     onNext: () -> Unit,
     onDrag: (Float, Float) -> Unit,
     onCircularDrag: () -> Unit,
+    onLongPress: () -> Unit,
+    onDragEnd: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val activeText = if (showTranslation && translatedLyrics.isNotBlank()) translatedLyrics else originalLyrics
@@ -824,6 +878,7 @@ private fun OverlayLyricsUi(
         modifier = modifier.fillMaxSize().overlayDragGesture(
             onDrag = onDrag,
             onCircularDrag = onCircularDrag,
+            onDragEnd = onDragEnd,
         ),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF17211F)),
@@ -849,7 +904,12 @@ private fun OverlayLyricsUi(
                     modifier = Modifier.weight(1f).fillMaxSize()
                         .clip(RoundedCornerShape(9.dp))
                         .background(Color(0xFF243631))
-                        .clickable { onToggleTranslation() }
+                        .pointerInput(Unit) {
+                            detectTapGestures(
+                                onTap = { onToggleTranslation() },
+                                onLongPress = { onLongPress() },
+                            )
+                        }
                         .padding(horizontal = 5.dp, vertical = 2.dp)
                         .semantics {
                             contentDescription = if (translatedLyrics.isBlank()) {

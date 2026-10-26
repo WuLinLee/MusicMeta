@@ -2,12 +2,12 @@
 
 MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 Android 应用：读取可公开访问的网易云歌单，搜索并核对音源，下载音频，并尽可能补齐封面、歌词和音频标签。
 
-> **当前开发版本：1.19** · `versionCode = 23`  
+> **当前开发版本：1.20** · `versionCode = 24`  
 > 应用 ID：`com.wulinlee.musicmeta` · 最低 Android：10（API 29）· 目标 SDK：35  
 > 技术栈：Kotlin、Jetpack Compose、Material 3、Coroutines、OkHttp、Coil、jaudiotagger。
 
 - **正式版发布页：** [GitHub Releases](https://github.com/WuLinLee/MusicMeta/releases)
-- **v1.19 APK 直链：** [MusicMeta-v1.19.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.19/MusicMeta-v1.19.apk)
+- **v1.20 APK 直链：** [MusicMeta-v1.20.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.20/MusicMeta-v1.20.apk)
 - **构建记录：** [GitHub Actions](https://github.com/WuLinLee/MusicMeta/actions)
 
 下载链接只有在对应 Release 资产创建成功后才可用。版本号、Git 标签、Actions 构建结果和 Release 附件是不同的事实；请以对应提交的成功构建结果和实际资产为准，不要仅凭本文件中的版本号判断已发布。
@@ -50,11 +50,15 @@ MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 A
 
 ## 悬浮迷你播放器
 
-### v1.19 的窗口与拖动优化
+### v1.20 的交互与流畅度优化
 
-v1.19 将封面和左侧歌词栏放进**同一个 ComposeView / WindowManager 窗口**，展开 / 收起和拖动时统一更新窗口位置与尺寸，避免之前两个独立系统窗口分别更新时产生短暂错位。拖动手势使用 `PointerInputChange.positionChangeIgnoreConsumed()` 获取移动增量，减少窗口跟随触点移动时局部坐标变化对轨迹的干扰。
+- 封面与歌词栏仍使用同一个 `ComposeView / WindowManager` 窗口，统一移动与展开尺寸。
+- 拖动更新合并到每个屏幕帧，避免每个触摸采样都单独触发 WindowManager 布局；拖动坐标保留小数余量，降低小幅移动被四舍五入吞掉的感觉。
+- 悬浮位置只在拖动结束后保存，不再在手指每次移动时写入偏好设置，减少跨应用拖动的额外开销。
+- 长按封面或歌词正文均可展开 / 收起歌词栏，并提供触觉反馈；歌词正文短按仍用于切换原文 / 可用译文。
+- 画圈打开应用改为累计完成三整圈（约 1080°）且总移动轨迹至少约 360 dp 后触发，以减少误触。实际识别仍受设备触控采样和系统行为影响。
 
-歌词文字、语言和播放状态更新通过 Compose 状态驱动；播放位置以 Activity 的播放器进度为唯一来源，悬浮服务不再自行递增另一条时间轴。以上调整旨在降低窗口跳动与歌词闪动的风险，**不等于已经在所有 Android 设备上完成实机验证**。
+播放进度仍由 Activity 提供唯一时间轴，悬浮服务不独立递增播放位置。上述调整旨在改善手感和降低错位风险，**不代表已经在所有 Android 设备上完成实机验收**。
 
 ### 手势
 
@@ -158,16 +162,16 @@ CI 会另外执行 APK 对齐、签名、签名证书验证和包名检查。构
 ## 版本与签名
 
 - 当前版本名：`1.19`
-- 当前版本号：`versionCode = 23`
+- 当前版本号：`versionCode = 24`
 - Gradle 版本元数据位于 `app/build.gradle.kts`；用户可见变更记录位于 `RELEASE_NOTES.md`。
 
 GitHub Actions 工作流会设置 JDK 17 和 Gradle 8.9，检查资源后运行 JVM 单元测试、构建 Release、对 APK 执行 zipalign / 签名 / 校验，再上传 APK 并创建 Release。常规 `main` push 会创建预览发布；提交信息以 `release:` 开头时走正式发布逻辑。已有同名 Release 默认不会覆盖，只有明确的 `release: refresh v...` 提交才允许刷新现有版本。
 
 正式发布前应检查：
-- `main` 最新 commit 与 `v1.19` 标签指向一致；
+- `main` 最新 commit 与 `v1.20` 标签指向一致；
 - 对应 Actions run 为 `completed / success`；
 - Release 不是草稿或预发布；
-- `MusicMeta-v1.19.apk` 资产已上传，签名及 package metadata 检查通过。
+- `MusicMeta-v1.20.apk` 资产已上传，签名及 package metadata 检查通过。
 
 ### APK 签名注意事项
 
