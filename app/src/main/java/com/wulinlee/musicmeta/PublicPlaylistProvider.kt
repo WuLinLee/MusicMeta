@@ -12,14 +12,8 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /**
- * Public playlist resolver.
- *
- * GD Studio's web client uses:
- *   GET https://music-api.gdstudio.xyz/api.php?types=playlist&source=netease&id=<playlistId>
- *
- * The official site's public read-only playlist endpoint is tried first. If it is
- * unavailable or returns incomplete tracks, fall back to NetEase's read-only
- * playlist/detail + POST song/detail endpoints.
+ * Public playlist resolver using NetEase's public read-only playlist/detail and batch song/detail endpoints.
+ * GD Studio's published API documentation does not specify a playlist endpoint, so this adapter does not call one.
  */
 class PublicPlaylistProvider {
     private val client = OkHttpClient.Builder()
@@ -38,23 +32,7 @@ class PublicPlaylistProvider {
         val suppliedId = parsePlaylistId(input)
         val playlistId = if (likedByUserId) findLikedPlaylistId(suppliedId) else suppliedId
 
-        try {
-            return@withContext loadFromNetease(playlistId, offset, limit)
-        } catch (neteaseError: Exception) {
-            try {
-                return@withContext loadFromGdStudio(playlistId, offset, limit)
-            } catch (gdError: Exception) {
-                val neteaseMessage = neteaseError.message?.takeIf { it.isNotBlank() }
-                val gdMessage = gdError.message?.takeIf { it.isNotBlank() }
-                throw IOException(
-                    "读取歌单第 " + (offset + 1) + " 批失败" +
-                        (if (neteaseMessage != null) "（网易云：" + neteaseMessage + "）" else "") +
-                        (if (gdMessage != null) "（GD Studio：" + gdMessage + "）" else "") +
-                        "。请检查网络后重试；已加载的歌曲会保留。",
-                    neteaseError,
-                )
-            }
-        }
+        return@withContext loadFromNetease(playlistId, offset, limit)
     }
 
     private fun findLikedPlaylistId(userId: Long): Long {
@@ -81,86 +59,6 @@ class PublicPlaylistProvider {
         val id = liked?.optLong("id", 0L)?.takeIf { it > 0L }
         return id ?: throw IOException(
             "没有找到这个用户的“我喜欢的音乐”歌单。请检查用户 ID；如果红心歌单是私密的，可能需要先授权网易云账号。"
-        )
-    }
-
-    private fun loadFromGdStudio(playlistId: Long, offset: Int, limit: Int): PublicPlaylist {
-        val url = HttpUrl.Builder()
-            .scheme("https")
-            .host("music-api.gdstudio.xyz")
-            .addPathSegments("api.php")
-            .addQueryParameter("types", "playlist")
-            .addQueryParameter("source", "netease")
-            .addQueryParameter("id", playlistId.toString())
-            .build()
-
-        val root = JSONObject(get(url.toString(), "https://music.gdstudio.xyz/"))
-        if (root.has("code") && root.optInt("code") != 200) {
-            throw IOException(
-                "GD Studio 返回代码 " + root.optInt("code") + "：" +
-                    root.optString("msg").ifBlank { "接口暂不可用" }
-            )
-        }
-
-        val playlist = root.optJSONObject("playlist")
-            ?: root.optJSONObject("data")?.optJSONObject("playlist")
-            ?: root.optJSONObject("data")
-            ?: throw IOException("GD Studio 返回中没有 playlist 数据。")
-        val trackArray = playlist.optJSONArray("tracks")
-            ?: root.optJSONArray("tracks")
-            ?: JSONArray()
-        val expectedCount = playlist.optInt(
-            "trackCount",
-            playlist.optInt("track_count", trackArray.length()),
-        )
-        val totalCount = maxOf(expectedCount, trackArray.length())
-        if (trackArray.length() == 0) throw IOException("GD Studio 没有返回歌单曲目。")
-        if (offset >= trackArray.length()) {
-            val creatorValue = playlist.opt("creator")
-            val creator = when (creatorValue) {
-                is JSONObject -> creatorValue.optString("nickname").ifBlank { creatorValue.optString("name") }
-                is String -> creatorValue
-                else -> ""
-            }
-            return PublicPlaylist(
-                id = playlist.optLong("id", playlistId).takeIf { it > 0L } ?: playlistId,
-                name = playlist.optString("name").ifBlank { "网易云歌单 " + playlistId },
-                creator = creator,
-                coverUrl = normalizeCoverUrl(
-                    playlist.optString("coverImgUrl").ifBlank { playlist.optString("picUrl") }.ifBlank { playlist.optString("cover") }
-                ),
-                tracks = emptyList(),
-                totalTrackCount = totalCount,
-                nextOffset = totalCount,
-            )
-        }
-        val end = minOf(offset + limit, trackArray.length())
-        val parsed = (offset until end).mapNotNull { index ->
-            parseGdStudioTrack(trackArray.optJSONObject(index))
-        }
-        if (parsed.isEmpty()) throw IOException("GD Studio 没有返回这一批可用曲目。")
-        val tracks = enrichMissingCovers(parsed)
-
-        val creatorValue = playlist.opt("creator")
-        val creator = when (creatorValue) {
-            is JSONObject -> creatorValue.optString("nickname").ifBlank { creatorValue.optString("name") }
-            is String -> creatorValue
-            else -> ""
-        }
-        val cover = normalizeCoverUrl(
-            playlist.optString("coverImgUrl")
-                .ifBlank { playlist.optString("picUrl") }
-                .ifBlank { playlist.optString("cover") }
-        )
-
-        return PublicPlaylist(
-            id = playlist.optLong("id", playlistId).takeIf { it > 0L } ?: playlistId,
-            name = playlist.optString("name").ifBlank { "网易云歌单 " + playlistId },
-            creator = creator,
-            coverUrl = cover,
-            tracks = tracks.distinctBy { it.id },
-            totalTrackCount = totalCount,
-            nextOffset = minOf(end, totalCount),
         )
     }
 
