@@ -27,6 +27,13 @@ class MusicSourceConfigTest {
     }
 
     @Test
+    fun rateLimitExceptionProvidesRecoverableDelay() {
+        val error = GdStudioRateLimitException(22_001L)
+        assertEquals(23L, error.retryAfterSeconds)
+        assertTrue(error.message.orEmpty().contains("当前试听不会被停止"))
+    }
+
+    @Test
     fun pageSizesReuseSameHundredTrackBatch() {
         val firstBatch = "playlist:123:100:1"
         assertEquals(firstBatch, playlistBatchCacheKey("playlist", "123", 25, 1))
