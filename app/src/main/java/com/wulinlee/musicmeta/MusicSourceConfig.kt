@@ -127,7 +127,7 @@ internal object GdStudioRequestLimiter {
         preferences?.edit()?.putString(TIMESTAMPS_KEY, requestTimes.joinToString(","))?.apply()
     }
 }
-/** Shared expiring GET-response cache for GD Studio API calls. */
+/** Formats a sanitized explanation for non-successful GD Studio HTTP responses. */
 internal fun formatGdStudioHttpErrorMessage(statusCode: Int, responseBody: String): String {
     val prefix = "GD Studio API 请求失败：HTTP $statusCode"
     val body = responseBody.trim()
@@ -152,6 +152,7 @@ internal fun formatGdStudioHttpErrorMessage(statusCode: Int, responseBody: Strin
 }
 
 
+/** Shared expiring GET-response cache for GD Studio API calls. */
 internal object GdStudioApiSupport {
     const val SEARCH_TTL_MILLIS = 5 * 60 * 1000L
     const val DOWNLOAD_URL_TTL_MILLIS = 15 * 1000L
