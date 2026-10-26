@@ -462,10 +462,15 @@ private fun MusicMetaApp() {
             isScanningLocalMusic = true
             scope.launch {
                 try {
-                    localMusicTracks = LocalMusicScanner.scan(context, localMusicFolderUri)
-                     localCurrentPage = 1
-                     jumpPageInput = "1"
-                    status = "本地音乐扫描完成，共 ${localMusicTracks.size} 首。"
+                    val scannedTracks = LocalMusicScanner.scan(context, localMusicFolderUri)
+                    localMusicTracks = scannedTracks
+                    withContext(Dispatchers.IO) {
+                        MusicMetaPersistence.saveLocalTracks(context, scannedTracks)
+                    }
+                    localCurrentPage = 1
+                    folderPreferences.edit().putInt("local_current_page", 1).apply()
+                    jumpPageInput = "1"
+                    status = "本地音乐扫描完成，共 " + localMusicTracks.size + " 首；下次启动会自动恢复。"
                 } catch (error: Exception) {
                     status = "扫描本地音乐失败：" + (error.message ?: "请检查文件夹权限")
                     captureError("扫描本地音乐", error)
@@ -552,16 +557,20 @@ private fun MusicMetaApp() {
             status = "正在读取歌单信息……"
             scope.launch {
                 try {
+                    val syncMode = inputMode
                     val loaded = withTimeout(28_000L) {
-                        withContext(Dispatchers.IO) { playlistProvider.load(input, likedByUserId = inputMode == "liked", offset = 0, limit = 100) }
+                        withContext(Dispatchers.IO) { playlistProvider.load(input, likedByUserId = syncMode == "liked", offset = 0, limit = 100) }
                     }
-                    if (inputMode == "liked") likedPlaylist = loaded else publicPlaylist = loaded
+                    withContext(Dispatchers.IO) {
+                        MusicMetaPersistence.savePlaylist(folderPreferences, syncMode, loaded)
+                    }
+                    if (syncMode == "liked") likedPlaylist = loaded else publicPlaylist = loaded
                     selectedTrack = null
                     flacResults = emptyList()
                     setCurrentPage(1)
                     jumpPageInput = "1"
                     manualSourceSearchActive = false
-                    pageCache = emptyMap()
+                    pageCache = pageCache.filterKeys { !it.startsWith("$syncMode:") }
                     setFilterText("")
                     scope.launch { listState.scrollToItem(0) }
                     status = "已读取歌单信息，共 " + loaded.totalTrackCount + " 首。可调整每页数量或输入页码快速跳转。"
@@ -1200,9 +1209,9 @@ private fun MusicMetaApp() {
                     runCatching { previewPlayer.value?.seekTo(target) }
                 }
                 FloatingMiniPlayerService.COMMAND_CLOSE -> {
+                    // Closing this floating session must not forget the user's overlay preference.
                     stopPreview()
-                    floatingOverlayEnabled = false
-                    folderPreferences.edit().putBoolean("floating_overlay_enabled", false).apply()
+                    FloatingMiniPlayerService.stop(context)
                 }
             }
         }
@@ -1269,8 +1278,8 @@ private fun MusicMetaApp() {
 
     LaunchedEffect(floatingOverlayEnabled) {
         if (floatingOverlayEnabled && !Settings.canDrawOverlays(context)) {
+            // Keep the preference: granting the permission again should restore the overlay.
             floatingOverlayEnabled = false
-            folderPreferences.edit().putBoolean("floating_overlay_enabled", false).apply()
         }
     }
     val playAdjacentPreview: (Int) -> Unit = { direction ->
@@ -1345,6 +1354,16 @@ private fun MusicMetaApp() {
     val pageCacheKey: (String, String, Int, Int) -> String = { mode, id, size, page ->
         "$mode:$id:$size:$page"
     }
+
+    LaunchedEffect(pageCache, isRestoringCaches) {
+        if (isRestoringCaches) return@LaunchedEffect
+        delay(350)
+        val snapshot = pageCache
+        withContext(Dispatchers.IO) {
+            MusicMetaPersistence.savePageCache(folderPreferences, snapshot)
+        }
+    }
+
     val knownTracks = playlist?.let { current ->
         val prefix = "$inputMode:${current.id}:"
         val cachedTracks = pageCache.entries
