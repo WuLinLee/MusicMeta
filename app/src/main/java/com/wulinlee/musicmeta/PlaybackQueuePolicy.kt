@@ -73,3 +73,25 @@ internal fun playlistTrackAtPosition(
         }
         .firstOrNull()
 }
+
+
+/** Keep a bounded LRU-style history in memory; callers own the state and never persist it. */
+internal fun rememberRecentTrackKeys(
+    previousKeys: List<String>,
+    sourceKey: String,
+    playlistMode: String?,
+    playlistId: Long?,
+    trackId: Long?,
+    maxEntries: Int = 12,
+): List<String> {
+    val additions = buildList {
+        if (sourceKey.isNotBlank()) add(sourceKey)
+        if (playlistMode != null && playlistId != null && trackId != null && playlistId > 0L && trackId > 0L) {
+            add(MusicMetaPersistence.playlistTrackKey(playlistMode, playlistId, trackId))
+        }
+    }
+    return (previousKeys.filterNot { it in additions } + additions)
+        .filter(String::isNotBlank)
+        .distinct()
+        .takeLast(maxEntries.coerceAtLeast(1))
+}
