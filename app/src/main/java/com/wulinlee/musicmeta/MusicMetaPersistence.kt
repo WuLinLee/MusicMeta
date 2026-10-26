@@ -28,9 +28,9 @@ internal object MusicMetaPersistence {
 
     private const val PUBLIC_PLAYLIST_KEY = "cached_public_playlist_v1"
     private const val LIKED_PLAYLIST_KEY = "cached_liked_playlist_v1"
-    private const val PAGE_CACHE_KEY = "cached_track_pages_v1"
+    private const val PAGE_CACHE_KEY = "cached_track_batches_v2"
     private const val LOCAL_TRACKS_FILE = "musicmeta_local_tracks_v1.json"
-    private const val MAX_PERSISTED_PAGES = 16
+    private const val MAX_PERSISTED_BATCHES = 16
 
     fun loadPlaylist(preferences: SharedPreferences, mode: String): PublicPlaylist? {
         val key = if (mode == "liked") LIKED_PLAYLIST_KEY else PUBLIC_PLAYLIST_KEY
@@ -53,11 +53,11 @@ internal object MusicMetaPersistence {
             val tracks = decodeTracks(entry.optJSONArray("tracks"))
             if (tracks.isNotEmpty()) result[key] = tracks
         }
-        return result.entries.toList().takeLast(MAX_PERSISTED_PAGES).associate { it.key to it.value }
+        return result.entries.toList().takeLast(MAX_PERSISTED_BATCHES).associate { it.key to it.value }
     }
 
     fun savePageCache(preferences: SharedPreferences, cache: Map<String, List<MusicTrack>>) {
-        val retained = cache.entries.toList().takeLast(MAX_PERSISTED_PAGES)
+        val retained = cache.entries.toList().takeLast(MAX_PERSISTED_BATCHES)
         val pages = JSONArray()
         retained.forEach { (key, tracks) ->
             pages.put(JSONObject().put("key", key).put("tracks", encodeTracks(tracks)))
