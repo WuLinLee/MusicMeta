@@ -265,6 +265,24 @@ private fun MusicMetaApp() {
             }
             editor.apply()
         }
+        if (!folderPreferences.getBoolean("v1_22_source_settings_migrated", false)) {
+            val legacyPlatform = MusicSourceConfig.normalizePlatform(
+                folderPreferences.getString("source_platform", MusicSourceConfig.DEFAULT_PLATFORM)
+            )
+            val editor = folderPreferences.edit()
+                .putBoolean("v1_22_source_settings_migrated", true)
+                .putString("source_provider", MusicSourceConfig.DEFAULT_BACKEND)
+            if (folderPreferences.getString("source_platform_gdstudio", null).isNullOrBlank()) {
+                editor.putString("source_platform_gdstudio", MusicSourceConfig.DEFAULT_PLATFORM)
+            }
+            if (folderPreferences.getString("source_platform_flac", null).isNullOrBlank()) {
+                editor.putString("source_platform_flac", if (legacyPlatform == "kuwo") "kuwo" else MusicSourceConfig.DEFAULT_PLATFORM)
+            }
+            if (folderPreferences.getString("source_platform", null) == "wyy") {
+                editor.putString("source_platform", MusicSourceConfig.DEFAULT_PLATFORM)
+            }
+            editor.apply()
+        }
     }
     var destinationTreeUri by remember { mutableStateOf(loadSavedDestination(context)) }
     val playlistProvider = remember { PublicPlaylistProvider() }
@@ -380,7 +398,19 @@ private fun MusicMetaApp() {
         }
     }
     var selectedTrack by remember { mutableStateOf<MusicTrack?>(null) }
-    var flacPlatform by remember { mutableStateOf(folderPreferences.getString("source_platform", "wyy") ?: "wyy") }
+    var sourceProvider by remember {
+        mutableStateOf(MusicSourceConfig.normalizeBackend(folderPreferences.getString("source_provider", MusicSourceConfig.DEFAULT_BACKEND)))
+    }
+    var flacPlatform by remember {
+        mutableStateOf(
+            MusicSourceConfig.normalizePlatform(
+                folderPreferences.getString(
+                    MusicSourceConfig.platformPreferenceKey(sourceProvider),
+                    folderPreferences.getString("source_platform", MusicSourceConfig.DEFAULT_PLATFORM),
+                )
+            )
+        )
+    }
     var selectedQuality by remember { mutableStateOf(folderPreferences.getString("quality", "320k") ?: "320k") }
     var showDownloadSettings by remember { mutableStateOf(false) }
     var showClearCacheConfirm by remember { mutableStateOf(false) }
@@ -396,6 +426,30 @@ private fun MusicMetaApp() {
         folderPreferences.edit().putString("quality", value).apply()
     }
     var flacResults by remember { mutableStateOf<List<FlacSiteSong>>(emptyList()) }
+    val persistSourcePlatform: (String) -> Unit = { value ->
+        val platform = MusicSourceConfig.normalizePlatform(value)
+        flacPlatform = platform
+        folderPreferences.edit()
+            .putString("source_platform", platform)
+            .putString(MusicSourceConfig.platformPreferenceKey(sourceProvider), platform)
+            .apply()
+        flacResults = emptyList()
+    }
+    val selectSourceProvider: (String) -> Unit = { value ->
+        val backend = MusicSourceConfig.normalizeBackend(value)
+        val saved = folderPreferences.getString(MusicSourceConfig.platformPreferenceKey(backend), null)
+        val candidate = MusicSourceConfig.normalizePlatform(saved ?: MusicSourceConfig.DEFAULT_PLATFORM)
+        val platform = if (MusicSourceConfig.platformsFor(backend).any { it.id == candidate }) candidate
+            else MusicSourceConfig.DEFAULT_PLATFORM
+        sourceProvider = backend
+        flacPlatform = platform
+        folderPreferences.edit()
+            .putString("source_provider", backend)
+            .putString("source_platform", platform)
+            .putString(MusicSourceConfig.platformPreferenceKey(backend), platform)
+            .apply()
+        flacResults = emptyList()
+    }
     var manualSearchQuery by remember { mutableStateOf("") }
     var manualSourceSearchActive by remember { mutableStateOf(false) }
     var isSearchingFlac by remember { mutableStateOf(false) }
@@ -618,6 +672,7 @@ private fun MusicMetaApp() {
                             flacProvider.search(
                                 keyword = keyword,
                                 platform = flacPlatform,
+                                backend = sourceProvider,
                                 cookie = cookie,
                                 userAgent = fallbackUserAgent,
                             )
@@ -679,6 +734,7 @@ private fun MusicMetaApp() {
                             flacProvider.search(
                                 keyword = keyword,
                                 platform = flacPlatform,
+                                backend = sourceProvider,
                                 cookie = cookie,
                                 userAgent = fallbackUserAgent,
                             )
@@ -1386,7 +1442,7 @@ private fun MusicMetaApp() {
     }
 
     val pageCacheKey: (String, String, Int, Int) -> String = { mode, id, size, page ->
-        "$mode:$id:$size:$page"
+        playlistBatchCacheKey(mode, id, size, page)
     }
 
     LaunchedEffect(pageCache, isRestoringCaches) {
@@ -1540,6 +1596,7 @@ private fun MusicMetaApp() {
                                                 keyword = listOf(targetTrack.title, targetTrack.artists)
                                                     .filter { it.isNotBlank() }.joinToString(" "),
                                                 platform = flacPlatform,
+                                                backend = sourceProvider,
                                                 cookie = cookie,
                                                 userAgent = fallbackUserAgent,
                                             )
@@ -1607,11 +1664,9 @@ private fun MusicMetaApp() {
                                         isSearchingFlac = false
                                         return@launch
                                     }
-                                    val pageEntries = loadedPage.tracks.chunked(pageSize).mapIndexed { index, tracks ->
-                                        val pageNumber = batchOffset / pageSize + index + 1
-                                        pageCacheKey(modeAtRequest, playlistIdAtRequest.toString(), pageSize, pageNumber) to tracks
-                                    }.toMap()
-                                    pageCache = pageCache + pageEntries
+                                    val batchNumber = batchOffset / 100 + 1
+                                    val batchKey = pageCacheKey(modeAtRequest, playlistIdAtRequest.toString(), 100, batchNumber)
+                                    pageCache = pageCache + (batchKey to loadedPage.tracks)
                                     val targetTrack = loadedPage.tracks.getOrNull(targetPosition - batchOffset)
                                     isSearchingFlac = false
                                     if (targetTrack != null) {
@@ -1748,11 +1803,9 @@ private fun MusicMetaApp() {
                                 }
                                 val activePlaylist = if (targetMode == "liked") likedPlaylist else publicPlaylist
                                 if (inputMode == targetMode && activePlaylist?.id == current.id) {
-                                    val pageEntries = loadedPage.tracks.chunked(pageSize).mapIndexed { index, tracks ->
-                                        val pageNumber = batchOffset / pageSize + index + 1
-                                        pageCacheKey(targetMode, current.id.toString(), pageSize, pageNumber) to tracks
-                                    }.toMap()
-                                    pageCache = pageCache + pageEntries
+                                    val batchNumber = batchOffset / 100 + 1
+                                    val batchKey = pageCacheKey(targetMode, current.id.toString(), 100, batchNumber)
+                                    pageCache = pageCache + (batchKey to loadedPage.tracks)
                                     status = "第 " + targetPage + " 页已加载（每批读取100首）。"
                                 }
                             } catch (error: Exception) {
@@ -2436,13 +2489,13 @@ private fun MusicMetaApp() {
                         isSearching = isSearchingFlac,
                         results = flacResults,
                         platform = flacPlatform,
+                        backend = sourceProvider,
                         quality = selectedQuality,
                         isResolvingUrl = isResolvingUrl,
                         isDownloading = isDownloading,
                         onPlatformChange = { value ->
                             if (flacPlatform != value) {
-                                flacPlatform = value
-                                folderPreferences.edit().putString("source_platform", value).apply()
+                                persistSourcePlatform(value)
                                 searchSourceKeyword()
                             }
                         },
@@ -2623,7 +2676,8 @@ private fun MusicMetaApp() {
                 } else if (loadedPageTracks.size >= requiredPageSize) {
                     loadedPageTracks
                 } else {
-                    pageCache[currentCacheKey].orEmpty()
+                    val batchTracks = pageCache[currentCacheKey].orEmpty()
+                    batchTracks.drop(pageOffset % 100).take(pageSize)
                 }
                 val visibleTracks = pageTracks
 
@@ -2735,29 +2789,22 @@ private fun MusicMetaApp() {
                                             Text("选择音源", fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
                                             Text(selectedTrack?.title.orEmpty(), color = SubInk, fontSize = 12.sp)
                                         }
-                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                            FilterChip(
-                                                selected = flacPlatform == "kuwo",
-                                                onClick = {
-                                                    if (flacPlatform != "kuwo") {
-                                                        flacPlatform = "kuwo"
-                                                        folderPreferences.edit().putString("source_platform", "kuwo").apply()
-                                                        selectedTrack?.let { searchTrackSource(it, false) }
-                                                    }
-                                                },
-                                                label = { Text("酷我") },
-                                            )
-                                            FilterChip(
-                                                selected = flacPlatform == "wyy",
-                                                onClick = {
-                                                    if (flacPlatform != "wyy") {
-                                                        flacPlatform = "wyy"
-                                                        folderPreferences.edit().putString("source_platform", "wyy").apply()
-                                                        selectedTrack?.let { searchTrackSource(it, false) }
-                                                    }
-                                                },
-                                                label = { Text("网易云") },
-                                            )
+                                        Row(
+                                            modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        ) {
+                                            MusicSourceConfig.platformsFor(sourceProvider).forEach { option ->
+                                                FilterChip(
+                                                    selected = flacPlatform == option.id,
+                                                    onClick = {
+                                                        if (flacPlatform != option.id) {
+                                                            persistSourcePlatform(option.id)
+                                                            selectedTrack?.let { searchTrackSource(it, false) }
+                                                        }
+                                                    },
+                                                    label = { Text(option.label, fontSize = 10.sp) },
+                                                )
+                                            }
                                         }
                                     }
                                     Text("下载音质", fontWeight = FontWeight.Medium, fontSize = 12.sp, color = SubInk)
@@ -3207,19 +3254,57 @@ private fun MusicMetaApp() {
                     modifier = Modifier.fillMaxWidth().heightIn(max = 570.dp).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text("默认音源", fontWeight = FontWeight.SemiBold, color = Ink)
-                    listOf("wyy" to "网易云", "kuwo" to "酷我").forEach { (value, label) ->
+                    Text("音源服务（主 API）", fontWeight = FontWeight.SemiBold, color = Ink)
+                    listOf(
+                        MusicSourceConfig.BACKEND_GD_STUDIO to "GD Studio API",
+                        MusicSourceConfig.BACKEND_FLAC_SITE to "flac.music.hi.cn",
+                    ).forEach { (value, label) ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             RadioButton(
-                                selected = flacPlatform == value,
-                                onClick = {
-                                    flacPlatform = value
-                                    folderPreferences.edit().putString("source_platform", value).apply()
-                                },
+                                selected = sourceProvider == value,
+                                onClick = { selectSourceProvider(value) },
                             )
-                            Text(label, color = Ink, fontSize = 13.sp)
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(label, color = Ink, fontSize = 13.sp)
+                                Text(
+                                    if (value == MusicSourceConfig.BACKEND_GD_STUDIO)
+                                        "多平台参数；可用性由服务端动态决定"
+                                    else
+                                        "当前适配网易云、酷我",
+                                    color = SubInk,
+                                    fontSize = 11.sp,
+                                )
+                            }
                         }
                     }
+                    Text("次级音乐源", fontWeight = FontWeight.SemiBold, color = Ink)
+                    MusicSourceConfig.platformsFor(sourceProvider).chunked(2).forEach { pair ->
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            pair.forEach { option ->
+                                Row(
+                                    modifier = Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
+                                        .clickable { persistSourcePlatform(option.id) }
+                                        .padding(vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    RadioButton(
+                                        selected = flacPlatform == option.id,
+                                        onClick = { persistSourcePlatform(option.id) },
+                                    )
+                                    Text(option.label, color = Ink, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                            if (pair.size == 1) Spacer(Modifier.weight(1f))
+                        }
+                    }
+                    Text(
+                        if (sourceProvider == MusicSourceConfig.BACKEND_GD_STUDIO)
+                            "默认使用 GD Studio 的 netease。文档列出的参数不代表所有源都始终开放；当前可用源以服务端为准。GD Studio 要求注明出处并遵守非商业使用限制。"
+                        else
+                            "flac.music.hi.cn 当前只适配网易云和酷我。若搜索或下载失败，可在此切换 API 服务入口。",
+                        color = SubInk,
+                        fontSize = 11.sp,
+                    )
                     Text("默认音质", fontWeight = FontWeight.SemiBold, color = Ink)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         FilterChip(selected = selectedQuality == "128k", onClick = { setQuality("128k") }, label = { Text("MP3 128k") })
@@ -3465,6 +3550,7 @@ private fun ManualSourceSearchPanel(
     isSearching: Boolean,
     results: List<FlacSiteSong>,
     platform: String,
+    backend: String,
     quality: String,
     isResolvingUrl: Boolean,
     isDownloading: Boolean,
@@ -3496,19 +3582,18 @@ private fun ManualSourceSearchPanel(
                     Text("搜索结果", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
                     Text(title, color = SubInk, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    FilterChip(
-                        selected = platform == "wyy",
-                        onClick = { onPlatformChange("wyy") },
-                        label = { Text("网易云", fontSize = 10.sp) },
-                        enabled = !isSearching && !isResolvingUrl && !isDownloading,
-                    )
-                    FilterChip(
-                        selected = platform == "kuwo",
-                        onClick = { onPlatformChange("kuwo") },
-                        label = { Text("酷我", fontSize = 10.sp) },
-                        enabled = !isSearching && !isResolvingUrl && !isDownloading,
-                    )
+                Row(
+                    modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    MusicSourceConfig.platformsFor(backend).forEach { option ->
+                        FilterChip(
+                            selected = platform == option.id,
+                            onClick = { onPlatformChange(option.id) },
+                            label = { Text(option.label, fontSize = 10.sp) },
+                            enabled = !isSearching && !isResolvingUrl && !isDownloading,
+                        )
+                    }
                 }
             }
             if (isSearching) {
@@ -3576,7 +3661,7 @@ private fun ManualSourceSearchPanel(
                                         color = SubInk, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
                                     )
                                     if (song.platform.startsWith("gd:")) {
-                                        Text("GD Studio 兜底音源", color = Accent, fontSize = 9.sp)
+                                        Text("GD Studio · " + MusicSourceConfig.labelForPlatform(song.platform.removePrefix("gd:")), color = Accent, fontSize = 9.sp)
                                     }
                                 }
                                 IconButton(
