@@ -157,7 +157,6 @@ internal fun Modifier.overlayDragGesture(
         }
     }
 }
-private class FloatingOverlayViewTreeOwner
 internal object FloatingOverlayPlacement {
     fun lyricsPanelOnRight(coverX: Int, coverWidthPx: Int, displayWidth: Int): Boolean =
         displayWidth > 0 && coverX + coverWidthPx / 2 < displayWidth / 2
@@ -196,7 +195,7 @@ internal object FloatingOverlayPlacement {
     }
 }
 
- : LifecycleOwner, SavedStateRegistryOwner {
+private class FloatingOverlayViewTreeOwner : LifecycleOwner, SavedStateRegistryOwner {
     private val lifecycleRegistry = LifecycleRegistry(this)
     private val savedStateController = SavedStateRegistryController.create(this)
 
