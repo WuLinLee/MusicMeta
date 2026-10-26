@@ -54,6 +54,21 @@ internal fun formatFlacSiteApiError(code: Int, detail: String, operation: String
 }
 
 
+internal fun gdStudioSearchKeywords(keyword: String, fallbackKeyword: String?): List<String> {
+    val primary = keyword.trim()
+    val fallback = fallbackKeyword?.trim().orEmpty()
+    return listOf(primary, fallback)
+        .filter { it.isNotBlank() }
+        .distinctBy { value -> value.lowercase().filter { it.isLetterOrDigit() } }
+}
+
+internal fun formatGdStudioNoCandidatesMessage(): String =
+    "GD Studio 没有搜索到候选歌曲：可能是当前平台暂无此版本，或关键词不匹配。请改用歌名搜索、稍后重试，或切换音乐平台 / API 服务。"
+
+internal fun isGdStudioNoCandidatesError(error: Throwable): Boolean =
+    generateSequence(error) { it.cause }
+        .any { it.message?.contains("GD Studio 没有搜索到候选歌曲") == true }
+
 class FlacMusicProvider {
     private val client = OkHttpClient.Builder()
         .followRedirects(true)
@@ -66,6 +81,7 @@ class FlacMusicProvider {
         cookie: String?,
         userAgent: String,
         backend: String = MusicSourceConfig.BACKEND_FLAC_SITE,
+        fallbackKeyword: String? = null,
     ): List<FlacSiteSong> = withContext(Dispatchers.IO) {
         if (keyword.isBlank()) throw IOException("请输入要搜索的歌名或歌手。")
         val selectedBackend = MusicSourceConfig.normalizeBackend(backend)
@@ -74,7 +90,13 @@ class FlacMusicProvider {
         MusicSourceSearchCache.get(cacheKey)?.let { return@withContext it }
 
         val songs = if (selectedBackend == MusicSourceConfig.BACKEND_GD_STUDIO) {
-            searchGdStudio(keyword.trim(), source)
+            var candidates: List<FlacSiteSong> = emptyList()
+            for (searchKeyword in gdStudioSearchKeywords(keyword, fallbackKeyword)) {
+                candidates = searchGdStudio(searchKeyword, source)
+                if (candidates.isNotEmpty()) break
+            }
+            if (candidates.isEmpty()) throw IOException(formatGdStudioNoCandidatesMessage())
+            candidates
         } else {
             val sitePlatform = MusicSourceConfig.toFlacSitePlatform(source)
             val request = baseRequest(apiUrl("search"), cookie, userAgent)
@@ -390,7 +412,6 @@ class FlacMusicProvider {
                 lyricId = item.optString("lyric_id").ifBlank { item.optString("lyricId") }.ifBlank { id },
             )
         }
-        if (songs.isEmpty()) throw IOException("GD Studio 没有搜索到候选歌曲。")
         return songs
     }
 

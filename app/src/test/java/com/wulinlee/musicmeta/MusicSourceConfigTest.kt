@@ -58,14 +58,40 @@ class MusicSourceConfigTest {
 
     @Test
     fun expandedLyricsPanelChoosesOppositeSideFromCover() {
-        val coverWidth = 64
-        val lyricsWidth = 260
-        val gap = 14
-        assertTrue(FloatingOverlayPlacement.lyricsPanelOnRight(8, coverWidth, 1080))
-        assertEquals(8, FloatingOverlayPlacement.windowOriginX(true, 8, lyricsWidth, gap, true))
-        assertFalse(FloatingOverlayPlacement.lyricsPanelOnRight(900, coverWidth, 1080))
-        assertEquals(626, FloatingOverlayPlacement.windowOriginX(true, 900, lyricsWidth, gap, false))
+        assertTrue(FloatingOverlayPlacement.lyricsPanelOnRight(8, 64, 1080))
+        assertFalse(FloatingOverlayPlacement.lyricsPanelOnRight(900, 64, 1080))
     }
+
+    @Test
+    fun animatedExpandedOverlayBoundsStayWithinScreenAfterDisplayResize() {
+        val coverWidth = 64
+        val preferredGap = 14
+        val margin = 4
+        for (displayWidth in listOf(360, 720, 1080)) {
+            val desiredGroupWidth = minOf(368, (displayWidth - 8).coerceAtLeast(64))
+            val desiredLyricsWidth = (desiredGroupWidth - 78).coerceAtLeast(0)
+            val coverPositions = listOf(
+                margin,
+                ((displayWidth - coverWidth) / 2).coerceAtLeast(margin),
+                (displayWidth - margin - coverWidth).coerceAtLeast(margin),
+            )
+            for (coverX in coverPositions) {
+                val onRight = FloatingOverlayPlacement.lyricsPanelOnRight(coverX, coverWidth, displayWidth)
+                val gap = FloatingOverlayPlacement.panelGapPx(displayWidth, coverX, coverWidth, preferredGap, margin, onRight)
+                val lyricsWidth = FloatingOverlayPlacement.lyricsWidthPx(
+                    displayWidth, coverX, coverWidth, desiredLyricsWidth, gap, margin, onRight,
+                )
+                for (progress in listOf(0f, 0.5f, 1f)) {
+                    val width = FloatingOverlayPlacement.windowWidthPx(coverWidth, lyricsWidth, gap, progress)
+                    val origin = FloatingOverlayPlacement.windowOriginX(coverX, lyricsWidth, gap, onRight, progress)
+                    assertTrue("left edge must remain visible", origin >= margin)
+                    assertTrue("right edge must remain visible", origin + width <= displayWidth - margin)
+                    assertTrue("window never narrower than cover", width >= coverWidth)
+                }
+            }
+        }
+    }
+
 
     @Test
     fun flacAdapterOnlyOffersImplementedPlatforms() {
@@ -106,6 +132,16 @@ class MusicSourceConfigTest {
             assertTrue(leftOrigin + groupWidth <= displayWidth - margin)
             assertTrue(leftMax + coverWidth <= displayWidth - margin)
         }
+    }
+
+    @Test
+    fun gdStudioSearchUsesTitleFallbackOnlyWhenDistinct() {
+        assertEquals(
+            listOf("ray (超かぐや姫！ Version) Aimer", "ray (超かぐや姫！ Version)"),
+            gdStudioSearchKeywords("ray (超かぐや姫！ Version) Aimer", "ray (超かぐや姫！ Version)"),
+        )
+        assertEquals(listOf("Same title"), gdStudioSearchKeywords("Same title", "Same title"))
+        assertTrue(isGdStudioNoCandidatesError(java.io.IOException(formatGdStudioNoCandidatesMessage())))
     }
 
     @Test

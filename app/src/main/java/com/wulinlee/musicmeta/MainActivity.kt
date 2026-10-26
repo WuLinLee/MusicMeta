@@ -675,6 +675,7 @@ private fun MusicMetaApp() {
                                 backend = sourceProvider,
                                 cookie = cookie,
                                 userAgent = fallbackUserAgent,
+                                fallbackKeyword = track.title,
                             )
                         }
                     }
@@ -697,6 +698,8 @@ private fun MusicMetaApp() {
                 } catch (error: Exception) {
                     if (error is GdStudioRateLimitException) {
                         status = "GD Studio 请求较多；当前试听保持不变。约 ${error.retryAfterSeconds} 秒后可重试，或切换到 flac.music.hi.cn。"
+                    } else if (isGdStudioNoCandidatesError(error)) {
+                        status = "GD Studio 暂无《${track.title}》的候选音源。可尝试仅用歌名搜索，或切换音乐平台 / API 服务后重试。"
                     } else {
                         val detail = error.message?.takeIf { it.isNotBlank() } ?: "音源服务暂不可用"
                         status = "搜索失败：" + detail
@@ -1615,6 +1618,7 @@ private fun MusicMetaApp() {
                                                 backend = sourceProvider,
                                                 cookie = cookie,
                                                 userAgent = fallbackUserAgent,
+                                                fallbackKeyword = targetTrack.title,
                                             )
                                         }
                                     }.take(8)
@@ -1648,8 +1652,10 @@ private fun MusicMetaApp() {
                                         if (inputMode == modeAtRequest) {
                                             if (error is GdStudioRateLimitException) {
                                                 status = "GD Studio 请求较多，已保留当前试听。约 ${error.retryAfterSeconds} 秒后可继续，或在设置中切换到 flac.music.hi.cn。"
+                                            } else if (isGdStudioNoCandidatesError(error)) {
+                                                status = "GD Studio 暂无《${targetTrack.title}》的可用候选，当前试听保持不变。可稍后重试或切换音乐平台 / API 服务。"
                                             } else {
-                                                status = "查找下一首音源失败：" + (error.message?.takeIf { it.isNotBlank() } ?: "请重试")
+                                                status = "查找上一首 / 下一首音源失败：" + (error.message?.takeIf { it.isNotBlank() } ?: "请重试")
                                                 captureError("上一首 / 下一首试听", error)
                                             }
                                         }
@@ -3794,79 +3800,38 @@ private fun formatPreviewTime(milliseconds: Int): String {
 
 @Composable
 private fun MiniPlayerSkipGlyph(previous: Boolean) {
-    Canvas(modifier = Modifier.size(17.dp)) {
-        val tint = Color(0xFF9FF0C9)
-        val stroke = 1.8.dp.toPx()
-        val centerY = size.height / 2f
-        val tipX = if (previous) size.width * 0.24f else size.width * 0.76f
-        val barX = if (previous) size.width * 0.34f else size.width * 0.66f
-        drawLine(tint, Offset(barX, size.height * 0.20f), Offset(barX, size.height * 0.80f), stroke, cap = StrokeCap.Round)
-        val path = androidx.compose.ui.graphics.Path().apply {
-            if (previous) {
-                moveTo(size.width * 0.76f, size.height * 0.20f)
-                lineTo(tipX, centerY)
-                lineTo(size.width * 0.76f, size.height * 0.80f)
-            } else {
-                moveTo(size.width * 0.24f, size.height * 0.20f)
-                lineTo(tipX, centerY)
-                lineTo(size.width * 0.24f, size.height * 0.80f)
-            }
-            close()
-        }
-        drawPath(path, tint)
-    }
+    Icon(
+        painter = painterResource(if (previous) R.drawable.lucide_skip_back else R.drawable.lucide_skip_forward),
+        contentDescription = null,
+        tint = Color(0xFF9FF0C9),
+        modifier = Modifier.size(17.dp),
+    )
 }
-
 
 @Composable
 private fun PlayGlyph(isPlaying: Boolean, isLoading: Boolean) {
-    Canvas(modifier = Modifier.size(19.dp)) {
-        val tint = if (isLoading) SubInk else Accent
-        if (isLoading) {
-            drawCircle(color = tint, radius = size.minDimension * 0.28f, style = Stroke(width = 1.6.dp.toPx()))
-            drawLine(
-                color = tint,
-                start = Offset(size.width * 0.5f, size.height * 0.08f),
-                end = Offset(size.width * 0.5f, size.height * 0.30f),
-                strokeWidth = 1.6.dp.toPx(),
-                cap = StrokeCap.Round,
-            )
-        } else if (isPlaying) {
-            drawLine(tint, Offset(size.width * 0.35f, size.height * 0.24f), Offset(size.width * 0.35f, size.height * 0.76f), 2.5.dp.toPx(), cap = StrokeCap.Round)
-            drawLine(tint, Offset(size.width * 0.66f, size.height * 0.24f), Offset(size.width * 0.66f, size.height * 0.76f), 2.5.dp.toPx(), cap = StrokeCap.Round)
-        } else {
-            val path = Path().apply {
-                moveTo(size.width * 0.28f, size.height * 0.16f)
-                lineTo(size.width * 0.78f, size.height * 0.50f)
-                lineTo(size.width * 0.28f, size.height * 0.84f)
-                close()
-            }
-            drawPath(path, tint)
-        }
+    if (isLoading) {
+        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = SubInk, strokeWidth = 1.6.dp)
+    } else {
+        Icon(
+            painter = painterResource(if (isPlaying) R.drawable.lucide_pause else R.drawable.lucide_play),
+            contentDescription = null,
+            tint = Accent,
+            modifier = Modifier.size(19.dp),
+        )
     }
 }
 
 @Composable
 private fun ErrorGlyph(enabled: Boolean) {
-    Canvas(modifier = Modifier.size(22.dp)) {
-        val tint = if (enabled) Accent else SubInk
-        val stroke = 1.7.dp.toPx()
-        drawCircle(
-            color = tint,
-            radius = size.minDimension * 0.39f,
-            center = Offset(size.width / 2f, size.height / 2f),
-            style = Stroke(width = stroke),
-        )
-        drawLine(
-            color = tint,
-            start = Offset(size.width / 2f, size.height * 0.29f),
-            end = Offset(size.width / 2f, size.height * 0.55f),
-            strokeWidth = stroke,
-            cap = StrokeCap.Round,
-        )
-        drawCircle(color = tint, radius = 1.1.dp.toPx(), center = Offset(size.width / 2f, size.height * 0.71f))
-    }
+    Icon(
+        painter = painterResource(R.drawable.lucide_circle_alert),
+        contentDescription = null,
+        tint = if (enabled) Accent else SubInk,
+        modifier = Modifier.size(22.dp),
+    )
 }
+
 
 @Composable
 private fun DownloadSettingSwitchRow(
@@ -3937,172 +3902,52 @@ private fun combineLyricsWithoutLabels(
 
 @Composable
 private fun EnterGlyph() {
-    Canvas(modifier = Modifier.size(20.dp)) {
-        val stroke = 2.dp.toPx()
-        val color = Accent
-        val left = size.width * 0.18f
-        val right = size.width * 0.82f
-        val top = size.height * 0.22f
-        val cornerY = size.height * 0.58f
-        val bottom = size.height * 0.78f
-        val arrowX = size.width * 0.34f
-        drawLine(color, Offset(right, top), Offset(right, cornerY), stroke, cap = StrokeCap.Round)
-        drawLine(color, Offset(right, cornerY), Offset(left, cornerY), stroke, cap = StrokeCap.Round)
-        drawLine(color, Offset(left, cornerY), Offset(arrowX, cornerY - size.height * 0.17f), stroke, cap = StrokeCap.Round)
-        drawLine(color, Offset(left, cornerY), Offset(arrowX, bottom), stroke, cap = StrokeCap.Round)
-    }
+    Icon(painterResource(R.drawable.lucide_log_in), null, tint = Accent, modifier = Modifier.size(20.dp))
 }
 
 @Composable
 private fun PageArrowGlyph(pointsLeft: Boolean, tint: Color) {
-    Canvas(modifier = Modifier.size(22.dp)) {
-        val stroke = 2.dp.toPx()
-        val centerY = size.height / 2f
-        val tipX = size.width * if (pointsLeft) 0.24f else 0.76f
-        val shaftStartX = size.width * if (pointsLeft) 0.72f else 0.28f
-        val shaftEndX = size.width * if (pointsLeft) 0.28f else 0.72f
-        drawLine(
-            color = tint,
-            start = Offset(shaftStartX, centerY),
-            end = Offset(shaftEndX, centerY),
-            strokeWidth = stroke,
-            cap = StrokeCap.Round,
-        )
-        val headX = size.width * if (pointsLeft) 0.48f else 0.52f
-        drawLine(
-            color = tint,
-            start = Offset(headX, size.height * 0.25f),
-            end = Offset(tipX, centerY),
-            strokeWidth = stroke,
-            cap = StrokeCap.Round,
-        )
-        drawLine(
-            color = tint,
-            start = Offset(tipX, centerY),
-            end = Offset(headX, size.height * 0.75f),
-            strokeWidth = stroke,
-            cap = StrokeCap.Round,
-        )
-    }
+    Icon(
+        painterResource(if (pointsLeft) R.drawable.lucide_chevron_left else R.drawable.lucide_chevron_right),
+        null,
+        tint = tint,
+        modifier = Modifier.size(22.dp),
+    )
 }
 
 @Composable
 private fun FloatingWindowGlyph(enabled: Boolean) {
-    Canvas(modifier = Modifier.size(22.dp)) {
-        val tint = if (enabled) Accent else SubInk
-        val stroke = 1.7.dp.toPx()
-        drawRoundRect(
-            color = tint,
-            topLeft = Offset(size.width * 0.10f, size.height * 0.18f),
-            size = androidx.compose.ui.geometry.Size(size.width * 0.80f, size.height * 0.64f),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx()),
-            style = Stroke(width = stroke),
-        )
-        drawLine(tint, Offset(size.width * 0.18f, size.height * 0.40f), Offset(size.width * 0.82f, size.height * 0.40f), stroke, cap = StrokeCap.Round)
-        drawRoundRect(
-            color = tint,
-            topLeft = Offset(size.width * 0.45f, size.height * 0.48f),
-            size = androidx.compose.ui.geometry.Size(size.width * 0.43f, size.height * 0.39f),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()),
-            style = Stroke(width = stroke),
-        )
-    }
+    Icon(painterResource(R.drawable.lucide_picture_in_picture_2), null,
+        tint = if (enabled) Accent else SubInk, modifier = Modifier.size(22.dp))
 }
 
 @Composable
 private fun SettingsGlyph() {
-    Canvas(modifier = Modifier.size(22.dp)) {
-        val cx = size.width / 2f
-        val cy = size.height / 2f
-        val radius = size.minDimension * 0.31f
-        val stroke = 1.8.dp.toPx()
-        for (i in 0 until 8) {
-            val angle = i * Math.PI / 4.0
-            val dx = kotlin.math.cos(angle).toFloat()
-            val dy = kotlin.math.sin(angle).toFloat()
-            drawLine(Accent, Offset(cx + dx * radius * 0.78f, cy + dy * radius * 0.78f),
-                Offset(cx + dx * radius * 1.30f, cy + dy * radius * 1.30f), stroke, cap = StrokeCap.Round)
-        }
-        drawCircle(Accent, radius = radius * 0.90f, center = Offset(cx, cy), style = Stroke(width = stroke))
-        drawCircle(Accent, radius = radius * 0.30f, center = Offset(cx, cy))
-    }
+    Icon(painterResource(R.drawable.lucide_settings), null, tint = Accent, modifier = Modifier.size(22.dp))
 }
 
 @Composable
 private fun WebpageGlyph() {
-    Canvas(modifier = Modifier.size(22.dp)) {
-        val stroke = 1.8.dp.toPx()
-        val left = size.width * 0.16f
-        val right = size.width * 0.84f
-        val top = size.height * 0.12f
-        val bottom = size.height * 0.88f
-        drawRoundRect(color = Accent, topLeft = Offset(left, top),
-            size = androidx.compose.ui.geometry.Size(right - left, bottom - top),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx()), style = Stroke(width = stroke))
-        drawLine(Accent, Offset(left, size.height * 0.34f), Offset(right, size.height * 0.34f), stroke, cap = StrokeCap.Round)
-        drawCircle(Accent, radius = 1.dp.toPx(), center = Offset(size.width * 0.28f, size.height * 0.23f))
-        drawCircle(Accent, radius = 1.dp.toPx(), center = Offset(size.width * 0.39f, size.height * 0.23f))
-        drawLine(Accent, Offset(size.width * 0.30f, size.height * 0.51f), Offset(size.width * 0.70f, size.height * 0.51f), stroke, cap = StrokeCap.Round)
-        drawLine(Accent, Offset(size.width * 0.30f, size.height * 0.67f), Offset(size.width * 0.62f, size.height * 0.67f), stroke, cap = StrokeCap.Round)
-    }
+    Icon(painterResource(R.drawable.lucide_globe), null, tint = Accent, modifier = Modifier.size(22.dp))
 }
 
 @Composable
 private fun CopyGlyph(enabled: Boolean = true) {
-    Canvas(modifier = Modifier.size(19.dp)) {
-        val stroke = 1.7.dp.toPx()
-        val tint = if (enabled) Accent else SubInk
-        drawRoundRect(color = tint, topLeft = Offset(size.width * 0.30f, size.height * 0.12f),
-            size = androidx.compose.ui.geometry.Size(size.width * 0.56f, size.height * 0.62f),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()), style = Stroke(width = stroke))
-        drawRoundRect(color = tint, topLeft = Offset(size.width * 0.12f, size.height * 0.30f),
-            size = androidx.compose.ui.geometry.Size(size.width * 0.56f, size.height * 0.62f),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()), style = Stroke(width = stroke))
-    }
+    Icon(painterResource(R.drawable.lucide_copy), null,
+        tint = if (enabled) Accent else SubInk, modifier = Modifier.size(19.dp))
 }
 
 @Composable
 private fun ErrorReportGlyph(enabled: Boolean = true) {
-    Canvas(modifier = Modifier.size(19.dp)) {
-        val tint = if (enabled) Accent else SubInk
-        val stroke = 1.7.dp.toPx()
-        drawCircle(
-            color = tint,
-            radius = size.minDimension * 0.39f,
-            style = Stroke(width = stroke),
-        )
-        drawLine(
-            color = tint,
-            start = Offset(size.width / 2f, size.height * 0.28f),
-            end = Offset(size.width / 2f, size.height * 0.57f),
-            strokeWidth = stroke,
-        )
-        drawCircle(
-            color = tint,
-            radius = 1.dp.toPx(),
-            center = Offset(size.width / 2f, size.height * 0.72f),
-        )
-    }
+    Icon(painterResource(R.drawable.lucide_circle_alert), null,
+        tint = if (enabled) Accent else SubInk, modifier = Modifier.size(19.dp))
 }
 
 @Composable
 private fun HomeGlyph() {
-    Canvas(modifier = Modifier.size(23.dp)) {
-        val stroke = 2.dp.toPx()
-        val left = size.width * 0.17f
-        val right = size.width * 0.83f
-        val top = size.height * 0.20f
-        val wallTop = size.height * 0.47f
-        val base = size.height * 0.84f
-        val middle = size.width / 2f
-        drawLine(Accent, Offset(left, wallTop), Offset(middle, top), stroke, cap = StrokeCap.Round)
-        drawLine(Accent, Offset(middle, top), Offset(right, wallTop), stroke, cap = StrokeCap.Round)
-        drawLine(Accent, Offset(left + size.width * 0.08f, wallTop), Offset(left + size.width * 0.08f, base), stroke, cap = StrokeCap.Round)
-        drawLine(Accent, Offset(right - size.width * 0.08f, wallTop), Offset(right - size.width * 0.08f, base), stroke, cap = StrokeCap.Round)
-        drawLine(Accent, Offset(left + size.width * 0.08f, base), Offset(right - size.width * 0.08f, base), stroke, cap = StrokeCap.Round)
-        drawLine(Accent, Offset(middle, base), Offset(middle, size.height * 0.61f), stroke, cap = StrokeCap.Round)
-    }
+    Icon(painterResource(R.drawable.lucide_house), null, tint = Accent, modifier = Modifier.size(23.dp))
 }
+
 
 @Composable
 private fun TrackRow(
