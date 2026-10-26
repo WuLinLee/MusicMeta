@@ -47,6 +47,20 @@ class PlaybackQueuePolicyTest {
     }
 
     @Test
+    fun pagedShuffleFallsBackWhenAllAlternativePositionsAreRecent() {
+        assertEquals(
+            listOf(0, 1, 3),
+            shuffleCandidatePositions(
+                totalCount = 4,
+                currentIndex = 2,
+                recentPositions = setOf(0, 1, 3),
+                recentTrackKeys = emptySet(),
+                trackKeyAt = { "track:$it" },
+            ),
+        )
+    }
+
+    @Test
     fun recentHistoryIsBoundedAndMovesRepeatedTracksToNewestPosition() {
         val first = rememberRecentTrackKeys(emptyList(), "source:a", null, null, null, maxEntries = 3)
         val second = rememberRecentTrackKeys(first, "source:b", null, null, null, maxEntries = 3)
