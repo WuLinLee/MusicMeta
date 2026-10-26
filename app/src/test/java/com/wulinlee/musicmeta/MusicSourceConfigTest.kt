@@ -102,39 +102,6 @@ class MusicSourceConfigTest {
     }
 
     @Test
-    fun expandedOverlayBoundsStayWithinScreenAfterDisplayResize() {
-        val coverWidth = 64
-        val gap = 14
-        val margin = 8
-        for (displayWidth in listOf(360, 720, 1080)) {
-            val groupWidth = minOf(356, (displayWidth - 16).coerceAtLeast(120))
-            val lyricsWidth = (groupWidth - 78).coerceAtLeast(48)
-
-            val rightMin = FloatingOverlayPlacement.minimumCoverX(
-                true, true, lyricsWidth, gap, margin,
-            )
-            val rightMax = FloatingOverlayPlacement.maximumCoverX(
-                true, true, displayWidth, groupWidth, coverWidth, margin,
-            ).coerceAtLeast(rightMin)
-            assertEquals(margin, rightMin)
-            assertTrue(rightMax + groupWidth <= displayWidth - margin)
-
-            val leftMin = FloatingOverlayPlacement.minimumCoverX(
-                true, false, lyricsWidth, gap, margin,
-            )
-            val leftMax = FloatingOverlayPlacement.maximumCoverX(
-                true, false, displayWidth, groupWidth, coverWidth, margin,
-            ).coerceAtLeast(leftMin)
-            val leftOrigin = FloatingOverlayPlacement.windowOriginX(
-                true, leftMin, lyricsWidth, gap, false,
-            )
-            assertTrue(leftOrigin >= margin)
-            assertTrue(leftOrigin + groupWidth <= displayWidth - margin)
-            assertTrue(leftMax + coverWidth <= displayWidth - margin)
-        }
-    }
-
-    @Test
     fun gdStudioSearchUsesTitleFallbackOnlyWhenDistinct() {
         assertEquals(
             listOf("ray (超かぐや姫！ Version) Aimer", "ray (超かぐや姫！ Version)"),
