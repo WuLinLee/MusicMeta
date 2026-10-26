@@ -44,17 +44,22 @@ class FlacMusicProvider {
         platform: String,
         cookie: String?,
         userAgent: String,
+        backend: String = MusicSourceConfig.BACKEND_FLAC_SITE,
     ): List<FlacSiteSong> = withContext(Dispatchers.IO) {
-        val normalizedPlatform = platform.lowercase().takeIf { it in setOf("kuwo", "wyy") }
-            ?: throw IOException("不支持的音源平台。")
         if (keyword.isBlank()) throw IOException("请输入要搜索的歌名或歌手。")
+        val selectedBackend = MusicSourceConfig.normalizeBackend(backend)
+        val source = MusicSourceConfig.normalizePlatform(platform)
+        val cacheKey = "$selectedBackend:$source:${keyword.trim().lowercase()}"
+        MusicSourceSearchCache.get(cacheKey)?.let { return@withContext it }
 
-        val primaryFailure = try {
-            val url = apiUrl("search")
-            val request = baseRequest(url, cookie, userAgent)
+        val songs = if (selectedBackend == MusicSourceConfig.BACKEND_GD_STUDIO) {
+            searchGdStudio(keyword.trim(), source)
+        } else {
+            val sitePlatform = MusicSourceConfig.toFlacSitePlatform(source)
+            val request = baseRequest(apiUrl("search"), cookie, userAgent)
                 .post(
                     FormBody.Builder()
-                        .add("platform", normalizedPlatform)
+                        .add("platform", sitePlatform)
                         .add("keyword", keyword.trim())
                         .add("page", "1")
                         .add("size", "20")
@@ -66,26 +71,15 @@ class FlacMusicProvider {
             val data = root.optJSONObject("data")
                 ?: throw IOException("下载站搜索响应中没有 data 字段。")
             val list = data.optJSONArray("list") ?: JSONArray()
-            val songs = (0 until list.length()).mapNotNull { index ->
-                parseSong(list.optJSONObject(index), normalizedPlatform)
+            val parsed = (0 until list.length()).mapNotNull { index ->
+                parseSong(list.optJSONObject(index), sitePlatform)
             }
-            if (songs.isEmpty()) throw IOException("没有搜索到歌曲。")
-            return@withContext songs
-        } catch (error: Exception) {
-            error
+            if (parsed.isEmpty()) throw IOException("flac.music.hi.cn 没有搜索到歌曲。")
+            parsed
         }
-
-        try {
-            val fallbackSongs = searchGdStudio(keyword, normalizedPlatform)
-            if (fallbackSongs.isNotEmpty()) return@withContext fallbackSongs
-            throw IOException("GD Studio 没有搜索到候选歌曲。")
-        } catch (fallbackError: Exception) {
-            throw IOException(
-                "主音源搜索失败（" + (primaryFailure.message ?: "未知错误") +
-                    "）；GD Studio 兜底也失败（" + (fallbackError.message ?: "未知错误") + "）。",
-                primaryFailure,
-            )
-        }
+        if (songs.isEmpty()) throw IOException("没有搜索到歌曲。")
+        MusicSourceSearchCache.put(cacheKey, songs)
+        songs
     }
 
     suspend fun resolveDownloadUrl(
@@ -144,44 +138,16 @@ class FlacMusicProvider {
         cookie: String?,
         userAgent: String,
     ): Pair<String, Boolean> {
-        try {
-            val url = resolveDownloadUrl(song, format, bitrate, cookie, userAgent)
-            return url to song.platform.startsWith("gd:")
-        } catch (primaryError: Exception) {
-            val platform = if (song.platform.contains("kuwo", ignoreCase = true)) "kuwo" else "wyy"
-            val fallbackCandidates = try {
-                withContext(Dispatchers.IO) {
-                    searchGdStudio(song.title + " " + song.artist, platform)
-                }
-            } catch (searchError: Exception) {
-                throw IOException(
-                    "主音源解析失败（" + (primaryError.message ?: "未知错误") +
-                        "）；GD Studio 搜索兜底失败（" + (searchError.message ?: "未知错误") + "）。",
-                    primaryError,
-                )
-            }
-            fun normalize(value: String): String = value.lowercase().filter { it.isLetterOrDigit() }
-            val wantedTitle = normalize(song.title)
-            val wantedArtist = normalize(song.artist.substringBefore(" / "))
-            val match = fallbackCandidates.firstOrNull { candidate ->
-                val candidateTitle = normalize(candidate.title)
-                val candidateArtist = normalize(candidate.artist)
-                candidateTitle == wantedTitle &&
-                    (wantedArtist.isBlank() || candidateArtist.contains(wantedArtist) || wantedArtist.contains(candidateArtist))
-            } ?: throw IOException(
-                "主音源解析失败；GD Studio 也没有找到歌名和歌手都匹配的版本，已停止以免下载错歌。",
-                primaryError,
+        val usedGdStudio = song.platform.startsWith("gd:")
+        val url = try {
+            resolveDownloadUrl(song, format, bitrate, cookie, userAgent)
+        } catch (error: Exception) {
+            throw IOException(
+                "无法通过所选服务解析《${song.title}》的下载地址（${error.message ?: "未知错误"}）。可切换 API 服务后重试。",
+                error,
             )
-            return try {
-                resolveDownloadUrl(match, format, bitrate, cookie, userAgent) to true
-            } catch (fallbackError: Exception) {
-                throw IOException(
-                    "主音源解析失败（" + (primaryError.message ?: "未知错误") +
-                        "）；GD Studio 兜底解析也失败（" + (fallbackError.message ?: "未知错误") + "）。",
-                    fallbackError,
-                )
-            }
         }
+        return url to usedGdStudio
     }
 
     suspend fun resolveCoverUrl(song: FlacSiteSong): String = withContext(Dispatchers.IO) {
@@ -222,7 +188,7 @@ class FlacMusicProvider {
                     .header("User-Agent", fallbackUserAgent)
                     .get()
                     .build()
-                val body = executeBody(request).trim()
+                val body = GdStudioApiSupport.getText(client, request, GdStudioApiSupport.COVER_URL_TTL_MILLIS).trim()
                 val direct = if (body.startsWith("http://") || body.startsWith("https://")) {
                     body
                 } else {
@@ -302,7 +268,7 @@ class FlacMusicProvider {
             .header("User-Agent", userAgent.ifBlank { fallbackUserAgent })
             .get()
             .build()
-        return executeBody(request).trim()
+        return GdStudioApiSupport.getText(client, request, GdStudioApiSupport.LYRIC_TTL_MILLIS).trim()
     }
 
     private fun parsePreviewLyricsPayload(body: String): PreviewLyrics {
@@ -346,7 +312,7 @@ class FlacMusicProvider {
             .header("User-Agent", fallbackUserAgent)
             .get()
             .build()
-        val body = executeBody(request).trim()
+        val body = GdStudioApiSupport.getText(client, request, GdStudioApiSupport.SEARCH_TTL_MILLIS).trim()
         val root = runCatching { JSONObject(body) }.getOrNull()
         if (root != null && root.has("code") && root.optInt("code") != 0 && root.optInt("code") != 200) {
             throw IOException("GD Studio 搜索返回错误：" + root.optString("msg").ifBlank { root.optString("message") })
@@ -422,7 +388,7 @@ class FlacMusicProvider {
             .header("User-Agent", userAgent.ifBlank { fallbackUserAgent })
             .get()
             .build()
-        val body = executeBody(request).trim()
+        val body = GdStudioApiSupport.getText(client, request, GdStudioApiSupport.DOWNLOAD_URL_TTL_MILLIS).trim()
         val direct = if (body.startsWith("http://") || body.startsWith("https://")) {
             body
         } else {
@@ -543,7 +509,7 @@ class FlacMusicProvider {
                 }
                 if (!response.isSuccessful) {
                     val error = IOException("下载站请求失败：HTTP ${response.code}")
-                    if (attempt == 0 && (response.code == 429 || response.code in 500..599)) {
+                    if (attempt == 0 && response.code in 500..599) {
                         // Upstream endpoints sometimes return a transient 503; retry once only.
                         Thread.sleep(350L)
                         continue
