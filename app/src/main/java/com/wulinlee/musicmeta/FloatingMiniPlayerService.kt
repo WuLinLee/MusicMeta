@@ -741,6 +741,7 @@ private fun OverlayPlayerUi(
             playbackMode = playbackMode,
             onOpenApp = onOpenApp,
             onDrag = onDrag,
+            onDragEnd = onDragEnd,
             modifier = Modifier.align(Alignment.TopEnd),
         )
     }
@@ -760,6 +761,7 @@ private fun OverlayCoverUi(
     playbackMode: Int,
     onOpenApp: () -> Unit,
     onDrag: (Float, Float) -> Unit,
+    onDragEnd: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
