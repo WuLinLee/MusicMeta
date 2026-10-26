@@ -10,7 +10,7 @@ MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 A
 - **v1.25 APK 直链：** [MusicMeta-v1.24.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.25/MusicMeta-v1.25.apk)
 - **构建记录：** [GitHub Actions](https://github.com/WuLinLee/MusicMeta/actions)
 
-v1.25 变更包括悬浮歌词栏双向动效、歌词区域尺寸优化、Lucide 开源图标替换，以及相邻曲目搜索的歌名回退。下载链接只有在对应 Release 资产创建成功后才可用。版本号、Git 标签、Actions 构建结果和 Release 附件是不同的事实；请以对应提交的成功构建结果和实际资产为准，不要仅凭本文件中的版本号判断已发布。
+v1.25 变更包括悬浮歌词栏双向动效、歌词栏宽度扩大 1.2 倍且自适应窄屏、Lucide 开源图标替换，以及相邻曲目搜索的歌名回退。下载链接只有在对应 Release 资产创建成功后才可用。版本号、Git 标签、Actions 构建结果和 Release 附件是不同的事实；请以对应提交的成功构建结果和实际资产为准，不要仅凭本文件中的版本号判断已发布。
 
 ## 目录
 

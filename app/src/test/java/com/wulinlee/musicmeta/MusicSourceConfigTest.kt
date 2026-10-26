@@ -63,6 +63,12 @@ class MusicSourceConfigTest {
     }
 
     @Test
+    fun lyricsPanelPreferredWidthIsScaledByTwentyPercent() {
+        assertEquals(334, FloatingOverlayPlacement.scaledPreferredLyricsWidthPx(356, 78))
+        assertEquals(0, FloatingOverlayPlacement.scaledPreferredLyricsWidthPx(64, 78))
+    }
+
+    @Test
     fun animatedExpandedOverlayBoundsStayWithinScreenAfterDisplayResize() {
         val coverWidth = 64
         val preferredGap = 14

@@ -38,6 +38,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -192,6 +193,9 @@ internal object FloatingOverlayPlacement {
         preferredGapPx,
         availableSpacePx(displayWidth, coverX, coverWidthPx, marginPx, lyricsOnRight),
     )
+
+    fun scaledPreferredLyricsWidthPx(baseGroupWidthPx: Int, nonLyricsWidthPx: Int, scale: Float = 1.2f): Int =
+        ((baseGroupWidthPx - nonLyricsWidthPx).coerceAtLeast(0) * scale.coerceAtLeast(0f)).roundToInt()
 
     fun lyricsWidthPx(
         displayWidth: Int,
@@ -569,11 +573,12 @@ class FloatingMiniPlayerService : LifecycleService() {
 
     private fun dp(value: Int): Int = (value * density).roundToInt()
 
-    private fun desiredGroupWidthPx(): Int =
-        minOf(dp(368), (displayWidth - dp(8)).coerceAtLeast(dp(64)))
-
     private fun desiredLyricsWidthPx(): Int =
-        (desiredGroupWidthPx() - dp(78)).coerceAtLeast(0)
+        FloatingOverlayPlacement.scaledPreferredLyricsWidthPx(
+            baseGroupWidthPx = dp(356),
+            nonLyricsWidthPx = dp(78),
+            scale = 1.2f,
+        )
 
     private fun groupWidthPx(): Int = dp(64) + lyricsPanelGapPx + lyricsPanelWidthPx
 
@@ -846,7 +851,13 @@ private fun OverlayPlayerUi(
 
     val animatedGroupWidthDp = 64f + (lyricsWidthDp + lyricsGapDp) * expansionProgress
     val lyricsModifier = Modifier
-        .offset(x = if (lyricsOnRight) (64f + lyricsGapDp * expansionProgress).dp else 0.dp)
+        .offset(
+            x = if (lyricsOnRight) {
+                (64f + lyricsGapDp * expansionProgress).dp
+            } else {
+                (-lyricsWidthDp * (1f - expansionProgress)).dp
+            },
+        )
         .width(lyricsWidthDp.dp)
         .height(64.dp)
         .graphicsLayer {
