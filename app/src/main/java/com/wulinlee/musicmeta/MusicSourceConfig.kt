@@ -63,7 +63,7 @@ internal object MusicSourceConfig {
 }
 
 internal class GdStudioRateLimitException(val retryAfterMillis: Long) : IOException(
-    "GD Studio 请求较多，约 ${maxOf(1L, (retryAfterMillis + 999L) / 1000L)} 秒后可重试。当前试听不会被停止。"
+    "GD Studio 请求较多，约 ${maxOf(1L, (retryAfterMillis + 999L) / 1000L)} 秒后可重试。请稍后重试。"
 ) {
     val retryAfterSeconds: Long
         get() = maxOf(1L, (retryAfterMillis + 999L) / 1000L)
@@ -71,13 +71,14 @@ internal class GdStudioRateLimitException(val retryAfterMillis: Long) : IOExcept
 
 /**
  * The GD Studio documentation states at most 50 requests per five-minute window.
- * MusicMeta reserves five requests as a safety margin for other clients sharing an IP.
+ * MusicMeta uses the documented client-side ceiling; the server may also count other clients on a shared IP.
  * The budget persists across process restarts, but is per installation—not a guarantee about
  * the server-side IP quota. Expensive thumbnail lookups are intentionally not done per result row.
  */
 internal object GdStudioRequestLimiter {
     private const val WINDOW_MILLIS = 5 * 60 * 1000L
-    private const val MAX_REQUESTS = 45
+    private const val MAX_REQUESTS = 50
+    internal fun maxRequestsForTests(): Int = MAX_REQUESTS
     private const val PREFS_NAME = "music_meta_api_limits"
     private const val TIMESTAMPS_KEY = "gd_studio_request_timestamps_v1"
     private val lock = Any()
