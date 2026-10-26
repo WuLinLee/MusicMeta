@@ -2,12 +2,12 @@
 
 MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 Android 应用：读取可公开访问的网易云歌单，搜索并核对音源，下载音频，并尽可能补齐封面、歌词和音频标签。
 
-> **当前开发版本：1.22** · `versionCode = 26`  
+> **当前开发版本：1.23** · `versionCode = 27`  
 > 应用 ID：`com.wulinlee.musicmeta` · 最低 Android：10（API 29）· 目标 SDK：35  
 > 技术栈：Kotlin、Jetpack Compose、Material 3、Coroutines、OkHttp、Coil、jaudiotagger。
 
 - **正式版发布页：** [GitHub Releases](https://github.com/WuLinLee/MusicMeta/releases)
-- **v1.22 APK 直链：** [MusicMeta-v1.22.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.22/MusicMeta-v1.22.apk)（构建与正式 Release 验证完成后可用）
+- **v1.23 APK 直链：** [MusicMeta-v1.23.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.23/MusicMeta-v1.23.apk)
 - **构建记录：** [GitHub Actions](https://github.com/WuLinLee/MusicMeta/actions)
 
 下载链接只有在对应 Release 资产创建成功后才可用。版本号、Git 标签、Actions 构建结果和 Release 附件是不同的事实；请以对应提交的成功构建结果和实际资产为准，不要仅凭本文件中的版本号判断已发布。
@@ -44,11 +44,24 @@ MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 A
 2. 进入相应分页，输入可访问的歌单链接 / ID；使用红心歌单功能时输入网易云用户 ID。需要直接搜歌时切换到“直接搜歌”入口。
 3. 从候选结果中检查歌名、歌手、专辑与版本。确认候选后再下载，避免把同名曲目误认为同一录音。
 4. 在本地分页点击“扫描”读取设备允许访问的音乐文件。需要扫描其他目录时，通过应用提供的文件夹选择器授权。
-5. 在设置中选择默认音源、音质、保存目录及悬浮歌词的默认展开 / 翻译显示行为。
+5. 在设置中选择 API 服务（GD Studio 或 flac.music.hi.cn）、次级音乐源、音质、保存目录及悬浮歌词偏好。
 
 首次使用跨应用悬浮播放器时，需要在 Android 系统设置中授予“显示在其他应用上层”权限。撤销权限后，跨应用浮层不可用。
 
-## v1.22 本次改进
+## v1.23 本次改进
+
+- **修正请求量放大：** 搜索候选列表不再为每一行自动请求封面地址；缺失封面的候选先显示应用默认封面，开始试听时再解析当前歌曲封面。
+- **优化 GD Studio 请求预算体验：** 仍保留每安装实例最多 45 次 / 5 分钟的本地保护预算，避免逼近文档所述 50 次限制；触发预算时改为可恢复的提示，不再作为异常报告上传。
+- **减少歌词补全请求：** 网易云已返回原文歌词但没有翻译时，不再为了补一个可能不存在的译文额外请求 GD Studio；只有原文缺失时才尝试 GD Studio 歌词补全。
+- **区分服务职责：** 将旧的“默认音源”常量改名为 flac.music.hi.cn 站点地址，GD Studio 请求不再读取或附带该站 Cookie；下载地址解析函数与界面提示不再把 GD Studio 描述成无条件“兜底”。
+- **切歌失败保护：** 上一首 / 下一首因 GD Studio 冷却而无法搜索时，保留当前正在播放的音频，并显示预计可重试时间及可切换服务的提示。
+- **版本号：** 1.23，versionCode 27。
+
+请求额度是服务端限制，不是播放次数限制；一首歌曲仍可能涉及搜索、播放链接、歌词和封面等独立接口。请求缓存会减少重复访问，但客户端无法知道同一公网 IP 上其他设备已使用的额度。
+
+第三方 API 使用提示：GD Studio 文档要求注明“GD音乐台 (music.gdstudio.xyz)”出处，并遵守其 CC BY-NC 4.0 / 非商业使用限制。
+
+## v1.22 改进记录
 
 - **两级音源配置：** 先选择 API 服务入口（GD Studio / flac.music.hi.cn），再选择音乐平台；默认 GD Studio + 网易云（netease）。两种服务分别记住平台选择。
 - **GD Studio 请求控制：** 同一 GET URL 使用带过期时间的响应缓存；把最近 5 分钟的请求时间写入应用私有设置，限流预算在进程重启后仍保留（每个安装实例最多 45 次 / 5 分钟），并避免 HTTP 429 自动重试。共享公网 IP 上的其他设备仍会消耗服务端额度。
@@ -172,17 +185,17 @@ CI 会另外执行 APK 对齐、签名、签名证书验证和包名检查。构
 
 ## 版本与签名
 
-- 当前版本名：`1.22`
-- 当前版本号：`versionCode = 26`
+- 当前版本名：`1.23`
+- 当前版本号：`versionCode = 27`
 - Gradle 版本元数据位于 `app/build.gradle.kts`；用户可见变更记录位于 `RELEASE_NOTES.md`。
 
 GitHub Actions 工作流会设置 JDK 17 和 Gradle 8.9，检查资源后运行 JVM 单元测试、构建 Release、对 APK 执行 zipalign / 签名 / 校验，再上传 APK 并创建 Release。常规 `main` push 会创建预览发布；提交信息以 `release:` 开头时走正式发布逻辑。已有同名 Release 默认不会覆盖，只有明确的 `release: refresh v...` 提交才允许刷新现有版本。
 
 正式发布前应检查：
-- `main` 最新 commit 与 `v1.22` 标签指向一致；
+- `main` 最新 commit 与 `v1.23` 标签指向一致；
 - 对应 Actions run 为 `completed / success`；
 - Release 不是草稿或预发布；
-- `MusicMeta-v1.22.apk` 资产已上传，签名及 package metadata 检查通过。
+- `MusicMeta-v1.23.apk` 资产已上传，签名及 package metadata 检查通过。
 
 ### APK 签名注意事项
 
