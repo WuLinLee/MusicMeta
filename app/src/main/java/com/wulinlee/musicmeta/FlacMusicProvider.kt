@@ -131,7 +131,7 @@ class FlacMusicProvider {
         direct
     }
 
-    suspend fun resolveDownloadUrlWithFallback(
+    suspend fun resolveDownloadUrlForSource(
         song: FlacSiteSong,
         format: String,
         bitrate: String,
@@ -141,6 +141,8 @@ class FlacMusicProvider {
         val usedGdStudio = song.platform.startsWith("gd:")
         val url = try {
             resolveDownloadUrl(song, format, bitrate, cookie, userAgent)
+        } catch (error: GdStudioRateLimitException) {
+            throw error
         } catch (error: Exception) {
             throw IOException(
                 "无法通过所选服务解析《${song.title}》的下载地址（${error.message ?: "未知错误"}）。可切换 API 服务后重试。",
