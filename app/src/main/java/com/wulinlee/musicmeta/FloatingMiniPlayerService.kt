@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
+import android.content.res.Configuration
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
@@ -426,6 +427,16 @@ class FloatingMiniPlayerService : LifecycleService() {
     }
 
     override fun onBind(intent: Intent): IBinder? = super.onBind(intent)
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // The service can outlive a rotation or display-size change. Re-read pixel dimensions
+        // before clamping so the complete expanded cover + lyrics group remains on-screen.
+        updateDisplaySize()
+        clampPosition()
+        updateWindowPositions()
+        savePosition()
+    }
 
     override fun onDestroy() {
         mainHandler.removeCallbacks(progressTicker)
