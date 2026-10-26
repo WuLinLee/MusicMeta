@@ -3,6 +3,7 @@ package com.wulinlee.musicmeta
 import android.content.Context
 import android.content.SharedPreferences
 import java.io.IOException
+import org.json.JSONObject
 import java.util.ArrayDeque
 import java.util.LinkedHashMap
 import okhttp3.OkHttpClient
@@ -16,17 +17,12 @@ internal object MusicSourceConfig {
     const val DEFAULT_BACKEND = BACKEND_GD_STUDIO
     const val DEFAULT_PLATFORM = "netease"
 
+    // GD Studio labels available sources dynamically. Its current documentation marks
+    // NetEase, JOOX, and Bilibili as stable; keep the UI aligned to that published list.
     val gdStudioPlatforms = listOf(
         MusicPlatformOption("netease", "网易云"),
-        MusicPlatformOption("tencent", "QQ音乐"),
-        MusicPlatformOption("kuwo", "酷我"),
-        MusicPlatformOption("tidal", "Tidal"),
-        MusicPlatformOption("qobuz", "Qobuz"),
         MusicPlatformOption("joox", "JOOX"),
         MusicPlatformOption("bilibili", "Bilibili"),
-        MusicPlatformOption("apple", "Apple Music"),
-        MusicPlatformOption("ytmusic", "YouTube Music"),
-        MusicPlatformOption("spotify", "Spotify"),
     )
     // The flac.music.hi.cn adapter currently implements only NetEase and Kuwo.
     val flacSitePlatforms = listOf(
@@ -43,7 +39,12 @@ internal object MusicSourceConfig {
         val candidate = value?.trim()?.lowercase().orEmpty()
         // v1.21 and earlier used "wyy" for NetEase.
         val normalized = if (candidate == "wyy") "netease" else candidate
-        return gdStudioPlatforms.firstOrNull { it.id == normalized }?.id ?: DEFAULT_PLATFORM
+        return (gdStudioPlatforms + flacSitePlatforms).firstOrNull { it.id == normalized }?.id ?: DEFAULT_PLATFORM
+    }
+
+    fun platformForBackend(backend: String, value: String?): String {
+        val normalized = normalizePlatform(value)
+        return platformsFor(backend).firstOrNull { it.id == normalized }?.id ?: DEFAULT_PLATFORM
     }
 
     fun platformsFor(backend: String): List<MusicPlatformOption> =
@@ -127,6 +128,30 @@ internal object GdStudioRequestLimiter {
     }
 }
 /** Shared expiring GET-response cache for GD Studio API calls. */
+internal fun formatGdStudioHttpErrorMessage(statusCode: Int, responseBody: String): String {
+    val prefix = "GD Studio API 请求失败：HTTP $statusCode"
+    val body = responseBody.trim()
+    if (body.isBlank() || body.startsWith("<!doctype html", true) || body.startsWith("<html", true)) {
+        return prefix
+    }
+    val json = runCatching { JSONObject(body) }.getOrNull()
+    val detail = listOf(
+        json?.optString("msg"),
+        json?.optString("message"),
+        json?.optString("error"),
+        json?.optString("detail"),
+    ).firstOrNull { !it.isNullOrBlank() && !it.equals("null", ignoreCase = true) }
+        ?: body.takeUnless { it.startsWith("{") || it.startsWith("[") }.orEmpty()
+    val safeDetail = detail
+        .replace(Regex("(?i)https?://\\S+"), "[网址已隐藏]")
+        .replace(Regex("[\\r\\n\\t]+"), " ")
+        .replace(Regex("<[^>]*>"), " ")
+        .trim()
+        .take(180)
+    return if (safeDetail.isBlank()) prefix else "$prefix（$safeDetail）"
+}
+
+
 internal object GdStudioApiSupport {
     const val SEARCH_TTL_MILLIS = 5 * 60 * 1000L
     const val DOWNLOAD_URL_TTL_MILLIS = 15 * 1000L
@@ -170,7 +195,10 @@ internal object GdStudioApiSupport {
                         retryTransient = true
                         ""
                     }
-                    !response.isSuccessful -> throw IOException("GD Studio API 请求失败：HTTP ${response.code}")
+                    !response.isSuccessful -> {
+                        val errorBody = runCatching { response.body?.string().orEmpty() }.getOrDefault("")
+                        throw IOException(formatGdStudioHttpErrorMessage(response.code, errorBody))
+                    }
                     else -> {
                         val content = response.body?.string() ?: throw IOException("GD Studio API 返回空内容。")
                         val trimmed = content.trimStart()
