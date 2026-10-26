@@ -2653,12 +2653,21 @@ private fun MusicMetaApp() {
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
+                        val isActuallyPlaying = previewCurrentPlaylistId == currentPlaylist.id &&
+                            previewCurrentTrack?.id == track.id
+                        val isLocated = highlightedPlaylistMode == inputMode && highlightedPlaylistTrackId == track.id
+                        val rowHighlightLabel = when {
+                            isActuallyPlaying -> "正在播放"
+                            isLocated -> "已定位"
+                            else -> null
+                        }
                         TrackRow(
                             track = track,
                             busy = busy,
                             onFindSource = { searchTrackSource(track, false) },
                             onFindAndPlay = { searchTrackSource(track, true) },
                             onCopy = { copySongAndArtist(track.title, track.artists) },
+                            highlightLabel = rowHighlightLabel,
                         )
                         if (selectedTrack?.id == track.id) {
                     when {
@@ -3934,13 +3943,17 @@ private fun TrackRow(
     onFindSource: () -> Unit,
     onFindAndPlay: () -> Unit,
     onCopy: () -> Unit,
+    highlightLabel: String? = null,
 ) {
+    val rowShape = RoundedCornerShape(18.dp)
     Surface(
-        modifier = Modifier.fillMaxWidth().pointerInput(track.id) {
-            detectTapGestures(onLongPress = { onCopy() })
-        },
-        shape = RoundedCornerShape(18.dp),
-        color = SurfaceColor,
+        modifier = Modifier.fillMaxWidth()
+            .then(if (highlightLabel != null) Modifier.border(1.5.dp, Accent, rowShape) else Modifier)
+            .pointerInput(track.id) {
+                detectTapGestures(onLongPress = { onCopy() })
+            },
+        shape = rowShape,
+        color = if (highlightLabel != null) SoftAccent else SurfaceColor,
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 10.dp),
@@ -3971,6 +3984,9 @@ private fun TrackRow(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
+                if (highlightLabel != null) {
+                    Text(highlightLabel, color = Accent, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                }
             }
             OutlinedButton(
                 onClick = onFindSource,
