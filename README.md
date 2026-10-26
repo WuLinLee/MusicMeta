@@ -2,12 +2,12 @@
 
 MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 Android 应用：读取可公开访问的网易云歌单，搜索并核对音源，下载音频，并尽可能补齐封面、歌词和音频标签。
 
-> **当前开发版本：1.21** · `versionCode = 25`  
+> **当前开发版本：1.22** · `versionCode = 26`  
 > 应用 ID：`com.wulinlee.musicmeta` · 最低 Android：10（API 29）· 目标 SDK：35  
 > 技术栈：Kotlin、Jetpack Compose、Material 3、Coroutines、OkHttp、Coil、jaudiotagger。
 
 - **正式版发布页：** [GitHub Releases](https://github.com/WuLinLee/MusicMeta/releases)
-- **v1.21 APK 直链：** [MusicMeta-v1.21.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.21/MusicMeta-v1.21.apk)（构建与正式 Release 验证完成后可用）
+- **v1.22 APK 直链：** [MusicMeta-v1.22.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.22/MusicMeta-v1.22.apk)（构建与正式 Release 验证完成后可用）
 - **构建记录：** [GitHub Actions](https://github.com/WuLinLee/MusicMeta/actions)
 
 下载链接只有在对应 Release 资产创建成功后才可用。版本号、Git 标签、Actions 构建结果和 Release 附件是不同的事实；请以对应提交的成功构建结果和实际资产为准，不要仅凭本文件中的版本号判断已发布。
@@ -48,16 +48,16 @@ MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 A
 
 首次使用跨应用悬浮播放器时，需要在 Android 系统设置中授予“显示在其他应用上层”权限。撤销权限后，跨应用浮层不可用。
 
-## v1.21 本次改进
+## v1.22 本次改进
 
-- **更合理的乱序播放：** 最近播放历史仅保存在当前进程内存，进程重启后自动清空；优先避开近期播放曲目，候选不足时放宽限制。历史不提供单独页面，也不会写入永久设置。
-- **歌单与本地曲库恢复：** 保存最近加载的公开 / 红心歌单、已缓存分页和本地扫描结果；重启后先从本地恢复，减少重复同步与扫描。网易云服务端变化、文件权限撤销或文件移动时，仍可能需要重新同步 / 扫描。
-- **转圈定位反馈：** 定位后的歌曲以高亮背景、边框和“已定位 / 正在播放”标签显示。
-- **缓存维护：** 设置中新增一键清理临时 / 图片缓存，不删除已下载歌曲、歌单缓存或本地曲库快照。
-- **悬浮窗偏好：** 已授予悬浮窗权限时默认启用；用户开启后会保存偏好，进程重启后可恢复。系统撤销权限时仍需重新授权。
-- **性能：** 本地音乐扫描和缓存恢复移至 IO 线程；页面缓存采用短暂防抖写入，避免频繁磁盘写操作。
+- **两级音源配置：** 先选择 API 服务入口（GD Studio / flac.music.hi.cn），再选择音乐平台；默认 GD Studio + 网易云（netease）。两种服务分别记住平台选择。
+- **GD Studio 请求控制：** 同一 GET URL 使用带过期时间的进程内响应缓存；统一限流按每进程 45 次 / 5 分钟预留余量，并避免 HTTP 429 自动重试。
+- **API 选择透明：** 所选服务决定主要搜索和下载地址解析入口；失败时提示用户切换，不再静默触发额外备用搜索。
+- **歌单接口可靠性：** 移除未在已提供 GD Studio 文档中列出的歌单 API 调用；歌单仍使用网易云公开只读接口，失败不会清空已有快照。
+- **分页缓存优化：** 使用每 100 首为底层缓存批次，25 / 50 / 100 首页面复用同一批数据。缓存格式升级后分页缓存会重新建立，不影响歌单快照、本地曲库或已下载歌曲。
+- **服务条款提示：** GD Studio 要求注明“GD音乐台 (music.gdstudio.xyz)”出处，并遵守 CC BY-NC 4.0 / 非商业使用限制。服务端开放平台可能动态变化。
 
-自动化构建与单元测试不替代真实设备验收；请重点验证不同 Android 设备上的后台重启、悬浮窗权限和歌单接口行为。
+自动化验收与真实设备验收是两件事：CI 成功不会自动证明所有来源都开放、每首音源匹配正确或所有设备上的播放交互正常。
 
 ## 悬浮迷你播放器
 
@@ -98,7 +98,7 @@ MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 A
 | `app/src/main/java/com/wulinlee/musicmeta/MainActivity.kt` | Compose 界面、歌单状态与分页、音源搜索、下载编排、试听、歌词和 WebView 验证 |
 | `app/src/main/java/com/wulinlee/musicmeta/FloatingMiniPlayerService.kt` | 跨应用悬浮窗、单窗口布局、拖动 / 画圈手势、前台通知与控制命令 |
 | `MusicModels.kt` | 歌曲、歌单与媒体元数据模型 |
-| `PublicPlaylistProvider.kt` | 歌单元数据、曲目列表、分页数据及备用读取 |
+| `PublicPlaylistProvider.kt` | 网易云公开歌单元数据、曲目列表与批量读取 |
 | `FlacMusicProvider.kt` | 候选搜索、下载地址解析、来源封面 / 歌词与备用来源 |
 | `MetadataProvider.kt` | 歌词 / 封面补全与响应解析 |
 | `AudioPipeline.kt` | 下载器、文件命名、音频标签写入和媒体发布 |
@@ -127,7 +127,7 @@ MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 A
 
 ## 数据源与使用边界
 
-项目从第三方服务获取可访问的歌单、候选音源、歌词和封面。源码当前包含网易云公开接口、GD Studio Music API、FLAC 来源站及 LRCLIB 等备用来源；接口、域名和访问策略可能改变，实际使用以当前 Provider 实现和服务条款为准。
+项目从第三方服务获取可访问的歌单、候选音源、歌词和封面。歌单使用网易云公开只读接口；音源服务可以选择 GD Studio API 或 flac.music.hi.cn。GD Studio 的 source 参数较多，但文档声明当前可用源会动态调整；flac.music.hi.cn 当前适配网易云与酷我。LRCLIB 和 iTunes Search 用于部分歌词 / 封面补全。接口、域名和访问策略可能改变，实际使用以当前 Provider 实现和服务条款为准。
 
 - 不承诺私密歌单、受限资源或需要登录授权的内容可用。
 - 不保证第三方音源长期可访问，也不保证每首歌曲都能找到完全匹配的录音版本。
@@ -172,17 +172,17 @@ CI 会另外执行 APK 对齐、签名、签名证书验证和包名检查。构
 
 ## 版本与签名
 
-- 当前版本名：`1.19`
-- 当前版本号：`versionCode = 24`
+- 当前版本名：`1.22`
+- 当前版本号：`versionCode = 26`
 - Gradle 版本元数据位于 `app/build.gradle.kts`；用户可见变更记录位于 `RELEASE_NOTES.md`。
 
 GitHub Actions 工作流会设置 JDK 17 和 Gradle 8.9，检查资源后运行 JVM 单元测试、构建 Release、对 APK 执行 zipalign / 签名 / 校验，再上传 APK 并创建 Release。常规 `main` push 会创建预览发布；提交信息以 `release:` 开头时走正式发布逻辑。已有同名 Release 默认不会覆盖，只有明确的 `release: refresh v...` 提交才允许刷新现有版本。
 
 正式发布前应检查：
-- `main` 最新 commit 与 `v1.20` 标签指向一致；
+- `main` 最新 commit 与 `v1.22` 标签指向一致；
 - 对应 Actions run 为 `completed / success`；
 - Release 不是草稿或预发布；
-- `MusicMeta-v1.20.apk` 资产已上传，签名及 package metadata 检查通过。
+- `MusicMeta-v1.22.apk` 资产已上传，签名及 package metadata 检查通过。
 
 ### APK 签名注意事项
 
@@ -208,3 +208,8 @@ GitHub Actions 工作流会设置 JDK 17 和 Gradle 8.9，检查资源后运行 
 - 第三方库与服务请遵循各自的许可和服务条款；服务可用性不由本项目控制。
 - 项目与网易云音乐、GD Studio、LRCLIB、Apple 或其他音源服务均无官方关联。
 - 第三方依赖和声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+
+### GD Studio API attribution and usage
+
+When the selected service is GD Studio, MusicMeta uses its published search, URL, album-art and lyric endpoints where available. The documentation asks clients to credit **GD音乐台 (music.gdstudio.xyz)** and states CC BY-NC 4.0 / non-commercial study-use restrictions. These API terms do not automatically grant permission to download or redistribute every recording; users remain responsible for permissions and applicable law. The provider's currently supported source list may change.
