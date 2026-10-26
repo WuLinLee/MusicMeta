@@ -944,6 +944,12 @@ private fun MusicMetaApp() {
     }
     val playPreview: (FlacSiteSong) -> Unit = { song ->
         val songKey = sourceSongKey(song)
+        val recentPlaylistTrack = selectedTrack
+        val recentPlaylist = playlist.takeIf { recentPlaylistTrack != null }
+        val recentPlaylistMode = inputMode
+        val recentPlaylistPosition = if (recentPlaylist != null && recentPlaylistTrack != null) {
+            findPlaylistTrackPosition(recentPlaylistTrack.id, recentPlaylist, pageCache, recentPlaylistMode)
+        } else null
         if (previewSong?.let(sourceSongKey) == songKey && previewPlayer.value != null) {
             val player = previewPlayer.value
             if (player != null) {
@@ -1048,6 +1054,15 @@ private fun MusicMetaApp() {
                                     } else {
                                         "正在播放《" + song.title + "》。"
                                     }
+                                    recentlyPlayedKeys = MusicMetaPersistence.recordRecentPlay(
+                                        preferences = folderPreferences,
+                                        previousKeys = recentlyPlayedKeys,
+                                        sourceKey = songKey,
+                                        playlistMode = recentPlaylistMode.takeIf { recentPlaylist != null && recentPlaylistTrack != null },
+                                        playlistId = recentPlaylist?.id,
+                                        trackId = recentPlaylistTrack?.id,
+                                        playlistPosition = recentPlaylistPosition,
+                                    )
                                 }
                                 .onFailure { error ->
                                     isPreviewLoading = false
@@ -1392,6 +1407,7 @@ private fun MusicMetaApp() {
         pageSize,
         pageCache,
         playbackMode,
+        recentlyPlayedKeys,
         previewCurrentTrack?.id,
         previewCurrentPlaylistId,
         isSearchingFlac,
@@ -1437,8 +1453,35 @@ private fun MusicMetaApp() {
                     } else currentPlaylist.totalTrackCount
                     val targetPosition: Int? = when {
                         currentIndex == null -> null
-                        playbackMode == 1 && direction > 0 && navigationQueueSize > 1 ->
-                            (0 until navigationQueueSize).filter { it != currentIndex }.randomOrNull()
+                        playbackMode == 1 && direction > 0 && navigationQueueSize > 1 -> run {
+                            val playlistRecentPrefix = "playlist:$modeAtRequest:$playlistIdAtRequest:"
+                            val recentPlaylistKeys = recentlyPlayedKeys
+                                .filter { it.startsWith(playlistRecentPrefix) }
+                                .toSet()
+                            val recentPositions = if (filterText.isBlank()) {
+                                MusicMetaPersistence.loadRecentPlaylistPositions(
+                                    folderPreferences,
+                                    modeAtRequest,
+                                    playlistIdAtRequest,
+                                )
+                            } else emptySet()
+                            shuffleCandidatePositions(
+                                totalCount = navigationQueueSize,
+                                currentIndex = currentIndex ?: -1,
+                                recentPositions = recentPositions,
+                                recentTrackKeys = recentPlaylistKeys,
+                                trackKeyAt = { position ->
+                                    val candidate = if (filterText.isNotBlank()) {
+                                        filteredKnownTracks.getOrNull(position)
+                                    } else {
+                                        playlistTrackAtPosition(position, currentPlaylist, pageCache, modeAtRequest)
+                                    }
+                                    candidate?.let {
+                                        MusicMetaPersistence.playlistTrackKey(modeAtRequest, playlistIdAtRequest, it.id)
+                                    }
+                                },
+                            ).randomOrNull()
+                        }
                         else -> currentIndex + direction
                     }
                     if (targetPosition == null) {
@@ -1584,7 +1627,7 @@ private fun MusicMetaApp() {
                 val queue = previewQueue.filter { it.platform == "local" }
                 val currentIndex = queue.indexOfFirst { it.id == activeSong.id }
                 val next = if (playbackMode == 1 && direction > 0 && queue.size > 1) {
-                    queue.filterNot { it.id == activeSong.id }.randomOrNull()
+                    shuffleCandidates(queue, sourceSongKey(activeSong), recentlyPlayedKeys.toSet(), sourceSongKey).randomOrNull()
                 } else {
                     queue.getOrNull(currentIndex + direction)
                 }
@@ -1601,7 +1644,7 @@ private fun MusicMetaApp() {
                 val queue = previewQueue
                 val currentIndex = queue.indexOfFirst { sourceSongKey(it) == sourceSongKey(activeSong) }
                 val next = if (playbackMode == 1 && direction > 0 && queue.size > 1) {
-                    queue.filterNot { sourceSongKey(it) == sourceSongKey(activeSong) }.randomOrNull()
+                    shuffleCandidates(queue, sourceSongKey(activeSong), recentlyPlayedKeys.toSet(), sourceSongKey).randomOrNull()
                 } else queue.getOrNull(currentIndex + direction)
                 if (next != null) {
                     status = "正在切换音源队列：" + next.title
