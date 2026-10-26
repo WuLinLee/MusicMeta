@@ -1070,7 +1070,7 @@ private fun MusicMetaApp() {
                                         trackId = recentPlaylistTrack?.id,
                                     )
                                     if (recentPlaylistMode.isNotBlank() && recentPlaylist != null && recentPlaylistPosition != null) {
-                                        val positionKey = "$recentPlaylistMode:\${recentPlaylist.id}"
+                                        val positionKey = "$recentPlaylistMode:${recentPlaylist.id}"
                                         recentPlaylistPositions = recentPlaylistPositions.toMutableMap().apply {
                                             val updated = (get(positionKey).orEmpty().filterNot { it == recentPlaylistPosition } + recentPlaylistPosition).takeLast(12)
                                             put(positionKey, updated)
@@ -1421,6 +1421,7 @@ private fun MusicMetaApp() {
         pageCache,
         playbackMode,
         recentlyPlayedKeys,
+        recentPlaylistPositions,
         previewCurrentTrack?.id,
         previewCurrentPlaylistId,
         isSearchingFlac,
@@ -2454,7 +2455,7 @@ private fun MusicMetaApp() {
             if (inputMode == "local") {
                 item(key = "local-controls") {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedTextField(value = localMusicFilter, onValueChange = { localMusicFilter = it; localCurrentPage = 1; jumpPageInput = "1" }, modifier = Modifier.weight(1f), singleLine = true, label = { Text("搜索本地歌曲") })
+                        OutlinedTextField(value = localMusicFilter, onValueChange = { localMusicFilter = it; setCurrentPage(1); jumpPageInput = "1" }, modifier = Modifier.weight(1f), singleLine = true, label = { Text("搜索本地歌曲") })
                         OutlinedButton(onClick = scanLocalMusic, enabled = !isRestoringCaches && !isScanningLocalMusic) {
                             Text(if (isRestoringCaches) "恢复中" else if (isScanningLocalMusic) "扫描中" else "扫描")
                         }
