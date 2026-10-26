@@ -23,7 +23,6 @@ permissions:
 
 jobs:
   build:
-    if: ${{ github.event_name != 'push' || (!startsWith(github.event.head_commit.message, 'chore:') && !startsWith(github.event.head_commit.message, 'fix: correct milestone')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -192,31 +191,6 @@ jobs:
           CURRENT_VERSION="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n 1)"
           CURRENT_TAG="v$CURRENT_VERSION"
           # Keep the current version plus nine milestones that show the project's evolution.
-          KEEP_TAGS=" $CURRENT_TAG v1.20 v1.19 v1.18 v1.17 v1.15 v1.12 v1.10 v1.0.0 v0.1.4 "
-          while IFS= read -r TAG; do
-            [[ -z "$TAG" ]] && continue
-            if [[ "$KEEP_TAGS" == *" $TAG "* ]]; then
-              echo "Keeping milestone release: $TAG"
-            else
-              echo "Deleting non-milestone release: $TAG"
-              gh release delete "$TAG" --yes --repo "$GITHUB_REPOSITORY"
-            fi
-          done < <(gh release list --limit 1000 --json tagName --jq '.[].tagName')
-
-  prune_releases:
-    if: ${{ github.ref == 'refs/heads/main' }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
-      - name: Keep only ten milestone releases
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          CURRENT_VERSION="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n 1)"
-          CURRENT_TAG="v$CURRENT_VERSION"
           KEEP_TAGS=" $CURRENT_TAG v1.20 v1.19 v1.18 v1.17 v1.15 v1.12 v1.10 v1.0.0 v0.1.4 "
           while IFS= read -r TAG; do
             [[ -z "$TAG" ]] && continue
