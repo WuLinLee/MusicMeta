@@ -446,14 +446,20 @@ private fun MusicMetaApp() {
     var previewPlaybackGeneration by remember { mutableStateOf(0L) }
 
     LaunchedEffect(folderPreferences) {
-        val restored = withContext(Dispatchers.IO) {
-            MusicMetaPersistence.loadCaches(context, folderPreferences)
+        try {
+            val restored = withContext(Dispatchers.IO) {
+                MusicMetaPersistence.loadCaches(context, folderPreferences)
+            }
+            publicPlaylist = restored.publicPlaylist
+            likedPlaylist = restored.likedPlaylist
+            pageCache = restored.pageCache
+            localMusicTracks = restored.localTracks
+        } catch (error: Exception) {
+            status = "恢复本地缓存失败：" + (error.message ?: "可重新同步歌单或扫描本地音乐")
+            captureError("恢复本地缓存", error)
+        } finally {
+            isRestoringCaches = false
         }
-        publicPlaylist = restored.publicPlaylist
-        likedPlaylist = restored.likedPlaylist
-        pageCache = restored.pageCache
-        localMusicTracks = restored.localTracks
-        isRestoringCaches = false
     }
 
     val localFolderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -2664,7 +2670,8 @@ private fun MusicMetaApp() {
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        val isActuallyPlaying = previewCurrentPlaylistId == currentPlaylist.id &&
+                        val isActuallyPlaying = isPreviewPlaying &&
+                            previewCurrentPlaylistId == currentPlaylist.id &&
                             previewCurrentTrack?.id == track.id
                         val isLocated = highlightedPlaylistMode == inputMode && highlightedPlaylistTrackId == track.id
                         val rowHighlightLabel = when {
