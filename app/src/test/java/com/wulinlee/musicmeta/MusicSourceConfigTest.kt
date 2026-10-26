@@ -11,6 +11,7 @@ class MusicSourceConfigTest {
         assertEquals(50, GdStudioRequestLimiter.maxRequestsForTests())
     }
 
+    @Test
     fun defaultsToGdStudioAndNetEase() {
         assertEquals(MusicSourceConfig.BACKEND_GD_STUDIO, MusicSourceConfig.DEFAULT_BACKEND)
         assertEquals("netease", MusicSourceConfig.DEFAULT_PLATFORM)
