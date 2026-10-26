@@ -33,6 +33,27 @@ data class FlacSiteSong(
     val lyricId: String = id,
 )
 
+internal fun formatFlacSiteApiError(code: Int, detail: String, operation: String): String? {
+    if (code == 0 || code == 200) return null
+    if (code == 468 || detail.contains("验证") || detail.contains("challenge", ignoreCase = true)) {
+        return "下载站要求网页访问验证。请先在下方网站页面完成验证，再重新搜索。"
+    }
+    if (code == -1 && (
+            detail.contains("Song not found", ignoreCase = true) ||
+                detail.contains("invalid response", ignoreCase = true)
+        )
+    ) {
+        return if (operation.contains("下载地址")) {
+            "下载站无法解析该候选歌曲的下载地址：曲目可能已失效，或此版本在当前平台暂不可用。请重新搜索并选择其他候选，或切换 API 服务 / 音乐平台后重试。"
+        } else {
+            "下载站暂时无法处理这次$operation；该平台或候选可能暂不可用，请稍后重试，或切换音乐平台。"
+        }
+    }
+    val message = detail.ifBlank { "请稍后重试" }
+    return "下载站接口返回错误 $code：$message"
+}
+
+
 class FlacMusicProvider {
     private val client = OkHttpClient.Builder()
         .followRedirects(true)
@@ -67,7 +88,7 @@ class FlacMusicProvider {
                 )
                 .build()
             val root = JSONObject(executeJson(request))
-            checkApiCode(root)
+            checkApiCode(root, "搜索")
             val data = root.optJSONObject("data")
                 ?: throw IOException("下载站搜索响应中没有 data 字段。")
             val list = data.optJSONArray("list") ?: JSONArray()
@@ -120,7 +141,7 @@ class FlacMusicProvider {
             } catch (e: Exception) {
                 throw IOException("下载站没有返回有效的下载地址；可能需要先在网页中完成访问验证。", e)
             }
-            checkApiCode(root)
+            checkApiCode(root, "下载地址解析")
             root.optString("url")
                 .ifBlank { root.optJSONObject("data")?.optString("url").orEmpty() }
         }
@@ -481,15 +502,12 @@ class FlacMusicProvider {
     private fun normalizeMatch(value: String): String =
         value.trim().lowercase().filter { it.isLetterOrDigit() }
 
-    private fun checkApiCode(root: JSONObject) {
-        if (root.has("code") && root.optInt("code") != 0 && root.optInt("code") != 200) {
-            val code = root.optInt("code")
-            val detail = root.optString("msg").ifBlank { root.optString("message") }
-            if (code == 468 || detail.contains("验证") || detail.contains("challenge", true)) {
-                throw IOException("下载站要求网页访问验证。请先在下方网站页面完成验证，再重新搜索。")
-            }
-            throw IOException("下载站接口返回错误 $code：${detail.ifBlank { "请稍后重试" }}")
-        }
+    private fun checkApiCode(root: JSONObject, operation: String = "请求") {
+        if (!root.has("code")) return
+        val code = root.optInt("code")
+        val detail = root.optString("msg").ifBlank { root.optString("message") }
+        val message = formatFlacSiteApiError(code, detail, operation) ?: return
+        throw IOException(message)
     }
 
     private fun executeJson(request: Request): String {
