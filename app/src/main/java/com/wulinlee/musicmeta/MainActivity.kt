@@ -3284,6 +3284,7 @@ private fun MusicMetaApp() {
                     Text("缓存与维护", fontWeight = FontWeight.SemiBold, color = Ink)
                     OutlinedButton(
                         onClick = { showClearCacheConfirm = true },
+                        enabled = !busy,
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("一键清除临时缓存") }
                     Text(
