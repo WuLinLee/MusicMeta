@@ -1,5 +1,7 @@
 package com.wulinlee.musicmeta
 
+import android.content.Context
+import android.content.SharedPreferences
 import java.io.IOException
 import java.util.ArrayDeque
 import java.util.LinkedHashMap
@@ -69,17 +71,41 @@ internal object MusicSourceConfig {
 internal object GdStudioRequestLimiter {
     private const val WINDOW_MILLIS = 5 * 60 * 1000L
     private const val MAX_REQUESTS = 45
+    private const val PREFS_NAME = "music_meta_api_limits"
+    private const val TIMESTAMPS_KEY = "gd_studio_request_timestamps_v1"
     private val lock = Any()
     private val requestTimes = ArrayDeque<Long>()
+    private var preferences: SharedPreferences? = null
+    private var configured = false
+
+    /** Restores the sliding-window budget across process restarts. */
+    fun configure(context: Context) {
+        synchronized(lock) {
+            if (configured) return
+            val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            preferences = prefs
+            requestTimes.clear()
+            val now = System.currentTimeMillis()
+            prefs.getString(TIMESTAMPS_KEY, null)
+                ?.split(',')
+                ?.mapNotNull { it.toLongOrNull() }
+                ?.filter { it <= now && now - it < WINDOW_MILLIS }
+                ?.forEach { requestTimes.addLast(it) }
+            configured = true
+            persistLocked()
+        }
+    }
 
     fun acquire() {
         val waitMillis = synchronized(lock) {
-            val now = System.nanoTime() / 1_000_000L
-            while (requestTimes.isNotEmpty() && now - requestTimes.peekFirst() >= WINDOW_MILLIS) {
-                requestTimes.removeFirst()
+            val now = System.currentTimeMillis()
+            while (requestTimes.isNotEmpty()) {
+                val first = requestTimes.peekFirst()
+                if (first > now || now - first >= WINDOW_MILLIS) requestTimes.removeFirst() else break
             }
             if (requestTimes.size < MAX_REQUESTS) {
                 requestTimes.addLast(now)
+                persistLocked()
                 0L
             } else {
                 (WINDOW_MILLIS - (now - requestTimes.peekFirst())).coerceAtLeast(1L)
@@ -89,6 +115,11 @@ internal object GdStudioRequestLimiter {
             val seconds = maxOf(1L, (waitMillis + 999L) / 1000L)
             throw IOException("应用近期已使用 GD Studio 的请求预算；约 ${seconds} 秒后可重试。为避免触发服务端限制，本次请求已暂停。")
         }
+    }
+
+    private fun persistLocked() {
+        val serialized = requestTimes.joinToString(",")
+        preferences?.edit()?.putString(TIMESTAMPS_KEY, serialized)?.apply()
     }
 }
 
