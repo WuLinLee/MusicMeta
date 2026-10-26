@@ -2,12 +2,12 @@
 
 MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 Android 应用：读取可公开访问的网易云歌单，搜索并核对音源，下载音频，并尽可能补齐封面、歌词和音频标签。
 
-> **当前开发版本：1.23** · `versionCode = 27`  
+> **当前开发版本：1.24** · `versionCode = 28`  
 > 应用 ID：`com.wulinlee.musicmeta` · 最低 Android：10（API 29）· 目标 SDK：35  
 > 技术栈：Kotlin、Jetpack Compose、Material 3、Coroutines、OkHttp、Coil、jaudiotagger。
 
 - **正式版发布页：** [GitHub Releases](https://github.com/WuLinLee/MusicMeta/releases)
-- **v1.23 APK 直链：** [MusicMeta-v1.23.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.23/MusicMeta-v1.23.apk)
+- **v1.24 APK 直链：** [MusicMeta-v1.24.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.24/MusicMeta-v1.24.apk)
 - **构建记录：** [GitHub Actions](https://github.com/WuLinLee/MusicMeta/actions)
 
 下载链接只有在对应 Release 资产创建成功后才可用。版本号、Git 标签、Actions 构建结果和 Release 附件是不同的事实；请以对应提交的成功构建结果和实际资产为准，不要仅凭本文件中的版本号判断已发布。
@@ -47,6 +47,15 @@ MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 A
 5. 在设置中选择 API 服务（GD Studio 或 flac.music.hi.cn）、次级音乐源、音质、保存目录及悬浮歌词偏好。
 
 首次使用跨应用悬浮播放器时，需要在 Android 系统设置中授予“显示在其他应用上层”权限。撤销权限后，跨应用浮层不可用。
+
+## v1.24 本次改进
+
+- **GD Studio 错误诊断：** HTTP 400 等响应会显示服务端简短原因并隐藏网址；可选平台暂按官方文档当前标注的稳定源显示为网易云、JOOX 和 Bilibili。第三方可用源会动态变化。
+- **下载地址失效提示：** 对 flac.music.hi.cn 的 Song not found or invalid response 提示重新搜索、改选候选或切换 API 服务 / 平台。
+- **悬浮歌词方向：** 封面位于屏幕左侧时，歌词栏向右展开；封面位于右侧时，歌词栏向左展开。
+- **服务偏好校验：** 切换 API 服务时只保留该服务支持的平台选择。
+- **版本号：** 1.24，\`versionCode = 28\`。
+
 
 ## v1.23 本次改进
 
@@ -185,8 +194,8 @@ CI 会另外执行 APK 对齐、签名、签名证书验证和包名检查。构
 
 ## 版本与签名
 
-- 当前版本名：`1.23`
-- 当前版本号：`versionCode = 27`
+- 当前版本名：`1.24`
+- 当前版本号：`versionCode = 28`
 - Gradle 版本元数据位于 `app/build.gradle.kts`；用户可见变更记录位于 `RELEASE_NOTES.md`。
 
 GitHub Actions 工作流会设置 JDK 17 和 Gradle 8.9，检查资源后运行 JVM 单元测试、构建 Release、对 APK 执行 zipalign / 签名 / 校验，再上传 APK 并创建 Release。常规 `main` push 会创建预览发布；提交信息以 `release:` 开头时走正式发布逻辑。已有同名 Release 默认不会覆盖，只有明确的 `release: refresh v...` 提交才允许刷新现有版本。
