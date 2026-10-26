@@ -1447,9 +1447,9 @@ private fun MusicMetaApp() {
                         val detail = error.message?.takeIf { it.isNotBlank() } ?: "音源服务暂不可用"
                         status = "解析下载地址失败：" + detail
                         captureError("解析直接搜索音源", error)
-                    }
-                    if (detail.contains("验证") || detail.contains("468")) {
-                        verificationOpen = true
+                        if (detail.contains("验证") || detail.contains("468")) {
+                            verificationOpen = true
+                        }
                     }
                 } finally {
                     isResolvingUrl = false
@@ -2962,9 +2962,9 @@ private fun MusicMetaApp() {
                                                                     val detail = error.message?.takeIf { it.isNotBlank() } ?: "音源服务暂不可用"
                                                                     status = "解析下载地址失败：" + detail
                                                                     captureError("解析下载地址", error)
-                                                                }
-                                                                if (detail.contains("验证") || detail.contains("468")) {
-                                                                    verificationOpen = true
+                                                                    if (detail.contains("验证") || detail.contains("468")) {
+                                                                        verificationOpen = true
+                                                                    }
                                                                 }
                                                             } finally {
                                                                 isResolvingUrl = false
