@@ -1,6 +1,7 @@
 package com.wulinlee.musicmeta
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -19,9 +20,51 @@ class MusicSourceConfigTest {
     }
 
     @Test
-    fun gdStudioOptionsIncludeDocumentedSources() {
+    fun gdStudioOptionsMatchCurrentlyDocumentedStableSources() {
         val ids = MusicSourceConfig.platformsFor(MusicSourceConfig.BACKEND_GD_STUDIO).map { it.id }
-        assertTrue(ids.containsAll(listOf("netease", "tencent", "kuwo", "tidal", "qobuz", "joox", "bilibili", "apple", "ytmusic", "spotify")))
+        assertEquals(listOf("netease", "joox", "bilibili"), ids)
+        assertEquals("netease", MusicSourceConfig.platformForBackend(MusicSourceConfig.BACKEND_GD_STUDIO, "tencent"))
+    }
+
+    @Test
+    fun flacPlatformRemainsAvailableEvenThoughGdStudioDoesNotListIt() {
+        assertEquals("kuwo", MusicSourceConfig.normalizePlatform("kuwo"))
+        assertEquals("kuwo", MusicSourceConfig.platformForBackend(MusicSourceConfig.BACKEND_FLAC_SITE, "kuwo"))
+        assertEquals("netease", MusicSourceConfig.platformForBackend(MusicSourceConfig.BACKEND_GD_STUDIO, "kuwo"))
+    }
+
+    @Test
+    fun gdStudioHttpErrorShowsSanitizedServerReason() {
+        val message = formatGdStudioHttpErrorMessage(
+            400,
+            """{"message":"source unavailable at https://private.example/path?token=secret"}""",
+        )
+        assertTrue(message.contains("HTTP 400"))
+        assertTrue(message.contains("source unavailable"))
+        assertFalse(message.contains("https://"))
+        assertFalse(message.contains("token=secret"))
+    }
+
+    @Test
+    fun flacSiteSongNotFoundErrorGivesRecoverySteps() {
+        val message = formatFlacSiteApiError(
+            -1,
+            "获取下载地址失败，Song not found or invalid response",
+            "下载地址解析",
+        )
+        assertTrue(message.orEmpty().contains("重新搜索"))
+        assertTrue(message.orEmpty().contains("切换 API 服务"))
+    }
+
+    @Test
+    fun expandedLyricsPanelChoosesOppositeSideFromCover() {
+        val coverWidth = 64
+        val lyricsWidth = 260
+        val gap = 14
+        assertTrue(FloatingOverlayPlacement.lyricsPanelOnRight(8, coverWidth, 1080))
+        assertEquals(8, FloatingOverlayPlacement.windowOriginX(true, 8, lyricsWidth, gap, true))
+        assertFalse(FloatingOverlayPlacement.lyricsPanelOnRight(900, coverWidth, 1080))
+        assertEquals(626, FloatingOverlayPlacement.windowOriginX(true, 900, lyricsWidth, gap, false))
     }
 
     @Test
