@@ -222,7 +222,13 @@ class MetadataProvider {
                 .addQueryParameter("source", "netease")
                 .addQueryParameter("id", id.toString())
                 .build()
-            val body = get(url.toString(), "https://music.gdstudio.xyz/")
+            val request = Request.Builder()
+                .url(url)
+                .header("Referer", "https://music.gdstudio.xyz/")
+                .header("User-Agent", userAgent)
+                .get()
+                .build()
+            val body = GdStudioApiSupport.getText(client, request, GdStudioApiSupport.LYRIC_TTL_MILLIS)
             val root = JSONObject(body)
             val data = root.optJSONObject("data")
             LyricsPayload(
@@ -323,10 +329,7 @@ class MetadataProvider {
             val searchRequest = Request.Builder().url(searchUrl)
                 .header("Referer", "https://music.gdstudio.xyz/")
                 .header("User-Agent", userAgent).get().build()
-            val body = client.newCall(searchRequest).execute().use { response ->
-                if (!response.isSuccessful) return@use null
-                response.body?.string()
-            } ?: return null
+            val body = GdStudioApiSupport.getText(client, searchRequest, GdStudioApiSupport.SEARCH_TTL_MILLIS)
             val root = runCatching { JSONObject(body) }.getOrNull()
             val results = if (body.trimStart().startsWith("[")) {
                 runCatching { JSONArray(body) }.getOrNull()
