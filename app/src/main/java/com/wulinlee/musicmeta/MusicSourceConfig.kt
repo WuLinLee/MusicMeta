@@ -62,11 +62,18 @@ internal object MusicSourceConfig {
     }
 }
 
+internal class GdStudioRateLimitException(val retryAfterMillis: Long) : IOException(
+    "GD Studio 请求较多，约 ${maxOf(1L, (retryAfterMillis + 999L) / 1000L)} 秒后可重试。当前试听不会被停止。"
+) {
+    val retryAfterSeconds: Long
+        get() = maxOf(1L, (retryAfterMillis + 999L) / 1000L)
+}
+
 /**
- * Conservative per-process pacing for GD Studio's documented 50 requests / 5 minutes limit.
- * Leaves margin at 45 requests; other devices sharing a public IP may also consume quota.
- * Requests are rejected while this app's local budget is exhausted, instead of blocking an IO
- * thread for minutes or letting cancelled coroutine jobs linger in Thread.sleep().
+ * The GD Studio documentation states at most 50 requests per five-minute window.
+ * MusicMeta reserves five requests as a safety margin for other clients sharing an IP.
+ * The budget persists across process restarts, but is per installation—not a guarantee about
+ * the server-side IP quota. Expensive thumbnail lookups are intentionally not done per result row.
  */
 internal object GdStudioRequestLimiter {
     private const val WINDOW_MILLIS = 5 * 60 * 1000L
@@ -111,18 +118,13 @@ internal object GdStudioRequestLimiter {
                 (WINDOW_MILLIS - (now - requestTimes.peekFirst())).coerceAtLeast(1L)
             }
         }
-        if (waitMillis > 0L) {
-            val seconds = maxOf(1L, (waitMillis + 999L) / 1000L)
-            throw IOException("应用近期已使用 GD Studio 的请求预算；约 ${seconds} 秒后可重试。为避免触发服务端限制，本次请求已暂停。")
-        }
+        if (waitMillis > 0L) throw GdStudioRateLimitException(waitMillis)
     }
 
     private fun persistLocked() {
-        val serialized = requestTimes.joinToString(",")
-        preferences?.edit()?.putString(TIMESTAMPS_KEY, serialized)?.apply()
+        preferences?.edit()?.putString(TIMESTAMPS_KEY, requestTimes.joinToString(","))?.apply()
     }
 }
-
 /** Shared expiring GET-response cache for GD Studio API calls. */
 internal object GdStudioApiSupport {
     const val SEARCH_TTL_MILLIS = 5 * 60 * 1000L
