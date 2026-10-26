@@ -404,11 +404,12 @@ private fun MusicMetaApp() {
     }
     var flacPlatform by remember {
         mutableStateOf(
-            MusicSourceConfig.normalizePlatform(
+            MusicSourceConfig.platformForBackend(
+                sourceProvider,
                 folderPreferences.getString(
                     MusicSourceConfig.platformPreferenceKey(sourceProvider),
                     folderPreferences.getString("source_platform", MusicSourceConfig.DEFAULT_PLATFORM),
-                )
+                ),
             )
         )
     }
@@ -428,7 +429,7 @@ private fun MusicMetaApp() {
     }
     var flacResults by remember { mutableStateOf<List<FlacSiteSong>>(emptyList()) }
     val persistSourcePlatform: (String) -> Unit = { value ->
-        val platform = MusicSourceConfig.normalizePlatform(value)
+        val platform = MusicSourceConfig.platformForBackend(sourceProvider, value)
         flacPlatform = platform
         folderPreferences.edit()
             .putString("source_platform", platform)
@@ -439,9 +440,7 @@ private fun MusicMetaApp() {
     val selectSourceProvider: (String) -> Unit = { value ->
         val backend = MusicSourceConfig.normalizeBackend(value)
         val saved = folderPreferences.getString(MusicSourceConfig.platformPreferenceKey(backend), null)
-        val candidate = MusicSourceConfig.normalizePlatform(saved ?: MusicSourceConfig.DEFAULT_PLATFORM)
-        val platform = if (MusicSourceConfig.platformsFor(backend).any { it.id == candidate }) candidate
-            else MusicSourceConfig.DEFAULT_PLATFORM
+        val platform = MusicSourceConfig.platformForBackend(backend, saved ?: MusicSourceConfig.DEFAULT_PLATFORM)
         sourceProvider = backend
         flacPlatform = platform
         folderPreferences.edit()
