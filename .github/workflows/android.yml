@@ -183,3 +183,21 @@ jobs:
                 --target "$GITHUB_SHA"
             fi
           fi
+      - name: Keep only ten milestone releases
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          CURRENT_VERSION="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n 1)"
+          CURRENT_TAG="v$CURRENT_VERSION"
+          # Keep the current version plus nine milestones that show the project's evolution.
+          KEEP_TAGS=" $CURRENT_TAG v1.20 v1.19 v1.18 v1.17 v1.15 v1.12 v1.10 v1.0.0 v0.1.4 "
+          while IFS= read -r TAG; do
+            [[ -z "$TAG" ]] && continue
+            if [[ "$KEEP_TAGS" == *" $TAG "* ]]; then
+              echo "Keeping milestone release: $TAG"
+            else
+              echo "Deleting non-milestone release: $TAG"
+              gh release delete "$TAG" --yes --repo "$GITHUB_REPOSITORY"
+            fi
+          done < <(gh release list --limit 1000 --json tagName --jq '.[].tagName')
