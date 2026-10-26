@@ -229,6 +229,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun MusicMetaApp() {
     val context = LocalContext.current
+    remember(context.applicationContext) { GdStudioRequestLimiter.configure(context) }
     val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
     var jumpFieldFocused by remember { mutableStateOf(false) }
