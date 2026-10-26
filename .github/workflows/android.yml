@@ -23,7 +23,7 @@ permissions:
 
 jobs:
   build:
-    if: github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore: prune release list')
+    if: github.event_name != 'push' || (!startsWith(github.event.head_commit.message, 'chore:') && !startsWith(github.event.head_commit.message, 'fix: correct milestone'))
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
