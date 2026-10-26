@@ -2445,30 +2445,59 @@ private fun MusicMetaApp() {
                 item(key = "local-controls") {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         OutlinedTextField(value = localMusicFilter, onValueChange = { localMusicFilter = it; localCurrentPage = 1; jumpPageInput = "1" }, modifier = Modifier.weight(1f), singleLine = true, label = { Text("搜索本地歌曲") })
-                        OutlinedButton(onClick = scanLocalMusic, enabled = !isScanningLocalMusic) { Text(if (isScanningLocalMusic) "扫描中" else "扫描") }
+                        OutlinedButton(onClick = scanLocalMusic, enabled = !isRestoringCaches && !isScanningLocalMusic) {
+                            Text(if (isRestoringCaches) "恢复中" else if (isScanningLocalMusic) "扫描中" else "扫描")
+                        }
                     }
                 }
                 val localVisible = filteredLocalMusicTracks
                 val localPageSongs = localVisible.drop((currentPage - 1) * pageSize).take(pageSize)
-                if (localVisible.isEmpty()) item(key = "local-empty") { Text(if (isScanningLocalMusic) "正在扫描本地音乐…" else "没有找到歌曲。首次使用请点击扫描，或在下载设置中选择本地音乐文件夹。", color = SubInk, modifier = Modifier.fillMaxWidth().padding(16.dp)) }
+                if (localVisible.isEmpty()) item(key = "local-empty") {
+                    Text(
+                        when {
+                            isRestoringCaches -> "正在恢复上次的本地曲库…"
+                            isScanningLocalMusic -> "正在扫描本地音乐…"
+                            else -> "没有找到歌曲。首次使用请点击扫描，或在设置中选择本地音乐文件夹。"
+                        },
+                        color = SubInk,
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    )
+                }
                 items(localPageSongs, key = { "local-" + it.uri }) { track ->
-                    Card(Modifier.fillMaxWidth().pointerInput(track.uri) {
-                        detectTapGestures(
-                            onTap = {
-                                val song = FlacSiteSong(track.uri.toString(), "local", track.title, track.artist, track.album, "", track.durationMs.toString(), track.coverUri)
-                                previewQueue = localVisible.map { FlacSiteSong(it.uri.toString(), "local", it.title, it.artist, it.album, "", it.durationMs.toString(), it.coverUri) }
-                                previewCurrentTrack = null
-                                previewCurrentPlaylistId = null
-                                selectedTrack = null
-                                playPreview(song)
+                    val isActuallyPlaying = previewSong?.platform == "local" &&
+                        previewSong?.id == track.uri.toString() && isPreviewPlaying
+                    val isLocalHighlight = highlightedLocalTrackUri == track.uri.toString() ||
+                        (previewSong?.platform == "local" && previewSong?.id == track.uri.toString())
+                    val rowShape = RoundedCornerShape(18.dp)
+                    Card(
+                        Modifier.fillMaxWidth()
+                            .then(if (isLocalHighlight) Modifier.border(1.5.dp, Accent, rowShape) else Modifier)
+                            .pointerInput(track.uri) {
+                                detectTapGestures(
+                                    onTap = {
+                                        val song = FlacSiteSong(track.uri.toString(), "local", track.title, track.artist, track.album, "", track.durationMs.toString(), track.coverUri)
+                                        highlightedLocalTrackUri = track.uri.toString()
+                                        previewQueue = localVisible.map { FlacSiteSong(it.uri.toString(), "local", it.title, it.artist, it.album, "", it.durationMs.toString(), it.coverUri) }
+                                        previewCurrentTrack = null
+                                        previewCurrentPlaylistId = null
+                                        selectedTrack = null
+                                        playPreview(song)
+                                    },
+                                    onLongPress = { copySongAndArtist(track.title, track.artist) },
+                                )
                             },
-                            onLongPress = { copySongAndArtist(track.title, track.artist) },
-                        )
-                    }, colors = CardDefaults.cardColors(containerColor = SurfaceColor)) {
+                        shape = rowShape,
+                        colors = CardDefaults.cardColors(containerColor = if (isLocalHighlight) SoftAccent else SurfaceColor),
+                    ) {
                         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             AsyncImage(model = track.coverUri.takeIf { it.isNotBlank() }, contentDescription = null, modifier = Modifier.size(46.dp).clip(RoundedCornerShape(10.dp)))
-                            Column(Modifier.weight(1f)) { Text(track.title, color = Ink, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(track.artist, color = SubInk, fontSize = 12.sp, maxLines = 1); if (track.album.isNotBlank()) Text(track.album, color = SubInk, fontSize = 10.sp, maxLines = 1) }
-                            Text("▶", color = Accent)
+                            Column(Modifier.weight(1f)) {
+                                Text(track.title, color = Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(track.artist, color = SubInk, fontSize = 12.sp, maxLines = 1)
+                                if (track.album.isNotBlank()) Text(track.album, color = SubInk, fontSize = 10.sp, maxLines = 1)
+                                if (isLocalHighlight) Text(if (isActuallyPlaying) "正在播放" else "已定位", color = Accent, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                            Text(if (isActuallyPlaying) "♫" else "▶", color = Accent)
                         }
                     }
                 }
