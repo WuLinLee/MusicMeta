@@ -8,8 +8,24 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
+/** Snapshot of the user-visible cache restored off the UI thread on launch. */
+internal data class RestoredMusicMetaCache(
+    val publicPlaylist: PublicPlaylist?,
+    val likedPlaylist: PublicPlaylist?,
+    val pageCache: Map<String, List<MusicTrack>>,
+    val localTracks: List<LocalAudioTrack>,
+)
+
 /** Small persistence helpers for data that should survive Activity/process recreation. */
 internal object MusicMetaPersistence {
+    fun loadCaches(context: Context, preferences: SharedPreferences): RestoredMusicMetaCache =
+        RestoredMusicMetaCache(
+            publicPlaylist = loadPlaylist(preferences, "public"),
+            likedPlaylist = loadPlaylist(preferences, "liked"),
+            pageCache = loadPageCache(preferences),
+            localTracks = loadLocalTracks(context),
+        )
+
     private const val PUBLIC_PLAYLIST_KEY = "cached_public_playlist_v1"
     private const val LIKED_PLAYLIST_KEY = "cached_liked_playlist_v1"
     private const val PAGE_CACHE_KEY = "cached_track_pages_v1"
