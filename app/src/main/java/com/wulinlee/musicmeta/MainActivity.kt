@@ -415,7 +415,8 @@ private fun MusicMetaApp() {
     var highlightedPlaylistMode by remember { mutableStateOf("") }
     var highlightedPlaylistTrackId by remember { mutableStateOf<Long?>(null) }
     var highlightedLocalTrackUri by remember { mutableStateOf("") }
-    var recentlyPlayedKeys by remember { mutableStateOf(MusicMetaPersistence.loadRecentTrackKeys(folderPreferences)) }
+    var recentlyPlayedKeys by remember { mutableStateOf<List<String>>(emptyList()) }
+    var recentPlaylistPositions by remember { mutableStateOf<Map<String, List<Int>>>(emptyMap()) }
     var localMusicFilter by remember { mutableStateOf("") }
     var isScanningLocalMusic by remember { mutableStateOf(false) }
     var localMusicFolderUri by remember { mutableStateOf(folderPreferences.getString("local_music_tree_uri", null)?.let(Uri::parse)) }
@@ -1054,15 +1055,20 @@ private fun MusicMetaApp() {
                                     } else {
                                         "正在播放《" + song.title + "》。"
                                     }
-                                    recentlyPlayedKeys = MusicMetaPersistence.recordRecentPlay(
-                                        preferences = folderPreferences,
+                                    recentlyPlayedKeys = rememberRecentTrackKeys(
                                         previousKeys = recentlyPlayedKeys,
                                         sourceKey = songKey,
                                         playlistMode = recentPlaylistMode.takeIf { recentPlaylist != null && recentPlaylistTrack != null },
                                         playlistId = recentPlaylist?.id,
                                         trackId = recentPlaylistTrack?.id,
-                                        playlistPosition = recentPlaylistPosition,
                                     )
+                                    if (recentPlaylistMode.isNotBlank() && recentPlaylist != null && recentPlaylistPosition != null) {
+                                        val positionKey = "$recentPlaylistMode:\${recentPlaylist.id}"
+                                        recentPlaylistPositions = recentPlaylistPositions.toMutableMap().apply {
+                                            val updated = (get(positionKey).orEmpty().filterNot { it == recentPlaylistPosition } + recentPlaylistPosition).takeLast(12)
+                                            put(positionKey, updated)
+                                        }
+                                    }
                                 }
                                 .onFailure { error ->
                                     isPreviewLoading = false
@@ -1459,11 +1465,7 @@ private fun MusicMetaApp() {
                                 .filter { it.startsWith(playlistRecentPrefix) }
                                 .toSet()
                             val recentPositions = if (filterText.isBlank()) {
-                                MusicMetaPersistence.loadRecentPlaylistPositions(
-                                    folderPreferences,
-                                    modeAtRequest,
-                                    playlistIdAtRequest,
-                                )
+                                recentPlaylistPositions["$modeAtRequest:$playlistIdAtRequest"].orEmpty().toSet()
                             } else emptySet()
                             shuffleCandidatePositions(
                                 totalCount = navigationQueueSize,
