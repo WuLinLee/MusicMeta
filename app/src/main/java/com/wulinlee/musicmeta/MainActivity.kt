@@ -251,6 +251,11 @@ private fun MusicMetaApp() {
         }
     }
     remember(folderPreferences) {
+        if (!folderPreferences.getBoolean("v1_21_overlay_default_migrated", false)) {
+            val editor = folderPreferences.edit().putBoolean("v1_21_overlay_default_migrated", true)
+            if (Settings.canDrawOverlays(context)) editor.putBoolean("floating_overlay_enabled", true)
+            editor.apply()
+        }
         if (!folderPreferences.getBoolean("v1_12_naming_default_migrated", false)) {
             val savedNamingFormat = folderPreferences.getString("naming_format", null)
             val editor = folderPreferences.edit()
@@ -463,7 +468,9 @@ private fun MusicMetaApp() {
             isScanningLocalMusic = true
             scope.launch {
                 try {
-                    val scannedTracks = LocalMusicScanner.scan(context, localMusicFolderUri)
+                    val scannedTracks = withContext(Dispatchers.IO) {
+                        LocalMusicScanner.scan(context, localMusicFolderUri)
+                    }
                     localMusicTracks = scannedTracks
                     withContext(Dispatchers.IO) {
                         MusicMetaPersistence.saveLocalTracks(context, scannedTracks)
@@ -1808,6 +1815,7 @@ private fun MusicMetaApp() {
             manualSourceSearchActive = false
             val targetPage = targetIndex / pageSize + 1
             localCurrentPage = targetPage
+            folderPreferences.edit().putInt("local_current_page", targetPage).apply()
             jumpPageInput = targetPage.toString()
             selectedTrack = null
             flacResults = emptyList()
