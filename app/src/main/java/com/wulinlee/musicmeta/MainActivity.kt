@@ -2025,7 +2025,7 @@ private fun MusicMetaApp() {
                     IconButton(
                         onClick = { showDownloadSettings = true },
                         enabled = !busy,
-                        modifier = Modifier.size(38.dp).semantics { contentDescription = "下载设置" },
+                        modifier = Modifier.size(38.dp).semantics { contentDescription = "设置与维护" },
                     ) { SettingsGlyph() }
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
@@ -3183,7 +3183,7 @@ private fun MusicMetaApp() {
     if (showDownloadSettings) {
         AlertDialog(
             onDismissRequest = { showDownloadSettings = false },
-            title = { Text("下载设置", fontWeight = FontWeight.SemiBold) },
+            title = { Text("设置与维护", fontWeight = FontWeight.SemiBold) },
             text = {
                 Column(
                     modifier = Modifier.fillMaxWidth().heightIn(max = 570.dp).verticalScroll(rememberScrollState()),
@@ -3263,6 +3263,16 @@ private fun MusicMetaApp() {
                             Text(label, color = Ink, fontSize = 13.sp)
                         }
                     }
+                    Text("缓存与维护", fontWeight = FontWeight.SemiBold, color = Ink)
+                    OutlinedButton(
+                        onClick = { showClearCacheConfirm = true },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("一键清除临时缓存") }
+                    Text(
+                        "只清理临时文件与图片缓存；不会删除已下载歌曲、已保存歌单、本地扫描结果或设置。",
+                        color = SubInk,
+                        fontSize = 11.sp,
+                    )
                     Text("下载文件夹规则", fontWeight = FontWeight.SemiBold, color = Ink)
                     listOf(
                         "none" to "不使用",
@@ -3338,6 +3348,32 @@ private fun MusicMetaApp() {
                 TextButton(onClick = { showDownloadSettings = false }) {
                     Text("完成", color = Accent)
                 }
+            },
+            containerColor = SurfaceColor,
+        )
+    }
+
+    if (showClearCacheConfirm) {
+        AlertDialog(
+            onDismissRequest = { showClearCacheConfirm = false },
+            title = { Text("清除临时缓存？", fontWeight = FontWeight.SemiBold) },
+            text = { Text("将清理图片和临时缓存文件，不会删除歌曲文件、已保存歌单、本地曲库缓存或下载设置。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showClearCacheConfirm = false
+                        scope.launch {
+                            val clearedBytes = withContext(Dispatchers.IO) {
+                                MusicMetaPersistence.clearTemporaryCache(context)
+                            }
+                            status = "临时缓存已清理，释放约 " + (clearedBytes / 1024) + " KB。"
+                            Toast.makeText(context, "临时缓存已清理", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                ) { Text("清除缓存", color = Accent) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearCacheConfirm = false }) { Text("取消", color = SubInk) }
             },
             containerColor = SurfaceColor,
         )
