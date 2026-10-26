@@ -6,6 +6,11 @@ import org.junit.Test
 
 class MusicSourceConfigTest {
     @Test
+    fun defaultLimitMatchesGdStudioDocumentation() {
+        // GdStudioRequestLimiter exposes its configured ceiling through a testable helper.
+        assertEquals(50, GdStudioRequestLimiter.maxRequestsForTests())
+    }
+
     fun defaultsToGdStudioAndNetEase() {
         assertEquals(MusicSourceConfig.BACKEND_GD_STUDIO, MusicSourceConfig.DEFAULT_BACKEND)
         assertEquals("netease", MusicSourceConfig.DEFAULT_PLATFORM)
@@ -30,7 +35,7 @@ class MusicSourceConfigTest {
     fun rateLimitExceptionProvidesRecoverableDelay() {
         val error = GdStudioRateLimitException(22_001L)
         assertEquals(23L, error.retryAfterSeconds)
-        assertTrue(error.message.orEmpty().contains("当前试听不会被停止"))
+        assertTrue(error.message.orEmpty().contains("GD Studio 请求较多"))
     }
 
     @Test
