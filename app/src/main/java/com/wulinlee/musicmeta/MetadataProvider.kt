@@ -30,7 +30,7 @@ class MetadataProvider {
             ?: resolveCoverUrlFromGdStudio(track)?.let(::downloadCover)
             ?: resolveCoverUrlFromItunes(track)?.let(::downloadCover)
         var lyrics = if (track.id > 0L) getLyrics(track.id) else LyricsPayload()
-        if (track.id > 0L && (lyrics.original.isBlank() || lyrics.translated.isBlank())) {
+        if (track.id > 0L && (lyrics.original.isBlank())) {
             val gdFallback = getGdStudioLyrics(track.id)
             lyrics = lyrics.copy(
                 original = lyrics.original.ifBlank { gdFallback.original },
@@ -99,7 +99,7 @@ class MetadataProvider {
             ?: findNetEaseSongId(title, artist, album, durationMs)
         if (matchedId > 0L) {
             var payload = getLyrics(matchedId)
-            if (payload.original.isBlank() || payload.translated.isBlank()) {
+            if (payload.original.isBlank()) {
                 val fallback = getGdStudioLyrics(matchedId)
                 payload = payload.copy(
                     original = payload.original.ifBlank { fallback.original },
