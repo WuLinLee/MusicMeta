@@ -29,10 +29,8 @@ internal object MusicMetaPersistence {
     private const val PUBLIC_PLAYLIST_KEY = "cached_public_playlist_v1"
     private const val LIKED_PLAYLIST_KEY = "cached_liked_playlist_v1"
     private const val PAGE_CACHE_KEY = "cached_track_pages_v1"
-    private const val RECENT_TRACK_KEYS = "recently_played_track_keys_v1"
     private const val LOCAL_TRACKS_FILE = "musicmeta_local_tracks_v1.json"
     private const val MAX_PERSISTED_PAGES = 16
-    private const val MAX_RECENT_TRACKS = 12
 
     fun loadPlaylist(preferences: SharedPreferences, mode: String): PublicPlaylist? {
         val key = if (mode == "liked") LIKED_PLAYLIST_KEY else PUBLIC_PLAYLIST_KEY
@@ -110,54 +108,6 @@ internal object MusicMetaPersistence {
         }
     }
 
-    fun loadRecentTrackKeys(preferences: SharedPreferences): List<String> {
-        val raw = preferences.getString(RECENT_TRACK_KEYS, null) ?: return emptyList()
-        val array = runCatching { JSONArray(raw) }.getOrNull() ?: return emptyList()
-        return (0 until array.length()).mapNotNull { array.optString(it).takeIf(String::isNotBlank) }
-            .distinct().takeLast(MAX_RECENT_TRACKS)
-    }
-
-    fun recordRecentPlay(
-        preferences: SharedPreferences,
-        previousKeys: List<String>,
-        sourceKey: String,
-        playlistMode: String?,
-        playlistId: Long?,
-        trackId: Long?,
-        playlistPosition: Int?,
-    ): List<String> {
-        val additions = buildList {
-            if (sourceKey.isNotBlank()) add(sourceKey)
-            if (playlistMode != null && playlistId != null && trackId != null && trackId > 0L) {
-                add(playlistTrackKey(playlistMode, playlistId, trackId))
-            }
-        }
-        val updated = (previousKeys.filterNot { it in additions } + additions).filter(String::isNotBlank).distinct().takeLast(MAX_RECENT_TRACKS)
-        val editor = preferences.edit().putString(
-            RECENT_TRACK_KEYS,
-            JSONArray().apply { updated.forEach { put(it) } }.toString(),
-        )
-
-        if (playlistMode != null && playlistId != null && playlistPosition != null && playlistPosition >= 0) {
-            val positionKey = recentPositionsKey(playlistMode, playlistId)
-            val positions = loadRecentPlaylistPositions(preferences, playlistMode, playlistId).toMutableList()
-            positions.remove(playlistPosition)
-            positions += playlistPosition
-            editor.putString(
-                positionKey,
-                JSONArray().apply { positions.takeLast(MAX_RECENT_TRACKS).forEach { put(it) } }.toString(),
-            )
-        }
-        editor.apply()
-        return updated
-    }
-
-    fun loadRecentPlaylistPositions(preferences: SharedPreferences, mode: String, playlistId: Long): Set<Int> {
-        val raw = preferences.getString(recentPositionsKey(mode, playlistId), null) ?: return emptySet()
-        val array = runCatching { JSONArray(raw) }.getOrNull() ?: return emptySet()
-        return (0 until array.length()).mapNotNull { array.optInt(it, -1).takeIf { value -> value >= 0 } }.toSet()
-    }
-
     fun clearTemporaryCache(context: Context): Long {
         // Ask Coil to clear its own stores first; never delete filesDir or user downloads.
         runCatching { context.imageLoader.memoryCache?.clear() }
@@ -183,8 +133,6 @@ internal object MusicMetaPersistence {
         // Coil's default disk-cache directory is managed by its DiskCache instance above.
         return clearChildren(context.cacheDir, setOf("image_cache")) + clearChildren(context.externalCacheDir)
     }
-
-    private fun recentPositionsKey(mode: String, playlistId: Long) = "recent_playlist_positions_v1:$mode:$playlistId"
 
     fun playlistTrackKey(mode: String, playlistId: Long, trackId: Long): String =
         "playlist:$mode:$playlistId:$trackId"
