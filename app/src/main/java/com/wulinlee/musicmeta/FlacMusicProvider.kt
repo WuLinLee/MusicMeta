@@ -131,7 +131,7 @@ class FlacMusicProvider {
         direct
     }
 
-    suspend fun resolveDownloadUrlWithFallback(
+    suspend fun resolveDownloadUrlForSource(
         song: FlacSiteSong,
         format: String,
         bitrate: String,
