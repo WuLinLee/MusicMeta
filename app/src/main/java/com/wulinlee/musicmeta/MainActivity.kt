@@ -136,7 +136,7 @@ import java.io.File
 import java.io.IOException
 import kotlin.math.roundToInt
 
-private const val DEFAULT_SOURCE = "https://flac.music.hi.cn/"
+private const val FLAC_SITE_HOME = "https://flac.music.hi.cn/"
 private val PageBackground = Color(0xFF0D1210)
 private val SurfaceColor = Color(0xFF171E1A)
 private val Ink = Color(0xFFE5ECE7)
@@ -667,7 +667,7 @@ private fun MusicMetaApp() {
             status = "正在为《" + track.title + "》查找音源……"
             scope.launch {
                 try {
-                    val cookie = CookieManager.getInstance().getCookie(DEFAULT_SOURCE)
+                    val cookie = if (sourceProvider == MusicSourceConfig.BACKEND_FLAC_SITE) CookieManager.getInstance().getCookie(FLAC_SITE_HOME) else null
                     val results = withTimeout(28_000L) {
                         withContext(Dispatchers.IO) {
                             flacProvider.search(
@@ -696,16 +696,20 @@ private fun MusicMetaApp() {
                         if (rowIndex != null) listState.animateScrollToItem(rowIndex)
                     }
                 } catch (error: Exception) {
-                    val detail = error.message?.takeIf { it.isNotBlank() } ?: "下载站暂不可用"
-                    status = "搜索失败：" + detail
-                    captureError("搜索音源", error)
-                    if (
-                        detail.contains("验证") ||
-                        detail.contains("468") ||
-                        detail.contains("challenge", ignoreCase = true) ||
-                        detail.contains("网页", ignoreCase = true)
-                    ) {
-                        verificationOpen = true
+                    if (error is GdStudioRateLimitException) {
+                        status = "GD Studio 请求较多；当前试听保持不变。约 ${error.retryAfterSeconds} 秒后可重试，或切换到 flac.music.hi.cn。"
+                    } else {
+                        val detail = error.message?.takeIf { it.isNotBlank() } ?: "音源服务暂不可用"
+                        status = "搜索失败：" + detail
+                        captureError("搜索音源", error)
+                        if (
+                            detail.contains("验证") ||
+                            detail.contains("468") ||
+                            detail.contains("challenge", ignoreCase = true) ||
+                            detail.contains("网页", ignoreCase = true)
+                        ) {
+                            verificationOpen = true
+                        }
                     }
                 } finally {
                     isSearchingFlac = false
@@ -729,7 +733,7 @@ private fun MusicMetaApp() {
             status = "正在搜索音源《" + keyword + "》……"
             scope.launch {
                 try {
-                    val cookie = CookieManager.getInstance().getCookie(DEFAULT_SOURCE)
+                    val cookie = if (sourceProvider == MusicSourceConfig.BACKEND_FLAC_SITE) CookieManager.getInstance().getCookie(FLAC_SITE_HOME) else null
                     val results = withTimeout(28_000L) {
                         withContext(Dispatchers.IO) {
                             flacProvider.search(
@@ -748,16 +752,20 @@ private fun MusicMetaApp() {
                         "找到 " + flacResults.size + " 个候选版本，请核对歌手和专辑后下载。"
                     }
                 } catch (error: Exception) {
-                    val detail = error.message?.takeIf { it.isNotBlank() } ?: "下载站暂不可用"
-                    status = "搜索失败：" + detail
-                    captureError("直接搜索音源", error)
-                    if (
-                        detail.contains("验证") ||
-                        detail.contains("468") ||
-                        detail.contains("challenge", ignoreCase = true) ||
-                        detail.contains("网页", ignoreCase = true)
-                    ) {
-                        verificationOpen = true
+                    if (error is GdStudioRateLimitException) {
+                        status = "GD Studio 请求较多。约 ${error.retryAfterSeconds} 秒后可重试，或切换到 flac.music.hi.cn。"
+                    } else {
+                        val detail = error.message?.takeIf { it.isNotBlank() } ?: "音源服务暂不可用"
+                        status = "搜索失败：" + detail
+                        captureError("直接搜索音源", error)
+                        if (
+                            detail.contains("验证") ||
+                            detail.contains("468") ||
+                            detail.contains("challenge", ignoreCase = true) ||
+                            detail.contains("网页", ignoreCase = true)
+                        ) {
+                            verificationOpen = true
+                        }
                     }
                 } finally {
                     isSearchingFlac = false
@@ -1070,12 +1078,12 @@ private fun MusicMetaApp() {
             scope.launch {
                 var newPlayer: MediaPlayer? = null
                 try {
-                    val cookie = CookieManager.getInstance().getCookie(DEFAULT_SOURCE)
+                    val cookie = if (song.platform.startsWith("gd:") || song.platform == "local") null else CookieManager.getInstance().getCookie(FLAC_SITE_HOME)
                     val (audioUrl, usedGdStudio) = if (song.platform == "local") {
                         song.id to false
                     } else {
                         withContext(Dispatchers.IO) {
-                            flacProvider.resolveDownloadUrlWithFallback(
+                            flacProvider.resolveDownloadUrlForSource(
                                 song = song,
                                 format = "mp3",
                                 bitrate = "320",
@@ -1091,7 +1099,7 @@ private fun MusicMetaApp() {
                     val referer = if (song.platform.startsWith("gd:")) {
                         "https://music.gdstudio.xyz/"
                     } else {
-                        DEFAULT_SOURCE
+                        FLAC_SITE_HOME
                     }
                     val headers = mutableMapOf(
                         "User-Agent" to fallbackUserAgent,
@@ -1273,8 +1281,12 @@ private fun MusicMetaApp() {
                     ) {
                         isPreviewLoading = false
                         isPreviewLyricsLoading = false
-                        status = "试听失败：" + (error.message?.takeIf { it.isNotBlank() } ?: "音源暂不可用")
-                        captureError("解析试听音源", error)
+                        if (error is GdStudioRateLimitException) {
+                            status = "GD Studio 请求较多，暂时无法开始该曲试听。约 ${error.retryAfterSeconds} 秒后可重试，或切换到 flac.music.hi.cn。"
+                        } else {
+                            status = "试听失败：" + (error.message?.takeIf { it.isNotBlank() } ?: "音源暂不可用")
+                            captureError("解析试听音源", error)
+                        }
                     }
                 }
             }
@@ -1399,9 +1411,9 @@ private fun MusicMetaApp() {
             status = "正在解析《" + song.title + "》的下载地址……"
             scope.launch {
                 try {
-                    val cookie = CookieManager.getInstance().getCookie(DEFAULT_SOURCE)
-                    val (directUrl, usedGdStudioFallback) = withContext(Dispatchers.IO) {
-                        flacProvider.resolveDownloadUrlWithFallback(
+                    val cookie = if (song.platform.startsWith("gd:")) null else CookieManager.getInstance().getCookie(FLAC_SITE_HOME)
+                    val (directUrl, usedGdStudio) = withContext(Dispatchers.IO) {
+                        flacProvider.resolveDownloadUrlForSource(
                             song = song,
                             format = if (selectedQuality == "FLAC") "flac" else "mp3",
                             bitrate = when (selectedQuality) {
@@ -1413,8 +1425,8 @@ private fun MusicMetaApp() {
                             userAgent = fallbackUserAgent,
                         )
                     }
-                    if (usedGdStudioFallback) {
-                        status = "主音源不可用，本次使用 GD Studio 兜底下载地址。"
+                    if (usedGdStudio) {
+                        status = "本次由 GD Studio 解析下载地址。"
                     }
                     isResolvingUrl = false
                     manualSourceSearchActive = false
@@ -1423,15 +1435,19 @@ private fun MusicMetaApp() {
                         fallbackUserAgent,
                         null,
                         if (selectedQuality == "FLAC") "audio/flac" else "audio/mpeg",
-                        DEFAULT_SOURCE,
+                        (if (song.platform.startsWith("gd:")) "https://music.gdstudio.xyz/" else FLAC_SITE_HOME),
                         cookie,
                         selectedTrack ?: metadataTrackForSource(song),
                         song,
                     )
                 } catch (error: Exception) {
-                    val detail = error.message?.takeIf { it.isNotBlank() } ?: "下载站暂不可用"
-                    status = "解析下载地址失败：" + detail
-                    captureError("解析直接搜索音源", error)
+                    if (error is GdStudioRateLimitException) {
+                        status = "GD Studio 请求较多。约 ${error.retryAfterSeconds} 秒后可重试，或切换到 flac.music.hi.cn。"
+                    } else {
+                        val detail = error.message?.takeIf { it.isNotBlank() } ?: "音源服务暂不可用"
+                        status = "解析下载地址失败：" + detail
+                        captureError("解析直接搜索音源", error)
+                    }
                     if (detail.contains("验证") || detail.contains("468")) {
                         verificationOpen = true
                     }
@@ -1590,7 +1606,7 @@ private fun MusicMetaApp() {
                             status = "正在为《${targetTrack.title}》查找第一个匹配音源……"
                             scope.launch {
                                 try {
-                                    val cookie = CookieManager.getInstance().getCookie(DEFAULT_SOURCE)
+                                    val cookie = if (sourceProvider == MusicSourceConfig.BACKEND_FLAC_SITE) CookieManager.getInstance().getCookie(FLAC_SITE_HOME) else null
                                     val matches = withTimeout(28_000L) {
                                         withContext(Dispatchers.IO) {
                                             flacProvider.search(
@@ -1631,8 +1647,12 @@ private fun MusicMetaApp() {
                                     ) {
                                         isSearchingFlac = false
                                         if (inputMode == modeAtRequest) {
-                                            status = "查找下一首音源失败：" + (error.message?.takeIf { it.isNotBlank() } ?: "请重试")
-                                            captureError("上一首 / 下一首试听", error)
+                                            if (error is GdStudioRateLimitException) {
+                                                status = "GD Studio 请求较多，已保留当前试听。约 ${error.retryAfterSeconds} 秒后可继续，或在设置中切换到 flac.music.hi.cn。"
+                                            } else {
+                                                status = "查找下一首音源失败：" + (error.message?.takeIf { it.isNotBlank() } ?: "请重试")
+                                                captureError("上一首 / 下一首试听", error)
+                                            }
                                         }
                                     }
                                 }
@@ -2879,7 +2899,7 @@ private fun MusicMetaApp() {
                                                     overflow = TextOverflow.Ellipsis,
                                                 )
                                                 if (song.platform.startsWith("gd:")) {
-                                                    Text("GD Studio 兜底音源", color = Accent, fontSize = 10.sp)
+                                                    Text("GD Studio · " + MusicSourceConfig.labelForPlatform(song.platform.removePrefix("gd:")), color = Accent, fontSize = 10.sp)
                                                 }
                                             }
                                             IconButton(
@@ -2907,9 +2927,9 @@ private fun MusicMetaApp() {
                                                         status = "正在解析《" + song.title + "》的下载地址……"
                                                         scope.launch {
                                                             try {
-                                                                val cookie = CookieManager.getInstance().getCookie(DEFAULT_SOURCE)
-                                                                val (directUrl, usedGdStudioFallback) = withContext(Dispatchers.IO) {
-                                                                    flacProvider.resolveDownloadUrlWithFallback(
+                                                                val cookie = if (song.platform.startsWith("gd:")) null else CookieManager.getInstance().getCookie(FLAC_SITE_HOME)
+                                                                val (directUrl, usedGdStudio) = withContext(Dispatchers.IO) {
+                                                                    flacProvider.resolveDownloadUrlForSource(
                                                                         song = song,
                                                                         format = if (selectedQuality == "FLAC") "flac" else "mp3",
                                                                         bitrate = when (selectedQuality) {
@@ -2921,8 +2941,8 @@ private fun MusicMetaApp() {
                                                                         userAgent = fallbackUserAgent,
                                                                     )
                                                                 }
-                                                                if (usedGdStudioFallback) {
-                                                                    status = "主音源不可用，本次使用 GD Studio 兜底下载地址。"
+                                                                if (usedGdStudio) {
+                                                                    status = "本次由 GD Studio 解析下载地址。"
                                                                 }
                                                                 isResolvingUrl = false
                                                                 latestDownloadAndSave(
@@ -2930,15 +2950,19 @@ private fun MusicMetaApp() {
                                                                     fallbackUserAgent,
                                                                     null,
                                                                     if (selectedQuality == "FLAC") "audio/flac" else "audio/mpeg",
-                                                                    DEFAULT_SOURCE,
+                                                                    (if (song.platform.startsWith("gd:")) "https://music.gdstudio.xyz/" else FLAC_SITE_HOME),
                                                                     cookie,
                                                                     selectedTrack ?: metadataTrackForSource(song),
                                                                     song,
                                                                 )
                                                             } catch (error: Exception) {
-                                                                val detail = error.message?.takeIf { it.isNotBlank() } ?: "下载站暂不可用"
-                                                                status = "解析下载地址失败：" + detail
-                                                                captureError("解析下载地址", error)
+                                                                if (error is GdStudioRateLimitException) {
+                                                                    status = "GD Studio 请求较多。约 ${error.retryAfterSeconds} 秒后可重试，或切换到 flac.music.hi.cn。"
+                                                                } else {
+                                                                    val detail = error.message?.takeIf { it.isNotBlank() } ?: "音源服务暂不可用"
+                                                                    status = "解析下载地址失败：" + detail
+                                                                    captureError("解析下载地址", error)
+                                                                }
                                                                 if (detail.contains("验证") || detail.contains("468")) {
                                                                     verificationOpen = true
                                                                 }
@@ -3524,7 +3548,7 @@ private fun MusicMetaApp() {
                                     }
                                 }
                                 setDownloadListener { url, userAgent, disposition, mimeType, _ ->
-                                    val referer = this.url ?: DEFAULT_SOURCE
+                                    val referer = this.url ?: FLAC_SITE_HOME
                                     latestWebsiteDownload(
                                         url,
                                         userAgent.orEmpty(),
@@ -3534,7 +3558,7 @@ private fun MusicMetaApp() {
                                         CookieManager.getInstance().getCookie(referer),
                                     )
                                 }
-                                loadUrl(DEFAULT_SOURCE)
+                                loadUrl(FLAC_SITE_HOME)
                             }
                         },
                     )
@@ -3707,12 +3731,16 @@ private fun SourceCoverImage(
     song: FlacSiteSong,
     size: Dp,
     coverResolver: suspend (FlacSiteSong) -> String,
+    resolveMissingCover: Boolean = false,
 ) {
     var resolvedCoverUrl by remember(song.platform, song.id, song.coverUrl) {
         mutableStateOf(song.coverUrl)
     }
-    LaunchedEffect(song.platform, song.id, song.coverUrl) {
-        if (resolvedCoverUrl.isBlank()) {
+    LaunchedEffect(song.platform, song.id, song.coverUrl, resolveMissingCover) {
+        // GD Studio's search returns pic_id rather than a direct image URL. Resolving every row
+        // issues one additional API call per candidate and quickly exhausts its five-minute quota.
+        // Keep a placeholder in result lists; playback resolves artwork for the selected song.
+        if (resolveMissingCover && resolvedCoverUrl.isBlank()) {
             resolvedCoverUrl = runCatching { coverResolver(song) }.getOrDefault("")
         }
     }
