@@ -37,7 +37,7 @@ class MusicSourceConfigTest {
     fun gdStudioHttpErrorShowsSanitizedServerReason() {
         val message = formatGdStudioHttpErrorMessage(
             400,
-            """{"message":"source unavailable at https://private.example/path?token=secret"}""",
+            "source unavailable at https://private.example/path?token=secret",
         )
         assertTrue(message.contains("HTTP 400"))
         assertTrue(message.contains("source unavailable"))
