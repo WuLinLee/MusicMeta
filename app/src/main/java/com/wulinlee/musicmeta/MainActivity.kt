@@ -1765,6 +1765,7 @@ private fun MusicMetaApp() {
         pendingOpenRequest?.requestId,
         inputMode,
         localMusicTracks,
+        isRestoringCaches,
         localMusicFilter,
         publicPlaylist?.id,
         likedPlaylist?.id,
@@ -1775,6 +1776,7 @@ private fun MusicMetaApp() {
         busy,
     ) {
         val request = pendingOpenRequest ?: return@LaunchedEffect
+        if (isRestoringCaches) return@LaunchedEffect
         val targetMode = request.mode.takeIf { it in setOf("local", "playlist", "liked", "search") }
             ?: if (request.playlistId > 0L && likedPlaylist?.id == request.playlistId) "liked" else "playlist"
 
@@ -1786,6 +1788,7 @@ private fun MusicMetaApp() {
         }
 
         if (targetMode == "local") {
+            highlightedLocalTrackUri = request.trackId
             if (localMusicTracks.isEmpty()) {
                 if (!isScanningLocalMusic) scanLocalMusic()
                 return@LaunchedEffect
@@ -1851,6 +1854,10 @@ private fun MusicMetaApp() {
                 .minOrNull()
         }
         val targetIndex = if (baseIndex >= 0) baseIndex else cachedIndex
+        if (targetIndex != null && trackId != null) {
+            highlightedPlaylistMode = targetMode
+            highlightedPlaylistTrackId = trackId
+        }
         if (targetIndex == null) {
             status = "已打开应用，但当前已加载的歌单页中未找到《${request.title}》。"
             activity.clearOverlayOpenRequest(request.requestId)
