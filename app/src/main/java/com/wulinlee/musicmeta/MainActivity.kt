@@ -277,19 +277,29 @@ private fun MusicMetaApp() {
         "local" -> localListState
         else -> publicListState
     }
-    var publicCurrentPage by remember { mutableStateOf(1) }
-    var likedCurrentPage by remember { mutableStateOf(1) }
-    var localCurrentPage by remember { mutableStateOf(1) }
+    var publicCurrentPage by remember { mutableStateOf(folderPreferences.getInt("public_current_page", 1).coerceAtLeast(1)) }
+    var likedCurrentPage by remember { mutableStateOf(folderPreferences.getInt("liked_current_page", 1).coerceAtLeast(1)) }
+    var localCurrentPage by remember { mutableStateOf(folderPreferences.getInt("local_current_page", 1).coerceAtLeast(1)) }
     val currentPage = when (inputMode) {
         "liked" -> likedCurrentPage
         "local" -> localCurrentPage
         else -> publicCurrentPage
     }
     val setCurrentPage: (Int) -> Unit = { value ->
+        val page = value.coerceAtLeast(1)
         when (inputMode) {
-            "liked" -> likedCurrentPage = value
-            "local" -> localCurrentPage = value
-            else -> publicCurrentPage = value
+            "liked" -> {
+                likedCurrentPage = page
+                folderPreferences.edit().putInt("liked_current_page", page).apply()
+            }
+            "local" -> {
+                localCurrentPage = page
+                folderPreferences.edit().putInt("local_current_page", page).apply()
+            }
+            else -> {
+                publicCurrentPage = page
+                folderPreferences.edit().putInt("public_current_page", page).apply()
+            }
         }
     }
     val savedPageSize = folderPreferences.getInt("songs_per_page", 25)
@@ -368,6 +378,7 @@ private fun MusicMetaApp() {
     var flacPlatform by remember { mutableStateOf(folderPreferences.getString("source_platform", "wyy") ?: "wyy") }
     var selectedQuality by remember { mutableStateOf(folderPreferences.getString("quality", "320k") ?: "320k") }
     var showDownloadSettings by remember { mutableStateOf(false) }
+    var showClearCacheConfirm by remember { mutableStateOf(false) }
     var namingFormat by remember { mutableStateOf(folderPreferences.getString("naming_format", "song_title") ?: "song_title") }
     var downloadLyrics by remember { mutableStateOf(folderPreferences.getBoolean("download_lyrics", false)) }
     var writeAudioTags by remember { mutableStateOf(folderPreferences.getBoolean("write_audio_tags", true)) }
@@ -386,7 +397,7 @@ private fun MusicMetaApp() {
     var isResolvingUrl by remember { mutableStateOf(false) }
     var isDownloading by remember { mutableStateOf(false) }
     var verificationOpen by remember { mutableStateOf(false) }
-    var floatingOverlayEnabled by remember { mutableStateOf(folderPreferences.getBoolean("floating_overlay_enabled", false)) }
+    var floatingOverlayEnabled by remember { mutableStateOf(folderPreferences.getBoolean("floating_overlay_enabled", Settings.canDrawOverlays(context))) }
     var floatingLyricsExpandedByDefault by remember {
         mutableStateOf(folderPreferences.getBoolean("floating_lyrics_expanded_by_default", true))
     }
@@ -400,6 +411,11 @@ private fun MusicMetaApp() {
         status = "播放模式：" + listOf("顺序播放", "乱序播放", "单曲循环")[playbackMode]
     }
     var localMusicTracks by remember { mutableStateOf<List<LocalAudioTrack>>(emptyList()) }
+    var isRestoringCaches by remember { mutableStateOf(true) }
+    var highlightedPlaylistMode by remember { mutableStateOf("") }
+    var highlightedPlaylistTrackId by remember { mutableStateOf<Long?>(null) }
+    var highlightedLocalTrackUri by remember { mutableStateOf("") }
+    var recentlyPlayedKeys by remember { mutableStateOf(MusicMetaPersistence.loadRecentTrackKeys(folderPreferences)) }
     var localMusicFilter by remember { mutableStateOf("") }
     var isScanningLocalMusic by remember { mutableStateOf(false) }
     var localMusicFolderUri by remember { mutableStateOf(folderPreferences.getString("local_music_tree_uri", null)?.let(Uri::parse)) }
@@ -422,6 +438,17 @@ private fun MusicMetaApp() {
     val previewPlayer = remember { mutableStateOf<MediaPlayer?>(null) }
     val playPreviewRef = remember { mutableStateOf<(FlacSiteSong) -> Unit>({}) }
     var previewPlaybackGeneration by remember { mutableStateOf(0L) }
+
+    LaunchedEffect(folderPreferences) {
+        val restored = withContext(Dispatchers.IO) {
+            MusicMetaPersistence.loadCaches(context, folderPreferences)
+        }
+        publicPlaylist = restored.publicPlaylist
+        likedPlaylist = restored.likedPlaylist
+        pageCache = restored.pageCache
+        localMusicTracks = restored.localTracks
+        isRestoringCaches = false
+    }
 
     val localFolderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) runCatching {
@@ -511,7 +538,7 @@ private fun MusicMetaApp() {
         } ?: "下载/-07-MusicMeta（默认）"
     }
 
-    val busy = isSyncing || isLoadingPage || isSearchingFlac || isResolvingUrl || isDownloading
+    val busy = isRestoringCaches || isSyncing || isLoadingPage || isSearchingFlac || isResolvingUrl || isDownloading
 
     val syncPlaylist: () -> Unit = {
         focusManager.clearFocus()
