@@ -639,6 +639,18 @@ private fun MusicMetaApp() {
         }
     }
 
+    val mediaNotificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (!granted) {
+            Toast.makeText(
+                context,
+                "未授予通知权限时，部分手机可能不在下拉通知栏显示播放卡片；可在系统设置中为音笺开启通知。",
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+    }
+
     val destinationPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree(),
     ) { uri ->
@@ -1659,6 +1671,20 @@ private fun MusicMetaApp() {
     LaunchedEffect(previewSong?.id, previewPositionMs, previewDurationMs) {
         if (previewSong != null) {
             MediaPlaybackService.updatePosition(context, previewPositionMs, previewDurationMs)
+        }
+    }
+
+    LaunchedEffect(previewSong?.id) {
+        if (previewSong != null &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.POST_NOTIFICATIONS,
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED &&
+            !folderPreferences.getBoolean("media_notification_permission_requested", false)
+        ) {
+            folderPreferences.edit().putBoolean("media_notification_permission_requested", true).apply()
+            mediaNotificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
         }
     }
 
