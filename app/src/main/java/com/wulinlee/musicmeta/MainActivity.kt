@@ -1225,7 +1225,7 @@ private fun MusicMetaApp() {
             scope.launch {
                 var newPlayer: MediaPlayer? = null
                 try {
-                    val cookie = if (song.platform.startsWith("gd:") || song.platform == "local") null else CookieManager.getInstance().getCookie(FLAC_SITE_HOME)
+                    val cookie = if (song.platform == "local") null else CookieManager.getInstance().getCookie(FLAC_SITE_HOME)
                     val (audioUrl, usedGdStudio) = if (song.platform == "local") {
                         song.id to false
                     } else {
@@ -1720,7 +1720,7 @@ private fun MusicMetaApp() {
             status = "正在解析《" + song.title + "》的下载地址……"
             scope.launch {
                 try {
-                    val cookie = if (song.platform.startsWith("gd:")) null else CookieManager.getInstance().getCookie(FLAC_SITE_HOME)
+                    val cookie = CookieManager.getInstance().getCookie(FLAC_SITE_HOME)
                     val (directUrl, usedGdStudio) = withContext(Dispatchers.IO) {
                         flacProvider.resolveDownloadUrlForSource(
                             song = song,
@@ -3262,7 +3262,7 @@ private fun MusicMetaApp() {
                                                         status = "正在解析《" + song.title + "》的下载地址……"
                                                         scope.launch {
                                                             try {
-                                                                val cookie = if (song.platform.startsWith("gd:")) null else CookieManager.getInstance().getCookie(FLAC_SITE_HOME)
+                                                                val cookie = CookieManager.getInstance().getCookie(FLAC_SITE_HOME)
                                                                 val (directUrl, usedGdStudio) = withContext(Dispatchers.IO) {
                                                                     flacProvider.resolveDownloadUrlForSource(
                                                                         song = song,
