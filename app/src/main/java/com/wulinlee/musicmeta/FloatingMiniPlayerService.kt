@@ -783,7 +783,6 @@ class FloatingMiniPlayerService : LifecycleService() {
             }
         }
 
-        expansionProgress = if (expanded) 1f else 0f
         val params = createLayoutParams(
             overlayWindowWidth(),
             dp(88),

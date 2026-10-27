@@ -188,7 +188,7 @@ object LocalMusicScanner {
         }
         val tempDir = File(context.cacheDir, "local-lyrics-read").apply { mkdirs() }
         val tempFile = File.createTempFile("embedded-lyrics-", ".$extension", tempDir)
-        try {
+        return try {
             val source = context.contentResolver.openInputStream(uri) ?: run { tempFile.delete(); return null }
             source.use { input ->
                 tempFile.outputStream().use { output ->
