@@ -97,6 +97,7 @@ internal fun Modifier.overlayDragGesture(
     onDrag: (Float, Float) -> Unit,
     onCircularDrag: () -> Unit,
     onDragEnd: () -> Unit = {},
+    ignoreDragBelowFraction: Float? = null,
 ): Modifier = pointerInput(key) {
     val touchSlop = viewConfiguration.touchSlop
     // Require three complete turns and meaningful movement to reduce accidental activation.
@@ -104,6 +105,9 @@ internal fun Modifier.overlayDragGesture(
     val requiredCircularRotation = 6f * 3.14159265f
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        if (ignoreDragBelowFraction != null && down.position.y >= size.height * ignoreDragBelowFraction) {
+            return@awaitEachGesture
+        }
         val pointerId = down.id
         var dragged = false
         var previousAngle = Float.NaN
@@ -1114,6 +1118,7 @@ private fun OverlayLyricsUi(
             onDrag = onDrag,
             onCircularDrag = onCircularDrag,
             onDragEnd = onDragEnd,
+            ignoreDragBelowFraction = 0.68f,
         ),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF17211F)),
