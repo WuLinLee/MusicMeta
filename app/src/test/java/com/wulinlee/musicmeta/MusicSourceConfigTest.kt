@@ -131,6 +131,43 @@ class MusicSourceConfigTest {
 
 
     @Test
+    fun initialOverlayPlacementCentersTheWholeGroupOrUsesTheFullAvailableWidth() {
+        val coverWidth = FLOATING_COVER_SIZE_DP
+        val desiredLyricsWidth = FloatingOverlayPlacement.scaledPreferredLyricsWidthPx(356, 78)
+        val gap = 14
+        val margin = 4
+        for (displayWidth in listOf(360, 720, 1080)) {
+            val coverX = FloatingOverlayPlacement.initialCoverX(
+                displayWidth = displayWidth,
+                coverWidthPx = coverWidth,
+                desiredLyricsWidthPx = desiredLyricsWidth,
+                gapPx = gap,
+                marginPx = margin,
+            )
+            val onRight = FloatingOverlayPlacement.lyricsPanelOnRight(coverX, coverWidth, displayWidth)
+            val actualGap = FloatingOverlayPlacement.panelGapPx(
+                displayWidth, coverX, coverWidth, gap, margin, onRight,
+            )
+            val actualLyricsWidth = FloatingOverlayPlacement.lyricsWidthPx(
+                displayWidth, coverX, coverWidth, desiredLyricsWidth, actualGap, margin, onRight,
+            )
+            val lyricsX = if (onRight) coverX + coverWidth + actualGap
+            else coverX - actualLyricsWidth - actualGap
+            val groupLeft = minOf(coverX, lyricsX)
+            val groupRight = maxOf(coverX + coverWidth, lyricsX + actualLyricsWidth)
+
+            assertTrue("initial group stays within the left margin", groupLeft >= margin)
+            assertTrue("initial group stays within the right margin", groupRight <= displayWidth - margin)
+            if (displayWidth < coverWidth + gap + desiredLyricsWidth + margin * 2) {
+                assertEquals("narrow screen uses the full available width", margin, groupLeft)
+                assertEquals("narrow screen uses the full available width", displayWidth - margin, groupRight)
+            } else {
+                assertEquals("initial group is centered as a whole", displayWidth / 2f, (groupLeft + groupRight) / 2f, 1f)
+            }
+        }
+    }
+
+    @Test
     fun lyricFontSliderKeepsDefaultAtCenterAndProvidesHalfToDoubleRange() {
         assertEquals(0.5f, floatingLyricsFontSliderPosition(DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP), 0.001f)
         assertEquals(MIN_FLOATING_LYRICS_FONT_SIZE_SP, floatingLyricsFontSizeFromSlider(0f), 0.01f)
