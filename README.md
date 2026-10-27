@@ -2,15 +2,16 @@
 
 MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 Android 应用：读取可公开访问的网易云歌单，搜索并核对音源，下载音频，并尽可能补齐封面、歌词和音频标签。
 
-> **当前开发版本：1.24** · `versionCode = 28`  
+> **当前开发版本：1.27** · `versionCode = 31`  
 > 应用 ID：`com.wulinlee.musicmeta` · 最低 Android：10（API 29）· 目标 SDK：35  
 > 技术栈：Kotlin、Jetpack Compose、Material 3、Coroutines、OkHttp、Coil、jaudiotagger。
 
 - **正式版发布页：** [GitHub Releases](https://github.com/WuLinLee/MusicMeta/releases)
-- **v1.26 APK 直链：** [MusicMeta-v1.26.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.26/MusicMeta-v1.26.apk)
+- **v1.27 APK 直链：** [MusicMeta-v1.27.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.27/MusicMeta-v1.27.apk)
+- **上一版 v1.26：** [MusicMeta-v1.26.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.26/MusicMeta-v1.26.apk)
 - **构建记录：** [GitHub Actions](https://github.com/WuLinLee/MusicMeta/actions)
 
-v1.26 变更包括本地封面与歌词离线读取、固定悬浮窗边界动画、可调歌词字体、封面点击排入下一首，以及紧贴 PLAYLIST / LOCAL MUSIC 标签的交互教程。下载链接只有在对应 Release 资产创建成功后才可用。版本号、Git 标签、Actions 构建结果和 Release 附件是不同的事实；请以对应提交的成功构建结果和实际资产为准，不要仅凭本文件中的版本号判断已发布。
+v1.27 修复右侧悬浮歌词栏展开 / 收起时封面跳动的问题，将封面窗口与歌词窗口分开管理；歌词默认字号及更小字号优先用两行显示；本地内嵌歌词支持原文 / 译文解析和点击切换，“优先显示翻译歌词”设置统一作用于本地与在线曲目。v1.26 引入本地封面与歌词离线读取、可调字体、封面点击排入下一首和交互教程。下载链接只有在对应 Release 资产创建成功后才可用。版本号、Git 标签、Actions 构建结果和 Release 附件是不同的事实；请以对应提交的成功构建结果和实际资产为准，不要仅凭本文件中的版本号判断已发布。
 
 ## 目录
 
@@ -47,6 +48,14 @@ v1.26 变更包括本地封面与歌词离线读取、固定悬浮窗边界动�
 5. 在设置中选择 API 服务（GD Studio 或 flac.music.hi.cn）、次级音乐源、音质、保存目录及悬浮歌词偏好。
 
 首次使用跨应用悬浮播放器时，需要在 Android 系统设置中授予“显示在其他应用上层”权限。撤销权限后，跨应用浮层不可用。
+
+## v1.27 本次修复
+
+- **悬浮封面不再跟歌词栏一起重排：** 封面与歌词栏使用各自的 WindowManager 窗口；展开 / 收起仅动画歌词窗口，不再调整封面窗口的 X 坐标或尺寸。歌词窗口关闭时移除，不会留一个透明的宽窗口挡住其他应用。
+- **歌词双行布局：** 减少歌词区域的垂直内边距与进度条高度，让默认字号及更小字号有足够高度显示两行；只有实际空间不足时才出现省略。
+- **本地原文 / 译文切换：** 读取多个内嵌 LYRICS 字段；当原文和译文被合并在同一份 LRC 中、时间戳重复时拆分为两份，歌词栏点击可切换。
+- **统一歌词显示偏好：** “优先显示翻译歌词”设置应用于本地曲目与在线音源；存在译文时按偏好选择，仍支持点击歌词手动切换。
+- **版本号：** 1.27，`versionCode = 31`。
 
 ## v1.24 本次改进
 
