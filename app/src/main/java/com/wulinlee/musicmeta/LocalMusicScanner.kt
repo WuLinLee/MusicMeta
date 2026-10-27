@@ -24,6 +24,7 @@ data class LocalAudioTrack(
     val album: String,
     val durationMs: Long,
     val coverUri: String = "",
+    val modifiedAtMs: Long = 0L,
 )
 
 object LocalMusicScanner {
@@ -48,6 +49,7 @@ object LocalMusicScanner {
                                 coverUri = runCatching {
                                     saveEmbeddedArtwork(context, file.uri, retriever.embeddedPicture)
                                 }.getOrDefault(""),
+                                modifiedAtMs = file.lastModified(),
                             )
                         } catch (_: Exception) {
                         } finally { runCatching { retriever.release() } }
@@ -58,7 +60,7 @@ object LocalMusicScanner {
             tracks.distinctBy { it.uri.toString() }.sortedBy { it.title.lowercase(Locale.ROOT) }
         } else {
             val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-            val projection = arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.ARTIST, MediaStore.Audio.Media.ALBUM, MediaStore.Audio.Media.DURATION, MediaStore.Audio.Media.RELATIVE_PATH, MediaStore.Audio.Media.ALBUM_ID)
+            val projection = arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.ARTIST, MediaStore.Audio.Media.ALBUM, MediaStore.Audio.Media.DURATION, MediaStore.Audio.Media.RELATIVE_PATH, MediaStore.Audio.Media.ALBUM_ID, MediaStore.Audio.Media.DATE_MODIFIED)
             val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND (${MediaStore.Audio.Media.RELATIVE_PATH} LIKE ? OR ${MediaStore.Audio.Media.RELATIVE_PATH} LIKE ?)"
             val result = mutableListOf<LocalAudioTrack>()
             context.contentResolver.query(collection, projection, selection, arrayOf("Download/-07-MusicMeta/%", "Music/%"), "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC")?.use { cursor ->
@@ -68,6 +70,7 @@ object LocalMusicScanner {
                 val album = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
                 val duration = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
                 val albumId = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
+                val dateModified = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_MODIFIED)
                 while (cursor.moveToNext()) {
                     val key = cursor.getLong(id)
                     val audioUri = Uri.withAppendedPath(collection, key.toString())
@@ -83,6 +86,7 @@ object LocalMusicScanner {
                         cursor.getString(album).orEmpty(),
                         cursor.getLong(duration),
                         coverUri,
+                        modifiedAtMs = cursor.getLong(dateModified).coerceAtLeast(0L) * 1000L,
                     )
                 }
             }
