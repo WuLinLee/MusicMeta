@@ -2,17 +2,17 @@
 
 MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 Android 应用：读取可公开访问的网易云歌单，搜索并核对音源，下载音频，并尽可能补齐封面、歌词和音频标签。
 
-> **当前版本：1.36** · `versionCode = 40`  
+> **当前版本：1.37** · `versionCode = 41`  
 > 应用 ID：`com.wulinlee.musicmeta` · 最低 Android：10（API 29）· 目标 SDK：35  
 > 技术栈：Kotlin、Jetpack Compose、Material 3、Coroutines、OkHttp、Coil、jaudiotagger。
 
 - **正式版发布页：** [GitHub Releases](https://github.com/WuLinLee/MusicMeta/releases)
-- **v1.36 APK 直链：** [MusicMeta-v1.36.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.36/MusicMeta-v1.36.apk)
+- **v1.37 APK 直链：** [MusicMeta-v1.37.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.37/MusicMeta-v1.37.apk)
 - **悬浮窗实现基线 v1.29：** [MusicMeta-v1.29.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.29/MusicMeta-v1.29.apk)
 - **v1.30 历史版（系统媒体卡片参考）：** [MusicMeta-v1.30.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.30/MusicMeta-v1.30.apk)
 - **构建记录：** [GitHub Actions](https://github.com/WuLinLee/MusicMeta/actions)
 
-v1.36 调整悬浮歌词侧键与垂直位置：侧键换成更醒目的空心上/下箭头、加大可触区域并将控制区贴近封面；歌词栏整体下移 4dp，进度条再下移 2dp。保留 v1.35 对歌词栏宽度和左右布局的修正。无时间戳译文会根据原文时间轴映射到相应译文行，避免卡在第一行；带时间戳的歌词中未标注时间的“作曲”“编曲”等行也会保留并显示。下载链接只有在对应 Release 资产创建成功后才可用。版本号、Git 标签、Actions 构建结果和 Release 附件是不同的事实；请以对应提交的成功构建结果和实际资产为准，不要仅凭本文件中的版本号判断已发布。
+v1.37 统一有权限的系统悬浮窗与无权限时的应用内迷你播放器布局：空心上下键与封面顶、底齐平并和封面直接相连，歌词栏紧贴侧键；默认歌词字号降到 15.04sp；修复本地歌曲画圈定位按扫描顺序滚动、排序后高亮却不定位的问题，并使收起后的歌词栏区域仍可拖动。无时间戳译文会根据原文时间轴映射到相应译文行，避免卡在第一行；带时间戳的歌词中未标注时间的“作曲”“编曲”等行也会保留并显示。下载链接只有在对应 Release 资产创建成功后才可用。版本号、Git 标签、Actions 构建结果和 Release 附件是不同的事实；请以对应提交的成功构建结果和实际资产为准，不要仅凭本文件中的版本号判断已发布。
 
 ## 目录
 
@@ -51,7 +51,15 @@ v1.36 调整悬浮歌词侧键与垂直位置：侧键换成更醒目的空心�
 
 首次使用跨应用悬浮播放器时，需要在 Android 系统设置中授予“显示在其他应用上层”权限。撤销权限后，跨应用浮层不可用。
 
-## v1.36 本次调整
+## v1.37 本次修复
+
+- **侧键与封面连体：** 控制区与封面之间不留缝，两个空心箭头分别占据上、下 32dp，顶边与封面顶边齐平、底边与封面底边齐平；歌词栏无额外空隙地贴在侧键另一侧。
+- **默认字号：** 新安装默认 15.04sp；升级时仅将旧默认 17.28sp 迁移到 15.04sp，其他自定义字号保留。
+- **本地定位与拖动：** 画圈定位按当前实际显示排序后的 URI 列表计算滚动位置；歌词栏收起后仍保留透明拖动热区。
+- **权限回退一致：** 没有悬浮窗权限时的应用内播放器使用同样的侧键、歌词字号和进度条布局。
+- **版本号：** 1.37，`versionCode = 41`。
+
+## v1.36 历史改动
 
 - **常驻侧键：** 改为更醒目的空心上／下箭头，28dp 触控区、1dp 间隔；侧键栏缩至 28dp，并将封面与侧栏的间距缩小到 2dp，保持左右位置一致。
 - **歌词与进度条位置：** 歌词栏整体下移 4dp，进度条在歌词栏内再下移 2dp；侧键与歌词栏保持垂直对齐。

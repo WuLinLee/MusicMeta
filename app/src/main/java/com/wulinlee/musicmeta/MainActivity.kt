@@ -138,9 +138,26 @@ import kotlin.math.pow
 import kotlin.math.ln
 import kotlin.math.roundToInt
 
-internal const val DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP = 17.28f
+internal const val PREVIOUS_DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP = 17.28f
+internal const val DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP = 15.04f
 internal const val MIN_FLOATING_LYRICS_FONT_SIZE_SP = DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP / 2f
 internal const val MAX_FLOATING_LYRICS_FONT_SIZE_SP = DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP * 2f
+
+internal fun floatingLyricsFontSizeAfterDefaultMigration(
+    storedSize: Float?,
+    migrationComplete: Boolean,
+): Float {
+    val shouldUseSmallerDefault = !migrationComplete &&
+        (storedSize == null || storedSize == PREVIOUS_DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP)
+    return (if (shouldUseSmallerDefault) DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP
+    else storedSize ?: DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP)
+        .coerceIn(MIN_FLOATING_LYRICS_FONT_SIZE_SP, MAX_FLOATING_LYRICS_FONT_SIZE_SP)
+}
+
+internal fun localTrackIndexForOverlayUri(
+    orderedTrackUris: List<String>,
+    targetUri: String,
+): Int = orderedTrackUris.indexOfFirst { it == targetUri }
 
 internal fun floatingLyricsFontSizeFromSlider(progress: Float): Float =
     (DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP * 4.0.pow(progress.coerceIn(0f, 1f).toDouble() - 0.5)).toFloat()
@@ -480,9 +497,22 @@ private fun MusicMetaApp() {
     var floatingLyricsTranslatedByDefault by remember {
         mutableStateOf(folderPreferences.getBoolean("floating_lyrics_translated_by_default", true))
     }
-    var floatingLyricsFontSizeSp by remember {
-        mutableStateOf(folderPreferences.getFloat("floating_lyrics_font_size_sp", DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP)
-            .coerceIn(MIN_FLOATING_LYRICS_FONT_SIZE_SP, MAX_FLOATING_LYRICS_FONT_SIZE_SP))
+    var floatingLyricsFontSizeSp by remember(folderPreferences) {
+        val preferenceKey = "floating_lyrics_font_size_sp"
+        val migrationKey = "floating_lyrics_font_default_migrated_v137"
+        val migrationComplete = folderPreferences.getBoolean(migrationKey, false)
+        val storedSize = if (folderPreferences.contains(preferenceKey)) {
+            folderPreferences.getFloat(preferenceKey, DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP)
+        } else null
+        val initialSize = floatingLyricsFontSizeAfterDefaultMigration(storedSize, migrationComplete)
+        if (!migrationComplete) {
+            val editor = folderPreferences.edit().putBoolean(migrationKey, true)
+            if (storedSize == null || storedSize == PREVIOUS_DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP) {
+                editor.putFloat(preferenceKey, initialSize)
+            }
+            editor.apply()
+        }
+        mutableStateOf(initialSize)
     }
     var showInteractionHelp by remember { mutableStateOf(false) }
     var playbackMode by remember { mutableStateOf(folderPreferences.getInt("playback_mode", 0).coerceIn(0, 2)) }
@@ -2216,7 +2246,10 @@ private fun MusicMetaApp() {
                 if (!isScanningLocalMusic) scanLocalMusic()
                 return@LaunchedEffect
             }
-            val targetIndex = localMusicTracks.indexOfFirst { it.uri.toString() == request.trackId }
+            val targetIndex = localTrackIndexForOverlayUri(
+                orderedTrackUris = filteredLocalMusicTracks.map { it.uri.toString() },
+                targetUri = request.trackId,
+            )
             if (targetIndex < 0) {
                 status = "本地列表中没有找到正在播放的歌曲，可能文件夹已变更。"
                 activity.clearOverlayOpenRequest(request.requestId)
@@ -3409,8 +3442,10 @@ private fun MusicMetaApp() {
             val activePreviewSong = previewSong!!
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val density = LocalDensity.current
-                val groupWidth = minOf(maxWidth, 356.dp)
-                val panelWidth = (groupWidth - 78.dp).coerceAtLeast(48.dp)
+                val maxGroupWidth = 64.dp + 28.dp + 334.dp
+                val groupWidth = minOf((maxWidth - 8.dp).coerceAtLeast(64.dp), maxGroupWidth)
+                val sideControlsWidth = 28.dp
+                val panelWidth = (groupWidth - 64.dp - sideControlsWidth).coerceAtLeast(48.dp)
                 val maxGroupDragX = with(density) { ((maxWidth - groupWidth) / 2).toPx().coerceAtLeast(0f) }
                 val coverBaseLeft = (maxWidth - groupWidth) / 2 + groupWidth - 64.dp
                 val minDragX = with(density) {
@@ -3448,7 +3483,8 @@ private fun MusicMetaApp() {
                             ).ifBlank { "♪" }
                         }
                         Card(
-                            modifier = Modifier.align(Alignment.CenterStart).width(panelWidth).height(64.dp)
+                            modifier = Modifier.align(Alignment.CenterStart).offset(y = 4.dp)
+                                .width(panelWidth).height(64.dp)
                                 .overlayDragGesture(
                                     key = listOf(activePreviewSong, minDragX, maxDragX, maxDragY, showPreviewDetails),
                                     onDrag = { dx, dy ->
@@ -3458,62 +3494,45 @@ private fun MusicMetaApp() {
                                         )
                                     },
                                     onCircularDrag = {},
+                                    ignoreDragBelowFraction = 0.68f,
                                 ),
                             shape = RoundedCornerShape(16.dp),
                             colors = CardDefaults.cardColors(containerColor = Color(0xFF17211F)),
                             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
                         ) {
                             Column(
-                                modifier = Modifier.fillMaxSize().padding(horizontal = 9.dp, vertical = 2.dp),
+                                modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp, vertical = 2.dp),
                                 verticalArrangement = Arrangement.spacedBy(0.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().weight(1f),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                Box(
+                                    modifier = Modifier.fillMaxWidth().weight(1f)
+                                        .clip(RoundedCornerShape(9.dp))
+                                        .background(Color(0xFF243631))
+                                        .clickable { showTranslatedPreviewLyric = !showTranslatedPreviewLyric }
+                                        .padding(horizontal = 5.dp, vertical = 0.dp)
+                                        .semantics {
+                                            contentDescription = if (previewTranslatedLyrics.isBlank()) "歌词，点击查看是否存在译文"
+                                                else "歌词，点击切换原文或译文"
+                                        },
+                                    contentAlignment = Alignment.Center,
                                 ) {
-                                    Box(
-                                        modifier = Modifier.size(28.dp).clip(CircleShape)
-                                            .clickable { playAdjacentPreview(-1) }
-                                            .semantics { contentDescription = "按当前播放队列播放上一首" },
-                                        contentAlignment = Alignment.Center,
-                                    ) { MiniPlayerSkipGlyph(previous = true) }
-                                    Box(
-                                        modifier = Modifier.weight(1f).fillMaxSize()
-                                            .clip(RoundedCornerShape(9.dp))
-                                            .background(Color(0xFF243631))
-                                            .clickable { showTranslatedPreviewLyric = !showTranslatedPreviewLyric }
-                                            .padding(horizontal = 5.dp, vertical = 2.dp)
-                                            .semantics {
-                                                contentDescription = if (previewTranslatedLyrics.isBlank()) "歌词，点击查看是否存在译文"
-                                                    else "歌词，点击切换原文或译文"
-                                            },
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Text(
-                                            activeLyric,
-                                            color = Color(0xFF9FF0C9),
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 12.sp,
-                                            lineHeight = 15.sp,
-                                            textAlign = TextAlign.Center,
-                                            maxLines = 2,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    }
-                                    Box(
-                                        modifier = Modifier.size(28.dp).clip(CircleShape)
-                                            .clickable { playAdjacentPreview(1) }
-                                            .semantics { contentDescription = "按当前播放队列播放下一首" },
-                                        contentAlignment = Alignment.Center,
-                                    ) { MiniPlayerSkipGlyph(previous = false) }
+                                    Text(
+                                        activeLyric,
+                                        color = Color(0xFF9FF0C9),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = floatingLyricsFontSizeSp.sp,
+                                        lineHeight = (floatingLyricsFontSizeSp * 1.12f).sp,
+                                        textAlign = TextAlign.Center,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
                                 }
                                 val progress = if (previewDurationMs > 0)
                                     (previewPositionMs.toFloat() / previewDurationMs.toFloat()).coerceIn(0f, 1f)
                                 else 0f
                                 Box(
-                                    modifier = Modifier.fillMaxWidth().height(8.dp)
+                                    modifier = Modifier.fillMaxWidth(0.94f).height(18.dp).offset(y = 2.dp)
                                         .pointerInput(previewDurationMs, activePreviewSong) {
                                             detectTapGestures { tap ->
                                                 if (previewDurationMs > 0 && size.width > 0) {
@@ -3549,6 +3568,30 @@ private fun MusicMetaApp() {
                             }
                         }
                     }
+                    if (!showPreviewDetails) {
+                        Box(
+                            modifier = Modifier.align(Alignment.CenterStart).offset(y = 4.dp)
+                                .width(panelWidth).height(64.dp)
+                                .overlayDragGesture(
+                                    key = listOf(activePreviewSong, minDragX, maxDragX, maxDragY, showPreviewDetails),
+                                    onDrag = { dx, dy ->
+                                        miniPlayerOffset = Offset(
+                                            (miniPlayerOffset.x + dx).coerceIn(minDragX, maxDragX),
+                                            (miniPlayerOffset.y + dy).coerceIn(-maxDragY, 0f),
+                                        )
+                                    },
+                                    onCircularDrag = {},
+                                ),
+                        )
+                    }
+                    MiniPlayerSideTrackControls(
+                        onPrevious = { playAdjacentPreview(-1) },
+                        onNext = { playAdjacentPreview(1) },
+                        modifier = Modifier.align(Alignment.CenterStart)
+                            .offset(x = panelWidth)
+                            .width(sideControlsWidth).height(64.dp)
+                            .background(Color(0xFF171E1A)),
+                    )
                     Column(
                         modifier = Modifier.align(Alignment.CenterEnd).width(64.dp).height(108.dp).padding(top = 22.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -4205,13 +4248,52 @@ private fun formatPreviewTime(milliseconds: Int): String {
 }
 
 @Composable
-private fun MiniPlayerSkipGlyph(previous: Boolean) {
-    Icon(
-        painter = painterResource(if (previous) R.drawable.lucide_skip_back else R.drawable.lucide_skip_forward),
-        contentDescription = null,
-        tint = Color(0xFF9FF0C9),
-        modifier = Modifier.size(17.dp),
-    )
+private fun MiniPlayerSideTrackControls(
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val arrowColor = Color(0xFF9FF0C9)
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(0.dp),
+    ) {
+        Box(
+            modifier = Modifier.fillMaxWidth().height(32.dp)
+                .clickable { onPrevious() }
+                .semantics { contentDescription = "上一首" },
+            contentAlignment = Alignment.Center,
+        ) {
+            Canvas(Modifier.size(18.dp)) {
+                val stroke = 1.7.dp.toPx()
+                val centerX = size.width / 2f
+                val top = 1.75.dp.toPx()
+                val bottom = size.height - 1.75.dp.toPx()
+                val headDepth = 5.5.dp.toPx()
+                drawLine(arrowColor, Offset(centerX, bottom), Offset(centerX, top + headDepth), stroke, cap = StrokeCap.Round)
+                drawLine(arrowColor, Offset(centerX, top), Offset(centerX - headDepth, top + headDepth), stroke, cap = StrokeCap.Round)
+                drawLine(arrowColor, Offset(centerX, top), Offset(centerX + headDepth, top + headDepth), stroke, cap = StrokeCap.Round)
+            }
+        }
+        Box(
+            modifier = Modifier.fillMaxWidth().height(32.dp)
+                .clickable { onNext() }
+                .semantics { contentDescription = "下一首" },
+            contentAlignment = Alignment.Center,
+        ) {
+            Canvas(Modifier.size(18.dp)) {
+                val stroke = 1.7.dp.toPx()
+                val centerX = size.width / 2f
+                val top = 1.75.dp.toPx()
+                val bottom = size.height - 1.75.dp.toPx()
+                val headDepth = 5.5.dp.toPx()
+                drawLine(arrowColor, Offset(centerX, top), Offset(centerX, bottom - headDepth), stroke, cap = StrokeCap.Round)
+                drawLine(arrowColor, Offset(centerX, bottom), Offset(centerX - headDepth, bottom - headDepth), stroke, cap = StrokeCap.Round)
+                drawLine(arrowColor, Offset(centerX, bottom), Offset(centerX + headDepth, bottom - headDepth), stroke, cap = StrokeCap.Round)
+            }
+        }
+    }
 }
 
 @Composable

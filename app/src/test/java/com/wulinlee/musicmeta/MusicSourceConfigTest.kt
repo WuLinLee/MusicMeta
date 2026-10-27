@@ -184,6 +184,44 @@ class MusicSourceConfigTest {
     }
 
     @Test
+    fun defaultFloatingLyricsFontMigratesTo1504spAndPreservesCustomSizes() {
+        assertEquals(15.04f, DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP, 0.001f)
+        assertEquals(
+            15.04f,
+            floatingLyricsFontSizeAfterDefaultMigration(null, migrationComplete = false),
+            0.001f,
+        )
+        assertEquals(
+            15.04f,
+            floatingLyricsFontSizeAfterDefaultMigration(
+                PREVIOUS_DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP,
+                migrationComplete = false,
+            ),
+            0.001f,
+        )
+        assertEquals(
+            16.5f,
+            floatingLyricsFontSizeAfterDefaultMigration(16.5f, migrationComplete = false),
+            0.001f,
+        )
+        assertEquals(
+            PREVIOUS_DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP,
+            floatingLyricsFontSizeAfterDefaultMigration(
+                PREVIOUS_DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP,
+                migrationComplete = true,
+            ),
+            0.001f,
+        )
+    }
+
+    @Test
+    fun localOverlayLocateUsesCurrentDisplayedOrderRatherThanScanOrder() {
+        val displayedUris = listOf("content://music/b", "content://music/c", "content://music/a")
+        assertEquals(2, localTrackIndexForOverlayUri(displayedUris, "content://music/a"))
+        assertEquals(-1, localTrackIndexForOverlayUri(displayedUris, "content://music/missing"))
+    }
+
+    @Test
     fun lyricFontSliderKeepsDefaultAtCenterAndProvidesHalfToDoubleRange() {
         assertEquals(0.5f, floatingLyricsFontSliderPosition(DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP), 0.001f)
         assertEquals(MIN_FLOATING_LYRICS_FONT_SIZE_SP, floatingLyricsFontSizeFromSlider(0f), 0.01f)

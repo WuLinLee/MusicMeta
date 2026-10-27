@@ -569,7 +569,7 @@ class FloatingMiniPlayerService : LifecycleService() {
             displayWidth = displayWidth,
             coverWidthPx = dp(64),
             desiredLyricsWidthPx = desiredLyricsWidthPx(),
-            preferredGapPx = dp(2),
+            preferredGapPx = dp(0),
             marginPx = dp(4),
             sideControlsWidthPx = dp(sideControlsWidthDp),
         )
@@ -613,7 +613,7 @@ class FloatingMiniPlayerService : LifecycleService() {
             displayWidth = displayWidth,
             coverX = coverX,
             coverWidthPx = coverWidth,
-            preferredGapPx = dp(2),
+            preferredGapPx = dp(0),
             marginPx = margin,
             lyricsOnRight = panelOnRight,
         )
@@ -888,7 +888,15 @@ private fun OverlayLyricsWindowUi(
         )
         onExpansionAnimationFinished(expanded)
     }
-    Box(Modifier.fillMaxSize()) {
+    val collapsedDragModifier = if (progress.value <= 0.001f) {
+        Modifier.overlayDragGesture(
+            key = "collapsed-lyrics-window",
+            onDrag = onDrag,
+            onCircularDrag = onCircularDrag,
+            onDragEnd = onDragEnd,
+        )
+    } else Modifier
+    Box(Modifier.fillMaxSize().then(collapsedDragModifier)) {
         val sideWidth = sideControlsWidthDp.dp
         // Keep the controls on the cover-facing edge of the lyrics panel. On the right,
         // controls precede the lyrics; on the left, they follow the lyrics.
@@ -918,7 +926,8 @@ private fun OverlayLyricsWindowUi(
         OverlaySideTrackControls(
             onPrevious = onPrevious,
             onNext = onNext,
-            modifier = Modifier.width(sideWidth).height(64.dp).offset(y = 4.dp)
+            modifier = Modifier.width(sideWidth).height(64.dp)
+                .background(Color(0xFF171E1A))
                 .align(if (lyricsOnRight) Alignment.TopStart else Alignment.TopEnd),
         )
     }
@@ -1264,10 +1273,10 @@ private fun OverlaySideTrackControls(
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(1.dp, Alignment.CenterVertically),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
         Box(
-            modifier = Modifier.size(28.dp)
+            modifier = Modifier.fillMaxWidth().height(32.dp)
                 .clickable { onPrevious() }
                 .semantics { contentDescription = "上一首" },
             contentAlignment = Alignment.Center,
@@ -1302,7 +1311,7 @@ private fun OverlaySideTrackControls(
             }
         }
         Box(
-            modifier = Modifier.size(28.dp)
+            modifier = Modifier.fillMaxWidth().height(32.dp)
                 .clickable { onNext() }
                 .semantics { contentDescription = "下一首" },
             contentAlignment = Alignment.Center,
