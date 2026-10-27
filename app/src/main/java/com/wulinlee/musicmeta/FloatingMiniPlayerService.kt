@@ -18,6 +18,7 @@ import android.util.DisplayMetrics
 import android.view.Choreographer
 import android.view.Gravity
 import android.view.WindowManager
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -53,6 +54,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -373,6 +375,8 @@ class FloatingMiniPlayerService : LifecycleService() {
     private val overlayViewTreeOwner = FloatingOverlayViewTreeOwner()
     private var overlayView: ComposeView? = null
     private var overlayParams: WindowManager.LayoutParams? = null
+    private var lyricsOverlayView: ComposeView? = null
+    private var lyricsOverlayParams: WindowManager.LayoutParams? = null
 
     private var coverUrl by mutableStateOf("")
     private var title by mutableStateOf("")
@@ -387,7 +391,6 @@ class FloatingMiniPlayerService : LifecycleService() {
     private var lyricsPanelOnRight by mutableStateOf(false)
     private var lyricsPanelWidthPx by mutableIntStateOf(0)
     private var lyricsPanelGapPx by mutableIntStateOf(0)
-    private var windowBoundsExpanded by mutableStateOf(false)
     private var lyricsFontSizeSp by mutableStateOf(DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP)
     private var showTranslation by mutableStateOf(false)
     private var playbackMode by mutableIntStateOf(0)
@@ -457,27 +460,11 @@ class FloatingMiniPlayerService : LifecycleService() {
             }
             return START_NOT_STICKY
         }
-        val overlayWasMissing = overlayView == null
-        val wasExpanded = expanded
-        val requestedExpanded = if (intent?.action == ACTION_UPDATE && intent.hasExtra(EXTRA_EXPANDED)) {
-            intent.getBooleanExtra(EXTRA_EXPANDED, expanded)
-        } else expanded
-        if (!overlayWasMissing && !wasExpanded && requestedExpanded) {
-            // Commit both Compose states before its SideEffect synchronizes WindowManager bounds.
-            windowBoundsExpanded = true
-        }
         if (intent?.action == ACTION_UPDATE) applyUpdate(intent)
         startAsForegroundService()
-        if (overlayWasMissing) {
-            windowBoundsExpanded = expanded
-            ensureOverlayWindow()
-        } else {
-            ensureOverlayWindow()
-            if (expanded && !wasExpanded) {
-                windowBoundsExpanded = true
-                updateWindowPositions()
-            }
-        }
+        ensureOverlayWindow()
+        if (expanded) ensureLyricsOverlayWindow()
+        updateWindowPositions()
         return START_NOT_STICKY
     }
 
@@ -703,51 +690,23 @@ class FloatingMiniPlayerService : LifecycleService() {
             this.y = y
         }
 
-    private fun overlayWindowX(): Int = FloatingOverlayPlacement.windowOriginX(
-        coverX = coverX,
-        lyricsWidthPx = lyricsWidthPx(),
-        gapPx = lyricsPanelGapPx,
-        lyricsOnRight = lyricsPanelOnRight,
-        expandedBounds = windowBoundsExpanded,
-    )
-
-    private fun overlayWindowWidth(): Int = FloatingOverlayPlacement.windowWidthPx(
-        coverWidthPx = dp(64),
-        lyricsWidthPx = lyricsWidthPx(),
-        gapPx = lyricsPanelGapPx,
-        expandedBounds = windowBoundsExpanded,
-    )
+    private fun lyricsWindowX(): Int =
+        if (lyricsPanelOnRight) coverX + dp(64) + lyricsPanelGapPx
+        else coverX - lyricsPanelWidthPx - lyricsPanelGapPx
 
     private fun onExpansionAnimationFinished(isExpanded: Boolean) {
-        // Defer WindowManager resizing until Compose has applied the matching root width.
-        windowBoundsExpanded = isExpanded
+        if (!isExpanded && !expanded) removeLyricsOverlayWindow()
         mainHandler.post { savePosition() }
     }
-    
-    private fun onWindowBoundsCompositionReady() {
-        updateWindowPositions()
-    }
 
-    
     private fun ensureOverlayWindow() {
         if (overlayView != null) return
         val wm = windowManager ?: return
-        // Resolve direction and final bounds before first composition.
-        clampPosition()
-        windowBoundsExpanded = expanded
         val view = ComposeView(this).apply {
             setViewTreeLifecycleOwner(overlayViewTreeOwner)
             setViewTreeSavedStateRegistryOwner(overlayViewTreeOwner)
             setContent {
-                OverlayPlayerUi(
-                    expanded = expanded,
-                    windowBoundsExpanded = windowBoundsExpanded,
-                    lyricsOnRight = lyricsPanelOnRight,
-                    lyricsWidthDp = lyricsWidthPx() / density,
-                    lyricsGapDp = lyricsPanelGapPx / density,
-                    lyricsFontSizeSp = lyricsFontSizeSp,
-                    onExpansionAnimationFinished = { onExpansionAnimationFinished(it) },
-                    onWindowBoundsCompositionReady = { onWindowBoundsCompositionReady() },
+                OverlayCoverUi(
                     coverUrl = coverUrl,
                     isPlaying = isPlaying,
                     isLoading = isLoading,
@@ -765,30 +724,11 @@ class FloatingMiniPlayerService : LifecycleService() {
                         dragRemainderY = 0f
                         savePosition()
                     },
-                    originalLyrics = originalLyrics,
-                    translatedLyrics = translatedLyrics,
-                    showTranslation = showTranslation,
-                    onToggleTranslation = {
-                        // Activity owns the selected lyric language; only send the request here.
-                        sendCommand(this@FloatingMiniPlayerService, COMMAND_TOGGLE_TRANSLATION)
-                    },
-                    onSeek = { seekMs ->
-                        positionMs = seekMs.coerceIn(0, durationMs.coerceAtLeast(0))
-                        sendCommand(this@FloatingMiniPlayerService, COMMAND_SEEK, positionMs)
-                    },
-                    onPrevious = { sendCommand(this@FloatingMiniPlayerService, COMMAND_PREVIOUS) },
-                    onNext = { sendCommand(this@FloatingMiniPlayerService, COMMAND_NEXT) },
-                    onCircularDrag = { openAppAndLocateSong() },
+                    modifier = Modifier.fillMaxSize(),
                 )
             }
         }
-
-        val params = createLayoutParams(
-            overlayWindowWidth(),
-            dp(88),
-            overlayWindowX(),
-            coverY,
-        )
+        val params = createLayoutParams(dp(64), dp(88), coverX, coverY)
         overlayView = view
         overlayParams = params
         try {
@@ -800,19 +740,100 @@ class FloatingMiniPlayerService : LifecycleService() {
         }
     }
 
+    private fun ensureLyricsOverlayWindow() {
+        if (lyricsOverlayView != null) return
+        val wm = windowManager ?: return
+        clampPosition()
+        val view = ComposeView(this).apply {
+            setViewTreeLifecycleOwner(overlayViewTreeOwner)
+            setViewTreeSavedStateRegistryOwner(overlayViewTreeOwner)
+            setContent {
+                OverlayLyricsWindowUi(
+                    expanded = expanded,
+                    lyricsFontSizeSp = lyricsFontSizeSp,
+                    originalLyrics = originalLyrics,
+                    translatedLyrics = translatedLyrics,
+                    showTranslation = showTranslation,
+                    positionMs = positionMs,
+                    durationMs = durationMs,
+                    onExpansionAnimationFinished = { onExpansionAnimationFinished(it) },
+                    onToggleTranslation = {
+                        sendCommand(this@FloatingMiniPlayerService, COMMAND_TOGGLE_TRANSLATION)
+                    },
+                    onSeek = { seekMs ->
+                        positionMs = seekMs.coerceIn(0, durationMs.coerceAtLeast(0))
+                        sendCommand(this@FloatingMiniPlayerService, COMMAND_SEEK, positionMs)
+                    },
+                    onPrevious = { sendCommand(this@FloatingMiniPlayerService, COMMAND_PREVIOUS) },
+                    onNext = { sendCommand(this@FloatingMiniPlayerService, COMMAND_NEXT) },
+                    onDrag = { dx, dy -> moveBy(dx, dy) },
+                    onCircularDrag = { openAppAndLocateSong() },
+                    onLongPress = { toggleExpanded() },
+                    onDragEnd = {
+                        dragRemainderX = 0f
+                        dragRemainderY = 0f
+                        savePosition()
+                    },
+                    lyricsOnRight = lyricsPanelOnRight,
+                )
+            }
+        }
+        val params = createLayoutParams(
+            lyricsPanelWidthPx.coerceAtLeast(dp(1)),
+            dp(64),
+            lyricsWindowX(),
+            coverY,
+        )
+        lyricsOverlayView = view
+        lyricsOverlayParams = params
+        try {
+            wm.addView(view, params)
+        } catch (error: Exception) {
+            lyricsOverlayView = null
+            lyricsOverlayParams = null
+            throw error
+        }
+    }
+
+    private fun removeLyricsOverlayWindow() {
+        val wm = windowManager
+        lyricsOverlayView?.let { view -> runCatching { wm?.removeView(view) } }
+        lyricsOverlayView = null
+        lyricsOverlayParams = null
+    }
+
     private fun updateWindowPositions() {
         val wm = windowManager ?: return
-        val params = overlayParams ?: return
-        val nextX = overlayWindowX()
-        val nextY = coverY
-        val nextWidth = overlayWindowWidth()
-        val nextHeight = dp(88)
-        if (params.x == nextX && params.y == nextY && params.width == nextWidth && params.height == nextHeight) return
-        params.x = nextX
-        params.y = nextY
-        params.width = nextWidth
-        params.height = nextHeight
-        overlayView?.let { view -> runCatching { wm.updateViewLayout(view, params) } }
+        overlayParams?.let { params ->
+            val nextX = coverX
+            val nextY = coverY
+            val nextWidth = dp(64)
+            val nextHeight = dp(88)
+            if (params.x != nextX || params.y != nextY ||
+                params.width != nextWidth || params.height != nextHeight
+            ) {
+                params.x = nextX
+                params.y = nextY
+                params.width = nextWidth
+                params.height = nextHeight
+                overlayView?.let { view -> runCatching { wm.updateViewLayout(view, params) } }
+            }
+        }
+        lyricsOverlayParams?.let { params ->
+            val nextX = lyricsWindowX()
+            val nextY = coverY
+            val nextWidth = lyricsPanelWidthPx.coerceAtLeast(dp(1))
+            val nextHeight = dp(64)
+            if (params.x != nextX || params.y != nextY ||
+                params.width != nextWidth || params.height != nextHeight
+            ) {
+                params.x = nextX
+                params.y = nextY
+                params.width = nextWidth
+                params.height = nextHeight
+                lyricsOverlayView?.let { view -> runCatching { wm.updateViewLayout(view, params) } }
+            }
+        }
     }
 
     private fun toggleExpanded() {
@@ -842,11 +863,63 @@ class FloatingMiniPlayerService : LifecycleService() {
     }
 
     private fun removeOverlayViews() {
+        removeLyricsOverlayWindow()
         val wm = windowManager
         overlayView?.let { runCatching { wm?.removeView(it) } }
         overlayView = null
         overlayParams = null
     }
+}
+
+@Composable
+private fun OverlayLyricsWindowUi(
+    expanded: Boolean,
+    lyricsFontSizeSp: Float,
+    originalLyrics: String,
+    translatedLyrics: String,
+    showTranslation: Boolean,
+    positionMs: Int,
+    durationMs: Int,
+    onExpansionAnimationFinished: (Boolean) -> Unit,
+    onToggleTranslation: () -> Unit,
+    onSeek: (Int) -> Unit,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    onDrag: (Float, Float) -> Unit,
+    onCircularDrag: () -> Unit,
+    onLongPress: () -> Unit,
+    onDragEnd: () -> Unit,
+    lyricsOnRight: Boolean,
+) {
+    val progress = remember { Animatable(0f) }
+    LaunchedEffect(expanded) {
+        progress.animateTo(
+            targetValue = if (expanded) 1f else 0f,
+            animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
+        )
+        onExpansionAnimationFinished(expanded)
+    }
+    OverlayLyricsUi(
+        lyricsFontSizeSp = lyricsFontSizeSp,
+        originalLyrics = originalLyrics,
+        translatedLyrics = translatedLyrics,
+        showTranslation = showTranslation,
+        positionMs = positionMs,
+        durationMs = durationMs,
+        onToggleTranslation = onToggleTranslation,
+        onSeek = onSeek,
+        onPrevious = onPrevious,
+        onNext = onNext,
+        onDrag = onDrag,
+        onCircularDrag = onCircularDrag,
+        onLongPress = onLongPress,
+        onDragEnd = onDragEnd,
+        modifier = Modifier.fillMaxSize().graphicsLayer {
+            alpha = progress.value
+            scaleX = progress.value
+            transformOrigin = if (lyricsOnRight) TransformOrigin(0f, 0.5f) else TransformOrigin(1f, 0.5f)
+        },
+    )
 }
 
 @Composable
@@ -1097,7 +1170,7 @@ private fun OverlayLyricsUi(
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
     ) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp, vertical = 4.dp),
+            modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp, vertical = 2.dp),
             verticalArrangement = Arrangement.spacedBy(0.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -1122,7 +1195,7 @@ private fun OverlayLyricsUi(
                                 onLongPress = { onLongPress() },
                             )
                         }
-                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                        .padding(horizontal = 5.dp, vertical = 0.dp)
                         .semantics {
                             contentDescription = if (translatedLyrics.isBlank()) {
                                 "歌词，当前歌曲没有已加载的译文，点击切换显示状态"
@@ -1137,7 +1210,7 @@ private fun OverlayLyricsUi(
                         color = Color(0xFF9FF0C9),
                         fontWeight = FontWeight.Bold,
                         fontSize = lyricsFontSizeSp.sp,
-                        lineHeight = (lyricsFontSizeSp * 1.25f).sp,
+                        lineHeight = (lyricsFontSizeSp * 1.12f).sp,
                         textAlign = TextAlign.Center,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
@@ -1151,7 +1224,7 @@ private fun OverlayLyricsUi(
                 ) { OverlaySkipGlyph(previous = false) }
             }
             Box(
-                modifier = Modifier.fillMaxWidth().height(14.dp)
+                modifier = Modifier.fillMaxWidth().height(8.dp)
                     .pointerInput(durationMs) {
                         detectTapGestures { tap ->
                             if (durationMs > 0 && size.width > 0) {
