@@ -160,7 +160,7 @@ class MediaPlaybackService : Service() {
                     )
                 }
                 override fun onStop() = dispatch(FloatingMiniPlayerService.COMMAND_MEDIA_PAUSE)
-                override fun onCustomAction(action: String?, extras: android.os.Bundle?) {
+                override fun onCustomAction(action: String, extras: android.os.Bundle?) {
                     if (action == CUSTOM_ACTION_MUTE) {
                         dispatch(FloatingMiniPlayerService.COMMAND_MEDIA_TOGGLE_MUTE)
                     }
@@ -239,7 +239,7 @@ class MediaPlaybackService : Service() {
         val metadata = MediaMetadataCompat.Builder()
             .putString(MediaMetadataCompat.METADATA_KEY_TITLE, trackTitle)
             .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, trackArtist)
-            .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, currentLyric.ifBlank { "音笺" })
+            .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, "音笺")
             .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE, trackTitle)
             .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_SUBTITLE, trackArtist)
             .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_DESCRIPTION, currentLyric)
