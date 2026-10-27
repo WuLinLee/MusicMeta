@@ -94,9 +94,11 @@ class MusicSourceConfigTest {
     }
 
     @Test
-    fun lyricsPanelPreferredWidthIsScaledByTwentyPercent() {
-        assertEquals(334, FloatingOverlayPlacement.scaledPreferredLyricsWidthPx(356, 78))
-        assertEquals(0, FloatingOverlayPlacement.scaledPreferredLyricsWidthPx(64, 78))
+    fun lyricsPanelPreferredWidthIsScaledByThirtyFivePercent() {
+        assertEquals(375, FloatingOverlayPlacement.scaledPreferredLyricsWidthPx(356, 78, 1.35f))
+        assertEquals(0, FloatingOverlayPlacement.scaledPreferredLyricsWidthPx(64, 78, 1.35f))
+        assertEquals(88, FLOATING_OVERLAY_GROUP_HEIGHT_DP)
+        assertEquals(64 + 2 + 22, FLOATING_OVERLAY_GROUP_HEIGHT_DP)
     }
 
     @Test
@@ -105,8 +107,7 @@ class MusicSourceConfigTest {
         val preferredGap = 14
         val margin = 4
         for (displayWidth in listOf(360, 720, 1080)) {
-            val desiredGroupWidth = minOf(368, (displayWidth - 8).coerceAtLeast(64))
-            val desiredLyricsWidth = (desiredGroupWidth - 78).coerceAtLeast(0)
+            val desiredLyricsWidth = FloatingOverlayPlacement.scaledPreferredLyricsWidthPx(356, 78, 1.35f)
             val coverPositions = listOf(
                 margin,
                 ((displayWidth - coverWidth) / 2).coerceAtLeast(margin),
