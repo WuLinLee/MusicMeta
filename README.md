@@ -8,11 +8,11 @@ MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 A
 
 - **正式版发布页：** [GitHub Releases](https://github.com/WuLinLee/MusicMeta/releases)
 - **v1.31 APK 直链：** [MusicMeta-v1.31.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.31/MusicMeta-v1.31.apk)
-- **回退基线 v1.30：** [MusicMeta-v1.30.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.30/MusicMeta-v1.30.apk)
-- **上一版 v1.29：** [MusicMeta-v1.29.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.29/MusicMeta-v1.29.apk)
+- **悬浮窗实现基线 v1.29：** [MusicMeta-v1.29.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.29/MusicMeta-v1.29.apk)
+- **v1.30 历史版（系统媒体卡片参考）：** [MusicMeta-v1.30.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.30/MusicMeta-v1.30.apk)
 - **构建记录：** [GitHub Actions](https://github.com/WuLinLee/MusicMeta/actions)
 
-v1.31 按要求将悬浮窗与左侧栏固定回退到 v1.30 的代码基线；系统下拉栏和锁屏媒体卡片维持 v1.30 的歌词元数据与全局悬浮窗开关行为。本版不再叠加新的动画、按钮或播放器状态逻辑。v1.30 为悬浮歌词栏加入真正的横向跑马灯、扩大触控区域并调整面板尺寸；系统媒体卡片上的悬浮窗按钮改为小尺寸开关图标，直接同步全局设置。系统媒体标题会收到完整当前歌词，但锁屏 / 通知栏文字的滚动方式仍由 Android System UI 和设备厂商控制。v1.29 移除重复通知并加入歌词媒体标题，v1.28 引入系统媒体卡片与 GD Studio 临时故障回退，v1.27 修复悬浮歌词布局和本地原文 / 译文切换。下载链接只有在对应 Release 资产创建成功后才可用。版本号、Git 标签、Actions 构建结果和 Release 附件是不同的事实；请以对应提交的成功构建结果和实际资产为准，不要仅凭本文件中的版本号判断已发布。
+v1.31 将悬浮窗封面、歌词栏布局与交互恢复到 v1.29 的已发布实现；系统下拉栏和锁屏媒体卡片保留 v1.30 的 MediaSession / MediaStyle、当前歌词元数据和全局悬浮窗开关。为兼容两套行为，只在命令桥接处并存旧的会话级关闭命令与媒体卡片的全局开关命令，不重做媒体卡片 UI。v1.30 为悬浮歌词栏加入真正的横向跑马灯、扩大触控区域并调整面板尺寸；系统媒体卡片上的悬浮窗按钮改为小尺寸开关图标，直接同步全局设置。系统媒体标题会收到完整当前歌词，但锁屏 / 通知栏文字的滚动方式仍由 Android System UI 和设备厂商控制。v1.29 移除重复通知并加入歌词媒体标题，v1.28 引入系统媒体卡片与 GD Studio 临时故障回退，v1.27 修复悬浮歌词布局和本地原文 / 译文切换。下载链接只有在对应 Release 资产创建成功后才可用。版本号、Git 标签、Actions 构建结果和 Release 附件是不同的事实；请以对应提交的成功构建结果和实际资产为准，不要仅凭本文件中的版本号判断已发布。
 
 ## 目录
 
@@ -53,9 +53,9 @@ v1.31 按要求将悬浮窗与左侧栏固定回退到 v1.30 的代码基线；�
 
 ## v1.31 本次改动
 
-- **回退范围：** 悬浮窗与左侧栏以 v1.30 已发布源码为准，不引入后续试验性变更。
-- **保留范围：** 下拉栏 / 锁屏系统媒体卡片保持 v1.30 实现，包括当前歌词元数据、全局悬浮窗开关及同一播放器控制。
-- **避免扩大变更：** 不改播放队列、音源回退、歌词选择、媒体会话及现有悬浮窗布局逻辑。
+- **回退范围：** 悬浮窗封面、歌词栏布局、展开 / 收起及左右侧位置计算恢复到 v1.29 的已发布源码。
+- **保留范围：** 下拉栏 / 锁屏媒体卡片继续使用 v1.30 的 `MediaPlaybackService`，包含当前歌词元数据、全局悬浮窗开关和同一播放器控制。
+- **兼容桥接：** 保留 v1.29 悬浮窗会话级关闭语义，同时独立处理系统媒体卡片的全局开关；没有回滚 MediaSession / MediaStyle 文件。
 - **版本号：** 1.31，`versionCode = 35`。
 
 ## v1.30 本次改进

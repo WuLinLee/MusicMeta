@@ -11,6 +11,7 @@ import android.net.Uri
 import android.provider.Settings
 import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.provider.MediaStore
 import android.os.Bundle
 import android.os.Build
 import android.widget.Toast
@@ -96,6 +97,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
@@ -114,6 +117,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.semantics.contentDescription
@@ -469,6 +473,7 @@ private fun MusicMetaApp() {
     var isDownloading by remember { mutableStateOf(false) }
     var verificationOpen by remember { mutableStateOf(false) }
     var floatingOverlayEnabled by remember { mutableStateOf(folderPreferences.getBoolean("floating_overlay_enabled", Settings.canDrawOverlays(context))) }
+    var floatingOverlayDismissedForSession by remember { mutableStateOf(false) }
     var floatingLyricsExpandedByDefault by remember {
         mutableStateOf(folderPreferences.getBoolean("floating_lyrics_expanded_by_default", true))
     }
@@ -1489,6 +1494,12 @@ private fun MusicMetaApp() {
     SideEffect {
         FloatingMiniPlayerBridge.onCommand = { command, seekPosition ->
             when (command) {
+                FloatingMiniPlayerService.COMMAND_CLOSE_OVERLAY -> {
+                    floatingOverlayDismissedForSession = true
+                    FloatingMiniPlayerService.stop(context)
+                }
+                // Keep the v1.29 session-scoped close behavior separate from the
+                // system media card's global on/off switch.
                 FloatingMiniPlayerService.COMMAND_TOGGLE_OVERLAY -> {
                     if (floatingOverlayEnabled) {
                         floatingOverlayEnabled = false
@@ -1558,6 +1569,7 @@ private fun MusicMetaApp() {
 
     LaunchedEffect(
         floatingOverlayEnabled,
+        floatingOverlayDismissedForSession,
         previewSong?.platform,
         previewSong?.id,
         previewCoverUrl,
@@ -1575,7 +1587,7 @@ private fun MusicMetaApp() {
         floatingLyricsFontSizeSp,
     ) {
         val song = previewSong
-        if (floatingOverlayEnabled && song != null && Settings.canDrawOverlays(context)) {
+        if (floatingOverlayEnabled && !floatingOverlayDismissedForSession && song != null && Settings.canDrawOverlays(context)) {
             FloatingMiniPlayerService.showOrUpdate(
                 context = context,
                 coverUrl = previewCoverUrl.ifBlank { song.coverUrl },
@@ -1607,7 +1619,7 @@ private fun MusicMetaApp() {
 
     LaunchedEffect(floatingOverlayEnabled, previewSong?.id, previewPositionMs) {
         val song = previewSong
-        if (floatingOverlayEnabled && song != null && Settings.canDrawOverlays(context)) {
+        if (floatingOverlayEnabled && !floatingOverlayDismissedForSession && song != null && Settings.canDrawOverlays(context)) {
             // Progress uses a lightweight service action, not a foreground-service restart.
             FloatingMiniPlayerService.updatePosition(context, previewPositionMs)
         }
@@ -1693,6 +1705,8 @@ private fun MusicMetaApp() {
     }
 
     LaunchedEffect(floatingOverlayEnabled) {
+        // Explicit global off/on toggles restore an overlay dismissed from media controls.
+        floatingOverlayDismissedForSession = false
         if (floatingOverlayEnabled && !Settings.canDrawOverlays(context)) {
             // Keep the preference: granting the permission again should restore the overlay.
             floatingOverlayEnabled = false

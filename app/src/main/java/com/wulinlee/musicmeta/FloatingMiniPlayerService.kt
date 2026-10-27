@@ -286,6 +286,8 @@ class FloatingMiniPlayerService : LifecycleService() {
         const val COMMAND_PREVIOUS = "previous_track"
         const val COMMAND_NEXT = "next_track"
         const val COMMAND_CLOSE_OVERLAY = "close_overlay"
+        // Compatibility command used by the unchanged system media card.
+        const val COMMAND_TOGGLE_OVERLAY = "toggle_overlay"
         const val COMMAND_TOGGLE_DETAILS = "toggle_details"
         const val COMMAND_TOGGLE_TRANSLATION = "toggle_translation"
         const val COMMAND_TOGGLE_PLAYBACK_MODE = "toggle_playback_mode"
