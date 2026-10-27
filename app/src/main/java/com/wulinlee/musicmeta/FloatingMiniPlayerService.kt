@@ -277,6 +277,7 @@ class FloatingMiniPlayerService : LifecycleService() {
         const val EXTRA_POSITION_MS = "position_ms"
         const val EXTRA_IS_PLAYING = "is_playing"
         const val EXTRA_IS_LOADING = "is_loading"
+        const val EXTRA_IS_MUTED = "is_muted"
         const val EXTRA_EXPANDED = "expanded"
         const val EXTRA_SHOW_TRANSLATION = "show_translation"
         const val EXTRA_LYRICS_FONT_SIZE_SP = "lyrics_font_size_sp"
@@ -314,6 +315,7 @@ class FloatingMiniPlayerService : LifecycleService() {
             positionMs: Int,
             isPlaying: Boolean,
             isLoading: Boolean,
+            isMuted: Boolean,
             expanded: Boolean,
             showTranslation: Boolean,
             playbackMode: Int,
@@ -334,6 +336,7 @@ class FloatingMiniPlayerService : LifecycleService() {
                 .putExtra(EXTRA_POSITION_MS, positionMs)
                 .putExtra(EXTRA_IS_PLAYING, isPlaying)
                 .putExtra(EXTRA_IS_LOADING, isLoading)
+                .putExtra(EXTRA_IS_MUTED, isMuted)
                 .putExtra(EXTRA_EXPANDED, expanded)
                 .putExtra(EXTRA_SHOW_TRANSLATION, showTranslation)
                 .putExtra(EXTRA_LYRICS_FONT_SIZE_SP, lyricsFontSizeSp.coerceIn(
@@ -390,6 +393,7 @@ class FloatingMiniPlayerService : LifecycleService() {
     private var positionMs by mutableIntStateOf(0)
     private var isPlaying by mutableStateOf(false)
     private var isLoading by mutableStateOf(false)
+    private var isMuted by mutableStateOf(false)
     private var expanded by mutableStateOf(false)
     private var lyricsPanelOnRight by mutableStateOf(false)
     private var lyricsPanelWidthPx by mutableIntStateOf(0)
@@ -510,6 +514,7 @@ class FloatingMiniPlayerService : LifecycleService() {
         if (intent.hasExtra(EXTRA_POSITION_MS)) positionMs = intent.getIntExtra(EXTRA_POSITION_MS, positionMs).coerceAtLeast(0)
         if (intent.hasExtra(EXTRA_IS_PLAYING)) isPlaying = intent.getBooleanExtra(EXTRA_IS_PLAYING, isPlaying)
         if (intent.hasExtra(EXTRA_IS_LOADING)) isLoading = intent.getBooleanExtra(EXTRA_IS_LOADING, isLoading)
+        if (intent.hasExtra(EXTRA_IS_MUTED)) isMuted = intent.getBooleanExtra(EXTRA_IS_MUTED, isMuted)
         if (intent.hasExtra(EXTRA_EXPANDED)) expanded = intent.getBooleanExtra(EXTRA_EXPANDED, expanded)
         if (intent.hasExtra(EXTRA_SHOW_TRANSLATION)) {
             showTranslation = intent.getBooleanExtra(EXTRA_SHOW_TRANSLATION, showTranslation)
@@ -757,12 +762,14 @@ class FloatingMiniPlayerService : LifecycleService() {
                     originalLyrics = originalLyrics,
                     translatedLyrics = translatedLyrics,
                     showTranslation = showTranslation,
+                    isMuted = isMuted,
                     positionMs = positionMs,
                     durationMs = durationMs,
                     onExpansionAnimationFinished = { onExpansionAnimationFinished(it) },
                     onToggleTranslation = {
                         sendCommand(this@FloatingMiniPlayerService, COMMAND_TOGGLE_TRANSLATION)
                     },
+                    onToggleMute = { sendCommand(this@FloatingMiniPlayerService, COMMAND_MEDIA_TOGGLE_MUTE) },
                     onSeek = { seekMs ->
                         positionMs = seekMs.coerceIn(0, durationMs.coerceAtLeast(0))
                         sendCommand(this@FloatingMiniPlayerService, COMMAND_SEEK, positionMs)
@@ -881,10 +888,12 @@ private fun OverlayLyricsWindowUi(
     originalLyrics: String,
     translatedLyrics: String,
     showTranslation: Boolean,
+    isMuted: Boolean,
     positionMs: Int,
     durationMs: Int,
     onExpansionAnimationFinished: (Boolean) -> Unit,
     onToggleTranslation: () -> Unit,
+    onToggleMute: () -> Unit,
     onSeek: (Int) -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
@@ -907,9 +916,11 @@ private fun OverlayLyricsWindowUi(
         originalLyrics = originalLyrics,
         translatedLyrics = translatedLyrics,
         showTranslation = showTranslation,
+        isMuted = isMuted,
         positionMs = positionMs,
         durationMs = durationMs,
         onToggleTranslation = onToggleTranslation,
+        onToggleMute = onToggleMute,
         onSeek = onSeek,
         onPrevious = onPrevious,
         onNext = onNext,
@@ -1144,9 +1155,11 @@ private fun OverlayLyricsUi(
     originalLyrics: String,
     translatedLyrics: String,
     showTranslation: Boolean,
+    isMuted: Boolean,
     positionMs: Int,
     durationMs: Int,
     onToggleTranslation: () -> Unit,
+    onToggleMute: () -> Unit,
     onSeek: (Int) -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
