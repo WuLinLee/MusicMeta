@@ -22,6 +22,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -200,9 +201,11 @@ internal object FloatingOverlayPlacement {
         gapPx: Int,
         marginPx: Int,
         lyricsOnRight: Boolean,
+        reservedSideControlsPx: Int = 0,
     ): Int = minOf(
         desiredLyricsWidthPx.coerceAtLeast(0),
-        (availableSpacePx(displayWidth, coverX, coverWidthPx, marginPx, lyricsOnRight) - gapPx).coerceAtLeast(0),
+        (availableSpacePx(displayWidth, coverX, coverWidthPx, marginPx, lyricsOnRight) -
+            gapPx - reservedSideControlsPx.coerceAtLeast(0)).coerceAtLeast(0),
     )
 
     fun windowWidthPx(
@@ -369,6 +372,7 @@ class FloatingMiniPlayerService : LifecycleService() {
     private var overlayParams: WindowManager.LayoutParams? = null
     private var lyricsOverlayView: ComposeView? = null
     private var lyricsOverlayParams: WindowManager.LayoutParams? = null
+    private val sideControlsWidthDp = 34
 
     private var coverUrl by mutableStateOf("")
     private var title by mutableStateOf("")
@@ -451,7 +455,7 @@ class FloatingMiniPlayerService : LifecycleService() {
         }
         if (intent?.action == ACTION_UPDATE) applyUpdate(intent)
         ensureOverlayWindow()
-        if (expanded) ensureLyricsOverlayWindow()
+        ensureLyricsOverlayWindow()
         updateWindowPositions()
         return START_NOT_STICKY
     }
@@ -562,6 +566,7 @@ class FloatingMiniPlayerService : LifecycleService() {
             preferredGapPx = dp(14),
             marginPx = margin,
             lyricsOnRight = panelOnRight,
+            reservedSideControlsPx = dp(sideControlsWidthDp),
         )
         lyricsPanelGapPx = gap
         lyricsPanelWidthPx = FloatingOverlayPlacement.lyricsWidthPx(
@@ -624,10 +629,9 @@ class FloatingMiniPlayerService : LifecycleService() {
 
     private fun lyricsWindowX(): Int =
         if (lyricsPanelOnRight) coverX + dp(64) + lyricsPanelGapPx
-        else coverX - lyricsPanelWidthPx - lyricsPanelGapPx
+        else coverX - lyricsPanelWidthPx - lyricsPanelGapPx - dp(sideControlsWidthDp)
 
     private fun onExpansionAnimationFinished(isExpanded: Boolean) {
-        if (!isExpanded && !expanded) removeLyricsOverlayWindow()
         mainHandler.post { savePosition() }
     }
 
@@ -683,6 +687,7 @@ class FloatingMiniPlayerService : LifecycleService() {
                 OverlayLyricsWindowUi(
                     expanded = expanded,
                     lyricsFontSizeSp = lyricsFontSizeSp,
+                    lyricsWidthDp = lyricsPanelWidthPx / density,
                     originalLyrics = originalLyrics,
                     translatedLyrics = translatedLyrics,
                     showTranslation = showTranslation,
@@ -711,8 +716,8 @@ class FloatingMiniPlayerService : LifecycleService() {
             }
         }
         val params = createLayoutParams(
-            lyricsPanelWidthPx.coerceAtLeast(dp(1)),
-            dp(64),
+            (lyricsPanelWidthPx + dp(sideControlsWidthDp)).coerceAtLeast(dp(sideControlsWidthDp)),
+            dp(88),
             lyricsWindowX(),
             coverY,
         )
@@ -754,8 +759,8 @@ class FloatingMiniPlayerService : LifecycleService() {
         lyricsOverlayParams?.let { params ->
             val nextX = lyricsWindowX()
             val nextY = coverY
-            val nextWidth = lyricsPanelWidthPx.coerceAtLeast(dp(1))
-            val nextHeight = dp(64)
+            val nextWidth = (lyricsPanelWidthPx + dp(sideControlsWidthDp)).coerceAtLeast(dp(sideControlsWidthDp))
+            val nextHeight = dp(88)
             if (params.x != nextX || params.y != nextY ||
                 params.width != nextWidth || params.height != nextHeight
             ) {
@@ -806,6 +811,7 @@ class FloatingMiniPlayerService : LifecycleService() {
 private fun OverlayLyricsWindowUi(
     expanded: Boolean,
     lyricsFontSizeSp: Float,
+    lyricsWidthDp: Float,
     originalLyrics: String,
     translatedLyrics: String,
     showTranslation: Boolean,
@@ -814,8 +820,6 @@ private fun OverlayLyricsWindowUi(
     onExpansionAnimationFinished: (Boolean) -> Unit,
     onToggleTranslation: () -> Unit,
     onSeek: (Int) -> Unit,
-    onPrevious: () -> Unit,
-    onNext: () -> Unit,
     onDrag: (Float, Float) -> Unit,
     onCircularDrag: () -> Unit,
     onLongPress: () -> Unit,
@@ -830,27 +834,36 @@ private fun OverlayLyricsWindowUi(
         )
         onExpansionAnimationFinished(expanded)
     }
-    OverlayLyricsUi(
-        lyricsFontSizeSp = lyricsFontSizeSp,
-        originalLyrics = originalLyrics,
-        translatedLyrics = translatedLyrics,
-        showTranslation = showTranslation,
-        positionMs = positionMs,
-        durationMs = durationMs,
-        onToggleTranslation = onToggleTranslation,
-        onSeek = onSeek,
-        onPrevious = onPrevious,
-        onNext = onNext,
-        onDrag = onDrag,
-        onCircularDrag = onCircularDrag,
-        onLongPress = onLongPress,
-        onDragEnd = onDragEnd,
-        modifier = Modifier.fillMaxSize().graphicsLayer {
-            alpha = progress.value
-            scaleX = progress.value
-            transformOrigin = if (lyricsOnRight) TransformOrigin(0f, 0.5f) else TransformOrigin(1f, 0.5f)
-        },
-    )
+    Box(Modifier.fillMaxSize()) {
+        val sideWidth = sideControlsWidthDp.dp
+        val lyricsOffset = if (lyricsOnRight) 0.dp else sideWidth
+        OverlayLyricsUi(
+            lyricsFontSizeSp = lyricsFontSizeSp,
+            originalLyrics = originalLyrics,
+            translatedLyrics = translatedLyrics,
+            showTranslation = showTranslation,
+            positionMs = positionMs,
+            durationMs = durationMs,
+            onToggleTranslation = onToggleTranslation,
+            onSeek = onSeek,
+            onDrag = onDrag,
+            onCircularDrag = onCircularDrag,
+            onLongPress = onLongPress,
+            onDragEnd = onDragEnd,
+            modifier = Modifier.offset(x = lyricsOffset).width(lyricsWidthDp.dp).height(64.dp)
+                .graphicsLayer {
+                    alpha = progress.value
+                    scaleX = progress.value
+                    transformOrigin = if (lyricsOnRight) TransformOrigin(0f, 0.5f) else TransformOrigin(1f, 0.5f)
+                },
+        )
+        OverlaySideTrackControls(
+            onPrevious = onPrevious,
+            onNext = onNext,
+            modifier = Modifier.width(sideWidth).height(64.dp)
+                .align(if (lyricsOnRight) Alignment.CenterEnd else Alignment.CenterStart),
+        )
+    }
 }
 
 @Composable
@@ -1110,57 +1123,39 @@ private fun OverlayLyricsUi(
             verticalArrangement = Arrangement.spacedBy(0.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                Box(
-                    modifier = Modifier.width(20.dp).height(28.dp).clip(CircleShape)
-                        .clickable { onPrevious() }
-                        .semantics { contentDescription = "按当前播放队列播放上一首" },
-                    contentAlignment = Alignment.Center,
-                ) { OverlaySkipGlyph(previous = true) }
-                Box(
-                    modifier = Modifier.weight(1f).fillMaxSize()
-                        .clip(RoundedCornerShape(9.dp))
-                        .background(Color(0xFF243631))
-                        .pointerInput(Unit) {
-                            detectTapGestures(
-                                onTap = { onToggleTranslation() },
-                                onLongPress = { onLongPress() },
-                            )
+            Box(
+                modifier = Modifier.fillMaxWidth().weight(1f)
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(Color(0xFF243631))
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onTap = { onToggleTranslation() },
+                            onLongPress = { onLongPress() },
+                        )
+                    }
+                    .padding(horizontal = 5.dp, vertical = 0.dp)
+                    .semantics {
+                        contentDescription = if (translatedLyrics.isBlank()) {
+                            "歌词，当前歌曲没有已加载的译文，点击切换显示状态"
+                        } else {
+                            "歌词，点击切换原文或译文"
                         }
-                        .padding(horizontal = 5.dp, vertical = 0.dp)
-                        .semantics {
-                            contentDescription = if (translatedLyrics.isBlank()) {
-                                "歌词，当前歌曲没有已加载的译文，点击切换显示状态"
-                            } else {
-                                "歌词，点击切换原文或译文"
-                            }
-                        },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        currentLyric,
-                        color = Color(0xFF9FF0C9),
-                        fontWeight = FontWeight.Bold,
-                        fontSize = lyricsFontSizeSp.sp,
-                        lineHeight = (lyricsFontSizeSp * 1.12f).sp,
-                        textAlign = TextAlign.Center,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Box(
-                    modifier = Modifier.width(20.dp).height(28.dp).clip(CircleShape)
-                        .clickable { onNext() }
-                        .semantics { contentDescription = "按当前播放队列播放下一首" },
-                    contentAlignment = Alignment.Center,
-                ) { OverlaySkipGlyph(previous = false) }
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    currentLyric,
+                    color = Color(0xFF9FF0C9),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = lyricsFontSizeSp.sp,
+                    lineHeight = (lyricsFontSizeSp * 1.12f).sp,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
             Box(
-                modifier = Modifier.fillMaxWidth().height(8.dp)
+                modifier = Modifier.fillMaxWidth(0.94f).height(18.dp)
                     .pointerInput(durationMs) {
                         detectTapGestures { tap ->
                             if (durationMs > 0 && size.width > 0) {
@@ -1169,12 +1164,19 @@ private fun OverlayLyricsUi(
                         }
                     }
                     .pointerInput(durationMs) {
-                        detectHorizontalDragGestures { change, _ ->
-                            change.consume()
-                            if (durationMs > 0 && size.width > 0) {
-                                onSeek((change.position.x / size.width.toFloat()).coerceIn(0f, 1f).times(durationMs).toInt())
-                            }
-                        }
+                        detectDragGestures(
+                            onDragStart = { start ->
+                                if (durationMs > 0 && size.width > 0) {
+                                    onSeek((start.x / size.width.toFloat()).coerceIn(0f, 1f).times(durationMs).toInt())
+                                }
+                            },
+                            onDrag = { change, _ ->
+                                change.consume()
+                                if (durationMs > 0 && size.width > 0) {
+                                    onSeek((change.position.x / size.width.toFloat()).coerceIn(0f, 1f).times(durationMs).toInt())
+                                }
+                            },
+                        )
                     },
                 contentAlignment = Alignment.CenterStart,
             ) {
