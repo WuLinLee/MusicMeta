@@ -169,7 +169,7 @@ v1.29 调整系统媒体卡片：标题优先显示当前歌词（遵循“优�
 - Android Gradle Plugin 8.7.3、Kotlin 2.0.21、JDK 17、Gradle 8.9。
 - Jetpack Compose、Material 3、AndroidX Activity / Core / Lifecycle / DocumentFile。
 - Kotlin Coroutines、OkHttp 4.12.0、Coil 2.7.0、jaudiotagger 3.0.1。
-- JUnit 4；当前自动化测试主要覆盖歌词转换和合并。
+- JUnit 4；自动化测试覆盖歌词转换 / 合并、音源配置、悬浮窗布局计算和媒体标题回退；目前没有真实设备端到端播放测试。
 
 项目目前没有集成 Room、DI 框架或 Media3 / ExoPlayer；系统媒体控制使用 AndroidX `MediaSessionCompat` 与 `MediaStyle`。当前仍由 Activity 持有播放器，不能把它描述成已迁移到 Media3 的独立后台播放架构。
 
