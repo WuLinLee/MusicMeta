@@ -288,6 +288,9 @@ class FloatingMiniPlayerService : LifecycleService() {
         const val EXTRA_COMMAND = "command"
 
         const val COMMAND_TOGGLE_PLAY = "toggle_play"
+        const val COMMAND_MEDIA_PLAY = "media_play"
+        const val COMMAND_MEDIA_PAUSE = "media_pause"
+        const val COMMAND_MEDIA_TOGGLE_MUTE = "media_toggle_mute"
         const val COMMAND_PREVIOUS = "previous_track"
         const val COMMAND_NEXT = "next_track"
         const val COMMAND_TOGGLE_DETAILS = "toggle_details"
