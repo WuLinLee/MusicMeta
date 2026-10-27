@@ -129,6 +129,7 @@ class MediaPlaybackService : Service() {
     private var isMuted = false
     private var playbackMode = 0
     private var albumArt: Bitmap? = null
+    private var artworkLoadInProgressFor = ""
 
     override fun onCreate() {
         super.onCreate()
@@ -296,7 +297,7 @@ class MediaPlaybackService : Service() {
     private fun buildNotification(): Notification {
         val contentIntent = mediaSession.controller.sessionActivity
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.musicmeta_icon)
+            .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentTitle(trackTitle.ifBlank { "音笺" })
             .setContentText(listOf(trackArtist, currentLyric).filter { it.isNotBlank() }.joinToString(" · "))
             .setSubText(currentLyric.takeIf { it.isNotBlank() })
@@ -374,16 +375,23 @@ class MediaPlaybackService : Service() {
 
     private fun loadArtworkIfNeeded() {
         val source = coverUri
-        if (source.isBlank() || albumArt != null) return
+        if (source.isBlank() || albumArt != null || artworkLoadInProgressFor == source) return
+        artworkLoadInProgressFor = source
         Thread({
-            val bitmap = decodeArtwork(source) ?: return@Thread
+            val bitmap = decodeArtwork(source)
             mainHandler.post {
                 if (coverUri != source) {
-                    bitmap.recycle()
+                    bitmap?.recycle()
+                    if (artworkLoadInProgressFor == source) artworkLoadInProgressFor = ""
+                    return@post
+                }
+                if (bitmap == null) {
+                    artworkLoadInProgressFor = ""
                     return@post
                 }
                 albumArt?.recycle()
                 albumArt = bitmap
+                artworkLoadInProgressFor = ""
                 publishMetadata()
                 if (foregroundStarted) {
                     NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, buildNotification())
