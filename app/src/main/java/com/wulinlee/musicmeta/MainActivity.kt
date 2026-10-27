@@ -1390,12 +1390,11 @@ private fun MusicMetaApp() {
                             } else 0L
                             val embeddedLocalLyrics = if (song.platform == "local") {
                                 runCatching {
-                                    LocalMusicScanner.readEmbeddedLyrics(context, Uri.parse(song.id))
-                                }.getOrDefault("").trim()
-                            } else ""
+                                    LocalMusicScanner.readEmbeddedLyricsPair(context, Uri.parse(song.id))
+                                }.getOrDefault(PreviewLyrics())
+                            } else PreviewLyrics()
                             var tracks = if (song.platform == "local") {
-                                PreviewLyrics(original = embeddedLocalLyrics)
-                            } else {
+                                embeddedLocalLyrics                            } else {
                                 runCatching {
                                     metadataProvider.resolveNetEaseLyrics(
                                         title = song.title,
@@ -3286,7 +3285,7 @@ private fun MusicMetaApp() {
                             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
                         ) {
                             Column(
-                                modifier = Modifier.fillMaxSize().padding(horizontal = 9.dp, vertical = 4.dp),
+                                modifier = Modifier.fillMaxSize().padding(horizontal = 9.dp, vertical = 2.dp),
                                 verticalArrangement = Arrangement.spacedBy(0.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
@@ -3335,7 +3334,7 @@ private fun MusicMetaApp() {
                                     (previewPositionMs.toFloat() / previewDurationMs.toFloat()).coerceIn(0f, 1f)
                                 else 0f
                                 Box(
-                                    modifier = Modifier.fillMaxWidth().height(14.dp)
+                                    modifier = Modifier.fillMaxWidth().height(8.dp)
                                         .pointerInput(previewDurationMs, activePreviewSong) {
                                             detectTapGestures { tap ->
                                                 if (previewDurationMs > 0 && size.width > 0) {
@@ -3542,8 +3541,8 @@ private fun MusicMetaApp() {
                         },
                     )
                     DownloadSettingSwitchRow(
-                        title = "悬浮窗左栏默认显示翻译歌词",
-                        summary = "新曲目优先显示译文；以音源实际提供的歌词为准",
+                        title = "优先显示翻译歌词",
+                        summary = "本地与在线歌曲通用；有译文时优先显示，仍可点击歌词手动切换",
                         checked = floatingLyricsTranslatedByDefault,
                         onCheckedChange = {
                             floatingLyricsTranslatedByDefault = it
