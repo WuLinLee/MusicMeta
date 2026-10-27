@@ -3447,9 +3447,7 @@ private fun MusicMetaApp() {
                 val groupWidth = minOf((maxWidth - 8.dp).coerceAtLeast(64.dp), maxGroupWidth)
                 val sideControlsWidth = 28.dp
                 val panelWidth = (groupWidth - 64.dp - sideControlsWidth - controlsLyricsGap).coerceAtLeast(48.dp)
-                val coverShape = RoundedCornerShape(
-                    topStart = 0.dp, topEnd = 18.dp, bottomEnd = 18.dp, bottomStart = 0.dp,
-                )
+                val coverShape = RoundedCornerShape(18.dp)
                 val maxGroupDragX = with(density) { ((maxWidth - groupWidth) / 2).toPx().coerceAtLeast(0f) }
                 val coverBaseLeft = (maxWidth - groupWidth) / 2 + groupWidth - 64.dp
                 val minDragX = with(density) {
@@ -3596,7 +3594,6 @@ private fun MusicMetaApp() {
                     MiniPlayerSideTrackControls(
                         onPrevious = { playAdjacentPreview(-1) },
                         onNext = { playAdjacentPreview(1) },
-                        controlsOnRight = false,
                         modifier = Modifier.align(Alignment.CenterStart)
                             .offset(x = panelWidth + controlsLyricsGap)
                             .width(sideControlsWidth).height(64.dp),
@@ -4260,15 +4257,9 @@ private fun formatPreviewTime(milliseconds: Int): String {
 private fun MiniPlayerSideTrackControls(
     onPrevious: () -> Unit,
     onNext: () -> Unit,
-    controlsOnRight: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val arrowColor = Color(0xFF9FF0C9)
-    val buttonShape = if (controlsOnRight) {
-        RoundedCornerShape(topStart = 0.dp, topEnd = 10.dp, bottomEnd = 10.dp, bottomStart = 0.dp)
-    } else {
-        RoundedCornerShape(topStart = 10.dp, topEnd = 0.dp, bottomEnd = 0.dp, bottomStart = 10.dp)
-    }
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -4276,11 +4267,9 @@ private fun MiniPlayerSideTrackControls(
     ) {
         Box(
             modifier = Modifier.fillMaxWidth().height(31.dp)
-                .clip(buttonShape)
-                .background(Color(0xFF171E1A))
                 .clickable { onPrevious() }
                 .semantics { contentDescription = "上一首" },
-            contentAlignment = Alignment.TopCenter,
+            contentAlignment = Alignment.Center,
         ) {
             Canvas(Modifier.size(18.dp)) {
                 val stroke = 1.7.dp.toPx()
@@ -4295,11 +4284,9 @@ private fun MiniPlayerSideTrackControls(
         }
         Box(
             modifier = Modifier.fillMaxWidth().height(31.dp)
-                .clip(buttonShape)
-                .background(Color(0xFF171E1A))
                 .clickable { onNext() }
                 .semantics { contentDescription = "下一首" },
-            contentAlignment = Alignment.BottomCenter,
+            contentAlignment = Alignment.Center,
         ) {
             Canvas(Modifier.size(18.dp)) {
                 val stroke = 1.7.dp.toPx()

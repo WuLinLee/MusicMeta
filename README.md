@@ -2,19 +2,20 @@
 
 MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 Android 应用：读取可公开访问的网易云歌单，搜索并核对音源，下载音频，并尽可能补齐封面、歌词和音频标签。
 
-> **当前版本：1.39** · `versionCode = 43`  
+> **当前版本：1.40** · `versionCode = 44`  
 > 应用 ID：`com.wulinlee.musicmeta` · 最低 Android：10（API 29）· 目标 SDK：35  
 > 技术栈：Kotlin、Jetpack Compose、Material 3、Coroutines、OkHttp、Coil、jaudiotagger。
 
 - **正式版发布页：** [GitHub Releases](https://github.com/WuLinLee/MusicMeta/releases)
-- **v1.39 APK 直链：** [MusicMeta-v1.39.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.39/MusicMeta-v1.39.apk)
+- **v1.40 APK 直链：** [MusicMeta-v1.40.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.40/MusicMeta-v1.40.apk)
+- **上一版本 APK：** [MusicMeta-v1.39.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.39/MusicMeta-v1.39.apk)
 - **上一版本 APK：** [MusicMeta-v1.38.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.38/MusicMeta-v1.38.apk)
 - **上一版本 APK：** [MusicMeta-v1.37.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.37/MusicMeta-v1.37.apk)
 - **悬浮窗实现基线 v1.29：** [MusicMeta-v1.29.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.29/MusicMeta-v1.29.apk)
 - **v1.30 历史版（系统媒体卡片参考）：** [MusicMeta-v1.30.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.30/MusicMeta-v1.30.apk)
 - **构建记录：** [GitHub Actions](https://github.com/WuLinLee/MusicMeta/actions)
 
-v1.38 修正侧键视觉归属：侧键与封面边缘贴合并共享外观，歌词栏保留独立圆角并与侧键留 4dp 间隔，避免看起来与歌词条连成一体；上箭头图形贴近封面顶边、下箭头图形贴近封面底边。v1.37 统一有权限的系统悬浮窗与无权限时的应用内迷你播放器布局：空心上下键与封面顶、底齐平并和封面直接相连，歌词栏紧贴侧键；默认歌词字号降到 15.04sp；修复本地歌曲画圈定位按扫描顺序滚动、排序后高亮却不定位的问题，并使收起后的歌词栏区域仍可拖动。无时间戳译文会根据原文时间轴映射到相应译文行，避免卡在第一行；带时间戳的歌词中未标注时间的“作曲”“编曲”等行也会保留并显示。下载链接只有在对应 Release 资产创建成功后才可用。版本号、Git 标签、Actions 构建结果和 Release 附件是不同的事实；请以对应提交的成功构建结果和实际资产为准，不要仅凭本文件中的版本号判断已发布。
+v1.40 还原封面四角圆角，侧键仅保留独立的透明点击区域和居中的简洁箭头，不再有深绿色按钮底；上下侧键之间留 2dp 分界，歌词栏保留完整圆角并与侧键触控区留 4dp 间距。v1.39 首次将上下切歌键分成独立按钮。v1.37 统一有权限的系统悬浮窗与无权限时的应用内迷你播放器布局：默认歌词字号为 15.04sp；修复本地歌曲画圈定位按实际展示的排序列表滚动、排序后高亮却不定位的问题，并使收起后的歌词栏区域仍可拖动。无时间戳译文根据原文时间轴映射；未标注时间的“作曲”“编曲”等行也会保留显示。下载链接仅在对应 Release 资产创建成功后可用。请以对应提交的成功构建结果和实际资产为准，不要仅凭本文件中的版本号判断已发布。
 
 ## 目录
 
@@ -53,9 +54,17 @@ v1.38 修正侧键视觉归属：侧键与封面边缘贴合并共享外观，�
 
 首次使用跨应用悬浮播放器时，需要在 Android 系统设置中授予“显示在其他应用上层”权限。撤销权限后，跨应用浮层不可用。
 
-## v1.39 本次修正
+## v1.40 本次修正
+- **保留原本封面：** 恢复封面四角 18dp 圆角，不再为贴侧键而削平封面一侧。
+- **简洁独立侧键：** 上下两个独立点击区域分别显示居中的箭头，不使用深绿色背景；每个区域 31dp 高，中间 2dp 分界。
+- **歌词栏独立：** 保留完整圆角，与侧键触控区域间隔 4dp；布局左右镜像一致。
+- **定位回归测试：** 覆盖组合宽度、窗口原点、窄屏和边缘约束。
+
+## v1.39 历史版本
 - **两个独立按键：** 上下键分别绘制成独立按钮，各自有背景和圆角，中间留 2dp 间隔，不再显示为一整条控制栏。
 - **封面边缘对齐：** 按键组贴合封面一侧，上键顶边、下键底边分别与封面上下边缘齐平；歌词栏独立并保留间距。
+
+
 
 ## v1.38 本次修正
 - **侧键与封面连体：** 封面靠近侧键一侧改为平边，侧键条用相同底色直接贴合封面，形成封面附属控制区。

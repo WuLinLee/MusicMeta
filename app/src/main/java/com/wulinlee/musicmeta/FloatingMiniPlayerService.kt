@@ -710,8 +710,7 @@ class FloatingMiniPlayerService : LifecycleService() {
                         dragRemainderY = 0f
                         savePosition()
                     },
-                    controlsOnRight = lyricsPanelOnRight,
-                    modifier = Modifier.fillMaxSize(),
+                            modifier = Modifier.fillMaxSize(),
                 )
             }
         }
@@ -903,6 +902,7 @@ private fun OverlayLyricsWindowUi(
         val sideWidth = sideControlsWidthDp.dp
         val lyricsGap = lyricsGapDp.dp
         // The control strip is attached to the cover; only the lyric panel gets a small gap.
+        // Reserve a transparent 28dp hit target for each independent arrow; the lyric card stays separate.
         val lyricsOffset = if (lyricsOnRight) sideWidth + lyricsGap else 0.dp
         if (progress.value > 0.001f) {
             OverlayLyricsUi(
@@ -929,7 +929,6 @@ private fun OverlayLyricsWindowUi(
         OverlaySideTrackControls(
             onPrevious = onPrevious,
             onNext = onNext,
-            controlsOnRight = lyricsOnRight,
             modifier = Modifier.width(sideWidth).height(64.dp)
                 .align(if (lyricsOnRight) Alignment.TopStart else Alignment.TopEnd),
         )
@@ -1056,14 +1055,9 @@ private fun OverlayCoverUi(
     onOpenApp: () -> Unit,
     onDrag: (Float, Float) -> Unit,
     onDragEnd: () -> Unit,
-    controlsOnRight: Boolean? = null,
     modifier: Modifier = Modifier,
 ) {
-    val coverShape = when (controlsOnRight) {
-        true -> RoundedCornerShape(topStart = 18.dp, topEnd = 0.dp, bottomEnd = 0.dp, bottomStart = 18.dp)
-        false -> RoundedCornerShape(topStart = 0.dp, topEnd = 18.dp, bottomEnd = 18.dp, bottomStart = 0.dp)
-        null -> RoundedCornerShape(18.dp)
-    }
+    val coverShape = RoundedCornerShape(18.dp)
     Column(
         modifier = modifier.width(64.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -1276,15 +1270,9 @@ private fun OverlayLyricsUi(
 private fun OverlaySideTrackControls(
     onPrevious: () -> Unit,
     onNext: () -> Unit,
-    controlsOnRight: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val arrowColor = Color(0xFF9FF0C9)
-    val buttonShape = if (controlsOnRight) {
-        RoundedCornerShape(topStart = 0.dp, topEnd = 10.dp, bottomEnd = 10.dp, bottomStart = 0.dp)
-    } else {
-        RoundedCornerShape(topStart = 10.dp, topEnd = 0.dp, bottomEnd = 0.dp, bottomStart = 10.dp)
-    }
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -1292,11 +1280,9 @@ private fun OverlaySideTrackControls(
     ) {
         Box(
             modifier = Modifier.fillMaxWidth().height(31.dp)
-                .clip(buttonShape)
-                .background(Color(0xFF171E1A))
                 .clickable { onPrevious() }
                 .semantics { contentDescription = "上一首" },
-            contentAlignment = Alignment.TopCenter,
+            contentAlignment = Alignment.Center,
         ) {
             Canvas(Modifier.size(18.dp)) {
                 val stroke = 1.7.dp.toPx()
@@ -1329,11 +1315,9 @@ private fun OverlaySideTrackControls(
         }
         Box(
             modifier = Modifier.fillMaxWidth().height(31.dp)
-                .clip(buttonShape)
-                .background(Color(0xFF171E1A))
                 .clickable { onNext() }
                 .semantics { contentDescription = "下一首" },
-            contentAlignment = Alignment.BottomCenter,
+            contentAlignment = Alignment.Center,
         ) {
             Canvas(Modifier.size(18.dp)) {
                 val stroke = 1.7.dp.toPx()
