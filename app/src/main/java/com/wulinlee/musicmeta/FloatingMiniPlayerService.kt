@@ -890,15 +890,9 @@ private fun OverlayLyricsWindowUi(
         )
         onExpansionAnimationFinished(expanded)
     }
-    val collapsedDragModifier = if (progress.value <= 0.001f) {
-        Modifier.overlayDragGesture(
-            key = "collapsed-lyrics-window",
-            onDrag = onDrag,
-            onCircularDrag = onCircularDrag,
-            onDragEnd = onDragEnd,
-        )
-    } else Modifier
-    Box(Modifier.fillMaxSize().then(collapsedDragModifier)) {
+    // Collapsing the lyrics panel must not make its transparent area draggable.
+    // Only the cover overlay owns the drag gesture while the panel is collapsed.
+    Box(Modifier.fillMaxSize()) {
         val sideWidth = sideControlsWidthDp.dp
         val lyricsGap = lyricsGapDp.dp
         // The control strip is attached to the cover; only the lyric panel gets a small gap.

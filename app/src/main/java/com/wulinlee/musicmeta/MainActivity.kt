@@ -3575,22 +3575,7 @@ private fun MusicMetaApp() {
                             }
                         }
                     }
-                    if (!showPreviewDetails) {
-                        Box(
-                            modifier = Modifier.align(Alignment.CenterStart).offset(y = 4.dp)
-                                .width(panelWidth).height(64.dp)
-                                .overlayDragGesture(
-                                    key = listOf(activePreviewSong, minDragX, maxDragX, maxDragY, showPreviewDetails),
-                                    onDrag = { dx, dy ->
-                                        miniPlayerOffset = Offset(
-                                            (miniPlayerOffset.x + dx).coerceIn(minDragX, maxDragX),
-                                            (miniPlayerOffset.y + dy).coerceIn(-maxDragY, 0f),
-                                        )
-                                    },
-                                    onCircularDrag = {},
-                                ),
-                        )
-                    }
+                    // When collapsed, only the cover remains draggable; no invisible lyrics hit area.
                     MiniPlayerSideTrackControls(
                         onPrevious = { playAdjacentPreview(-1) },
                         onNext = { playAdjacentPreview(1) },
