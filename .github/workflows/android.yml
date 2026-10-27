@@ -151,6 +151,10 @@ jobs:
               git tag -f "$TAG" "$GITHUB_SHA"
               git push --force origin "refs/tags/$TAG"
               gh release upload "$TAG" "$MUSICMETA_APK" --clobber --repo "$GITHUB_REPOSITORY"
+              gh release edit "$TAG" \
+                --repo "$GITHUB_REPOSITORY" \
+                --title "音笺 MusicMeta v$VERSION" \
+                --notes-file "$RUNNER_TEMP/formal-release-notes.md"
             else
               gh release create "$TAG" "$MUSICMETA_APK" \
                 --repo "$GITHUB_REPOSITORY" \
