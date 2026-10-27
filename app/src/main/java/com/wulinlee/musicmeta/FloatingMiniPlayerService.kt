@@ -61,6 +61,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.positionChangeIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
@@ -861,7 +862,7 @@ private fun OverlayLyricsWindowUi(
             onPrevious = onPrevious,
             onNext = onNext,
             modifier = Modifier.width(sideWidth).height(64.dp)
-                .align(if (lyricsOnRight) Alignment.CenterEnd else Alignment.CenterStart),
+                .align(if (lyricsOnRight) Alignment.TopEnd else Alignment.TopStart),
         )
     }
 }
@@ -1195,6 +1196,52 @@ private fun OverlayLyricsUi(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun OverlaySideTrackControls(
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
+    ) {
+        Box(
+            modifier = Modifier.size(30.dp)
+                .clip(CircleShape)
+                .background(Color(0xFF17211F))
+                .border(1.dp, Color(0xFF2B3730), CircleShape)
+                .clickable { onPrevious() }
+                .semantics { contentDescription = "上一首" },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.lucide_play),
+                contentDescription = null,
+                tint = Color(0xFF9FF0C9),
+                modifier = Modifier.size(16.dp).rotate(-90f),
+            )
+        }
+        Box(
+            modifier = Modifier.size(30.dp)
+                .clip(CircleShape)
+                .background(Color(0xFF17211F))
+                .border(1.dp, Color(0xFF2B3730), CircleShape)
+                .clickable { onNext() }
+                .semantics { contentDescription = "下一首" },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.lucide_play),
+                contentDescription = null,
+                tint = Color(0xFF9FF0C9),
+                modifier = Modifier.size(16.dp).rotate(90f),
+            )
         }
     }
 }
