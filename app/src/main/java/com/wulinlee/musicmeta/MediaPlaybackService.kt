@@ -1,5 +1,8 @@
 package com.wulinlee.musicmeta
 
+internal fun mediaDisplayTitle(currentLyric: String, trackTitle: String): String =
+    currentLyric.trim().ifBlank { trackTitle }
+
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -40,7 +43,6 @@ class MediaPlaybackService : Service() {
         const val ACTION_UPDATE = "com.wulinlee.musicmeta.media.UPDATE"
         const val ACTION_POSITION = "com.wulinlee.musicmeta.media.POSITION"
         const val ACTION_COMMAND = "com.wulinlee.musicmeta.media.COMMAND"
-        const val ACTION_STOP = "com.wulinlee.musicmeta.media.STOP"
 
         const val EXTRA_TITLE = "media_title"
         const val EXTRA_ARTIST = "media_artist"
@@ -50,7 +52,6 @@ class MediaPlaybackService : Service() {
         const val EXTRA_POSITION = "media_position"
         const val EXTRA_IS_PLAYING = "media_is_playing"
         const val EXTRA_IS_LOADING = "media_is_loading"
-        const val EXTRA_IS_MUTED = "media_is_muted"
         const val EXTRA_PLAYBACK_MODE = "media_playback_mode"
         const val EXTRA_COMMAND = "media_command"
 
@@ -60,8 +61,8 @@ class MediaPlaybackService : Service() {
         private const val REQUEST_PREVIOUS = 1203
         private const val REQUEST_PLAY_PAUSE = 1204
         private const val REQUEST_NEXT = 1205
-        private const val REQUEST_MUTE = 1206
-        private const val CUSTOM_ACTION_MUTE = "com.wulinlee.musicmeta.media.TOGGLE_MUTE"
+        private const val REQUEST_CLOSE_OVERLAY = 1206
+        private const val CUSTOM_ACTION_CLOSE_OVERLAY = "com.wulinlee.musicmeta.media.CLOSE_OVERLAY"
 
         @Volatile
         private var serviceAlive = false
@@ -76,7 +77,6 @@ class MediaPlaybackService : Service() {
             positionMs: Int,
             isPlaying: Boolean,
             isLoading: Boolean,
-            isMuted: Boolean,
             playbackMode: Int,
         ) {
             val intent = Intent(context, MediaPlaybackService::class.java)
@@ -89,7 +89,6 @@ class MediaPlaybackService : Service() {
                 .putExtra(EXTRA_POSITION, positionMs.coerceAtLeast(0))
                 .putExtra(EXTRA_IS_PLAYING, isPlaying)
                 .putExtra(EXTRA_IS_LOADING, isLoading)
-                .putExtra(EXTRA_IS_MUTED, isMuted)
                 .putExtra(EXTRA_PLAYBACK_MODE, playbackMode.coerceIn(0, 2))
             if (serviceAlive) context.startService(intent)
             else ContextCompat.startForegroundService(context, intent)
@@ -109,10 +108,6 @@ class MediaPlaybackService : Service() {
             context.stopService(Intent(context, MediaPlaybackService::class.java))
         }
 
-        private fun controlIntent(context: Context, command: String): Intent =
-            Intent(context, MediaPlaybackService::class.java)
-                .setAction(ACTION_COMMAND)
-                .putExtra(EXTRA_COMMAND, command)
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -126,7 +121,6 @@ class MediaPlaybackService : Service() {
     private var positionMs = 0
     private var isPlaying = false
     private var isLoading = false
-    private var isMuted = false
     private var playbackMode = 0
     private var albumArt: Bitmap? = null
     private var artworkLoadInProgressFor = ""
@@ -162,8 +156,8 @@ class MediaPlaybackService : Service() {
                 }
                 override fun onStop() = dispatch(FloatingMiniPlayerService.COMMAND_MEDIA_PAUSE)
                 override fun onCustomAction(action: String, extras: android.os.Bundle?) {
-                    if (action == CUSTOM_ACTION_MUTE) {
-                        dispatch(FloatingMiniPlayerService.COMMAND_MEDIA_TOGGLE_MUTE)
+                    if (action == CUSTOM_ACTION_CLOSE_OVERLAY) {
+                        dispatch(FloatingMiniPlayerService.COMMAND_CLOSE_OVERLAY)
                     }
                 }
             })
@@ -173,11 +167,6 @@ class MediaPlaybackService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_STOP -> {
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-                return START_NOT_STICKY
-            }
             ACTION_COMMAND -> {
                 val command = intent.getStringExtra(EXTRA_COMMAND)
                 if (!command.isNullOrBlank()) dispatch(command)
@@ -232,18 +221,18 @@ class MediaPlaybackService : Service() {
         positionMs = intent.getIntExtra(EXTRA_POSITION, positionMs).coerceAtLeast(0)
         isPlaying = intent.getBooleanExtra(EXTRA_IS_PLAYING, isPlaying)
         isLoading = intent.getBooleanExtra(EXTRA_IS_LOADING, isLoading)
-        isMuted = intent.getBooleanExtra(EXTRA_IS_MUTED, isMuted)
         playbackMode = intent.getIntExtra(EXTRA_PLAYBACK_MODE, playbackMode).coerceIn(0, 2)
     }
 
     private fun publishMetadata() {
+        val lyricTitle = mediaDisplayTitle(currentLyric, trackTitle)
         val metadata = MediaMetadataCompat.Builder()
             .putString(MediaMetadataCompat.METADATA_KEY_TITLE, trackTitle)
             .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, trackArtist)
             .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, "音笺")
-            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE, trackTitle)
-            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_SUBTITLE, trackArtist)
-            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_DESCRIPTION, currentLyric)
+            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE, lyricTitle)
+            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_SUBTITLE, trackTitle.ifBlank { trackArtist })
+            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_DESCRIPTION, trackArtist)
             .putString(MediaMetadataCompat.METADATA_KEY_ART_URI, coverUri)
             .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, durationMs.toLong())
         if (albumArt != null) {
@@ -277,10 +266,9 @@ class MediaPlaybackService : Service() {
             )
         builder.addCustomAction(
             PlaybackStateCompat.CustomAction.Builder(
-                CUSTOM_ACTION_MUTE,
-                if (isMuted) "取消静音" else "静音",
-                if (isMuted) android.R.drawable.ic_lock_silent_mode_off
-                else android.R.drawable.ic_lock_silent_mode,
+                CUSTOM_ACTION_CLOSE_OVERLAY,
+                "关闭悬浮窗",
+                android.R.drawable.ic_menu_close_clear_cancel,
             ).build(),
         )
         mediaSession.setPlaybackState(builder.build())
@@ -298,9 +286,8 @@ class MediaPlaybackService : Service() {
         val contentIntent = mediaSession.controller.sessionActivity
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_media_play)
-            .setContentTitle(trackTitle.ifBlank { "音笺" })
-            .setContentText(listOf(trackArtist, currentLyric).filter { it.isNotBlank() }.joinToString(" · "))
-            .setSubText(currentLyric.takeIf { it.isNotBlank() })
+            .setContentTitle(mediaDisplayTitle(currentLyric, trackTitle).ifBlank { "音笺" })
+            .setContentText(listOf(trackTitle, trackArtist).filter { it.isNotBlank() }.joinToString(" · "))
             .setLargeIcon(albumArt)
             .setContentIntent(contentIntent)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -336,10 +323,9 @@ class MediaPlaybackService : Service() {
             )
             .addAction(
                 NotificationCompat.Action(
-                    if (isMuted) android.R.drawable.ic_lock_silent_mode_off
-                    else android.R.drawable.ic_lock_silent_mode,
-                    if (isMuted) "取消静音" else "静音",
-                    commandPendingIntent(REQUEST_MUTE, FloatingMiniPlayerService.COMMAND_MEDIA_TOGGLE_MUTE),
+                    android.R.drawable.ic_menu_close_clear_cancel,
+                    "关闭悬浮窗",
+                    commandPendingIntent(REQUEST_CLOSE_OVERLAY, FloatingMiniPlayerService.COMMAND_CLOSE_OVERLAY),
                 ),
             )
             .setStyle(
