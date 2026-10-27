@@ -3442,10 +3442,17 @@ private fun MusicMetaApp() {
             val activePreviewSong = previewSong!!
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val density = LocalDensity.current
-                val maxGroupWidth = 64.dp + 28.dp + 334.dp
+                val controlsLyricsGap = 4.dp
+                val maxGroupWidth = 64.dp + 28.dp + controlsLyricsGap + 334.dp
                 val groupWidth = minOf((maxWidth - 8.dp).coerceAtLeast(64.dp), maxGroupWidth)
                 val sideControlsWidth = 28.dp
-                val panelWidth = (groupWidth - 64.dp - sideControlsWidth).coerceAtLeast(48.dp)
+                val panelWidth = (groupWidth - 64.dp - sideControlsWidth - controlsLyricsGap).coerceAtLeast(48.dp)
+                val controlsShape = RoundedCornerShape(
+                    topStart = 16.dp, topEnd = 0.dp, bottomEnd = 0.dp, bottomStart = 16.dp,
+                )
+                val coverShape = RoundedCornerShape(
+                    topStart = 0.dp, topEnd = 18.dp, bottomEnd = 18.dp, bottomStart = 0.dp,
+                )
                 val maxGroupDragX = with(density) { ((maxWidth - groupWidth) / 2).toPx().coerceAtLeast(0f) }
                 val coverBaseLeft = (maxWidth - groupWidth) / 2 + groupWidth - 64.dp
                 val minDragX = with(density) {
@@ -3496,9 +3503,7 @@ private fun MusicMetaApp() {
                                     onCircularDrag = {},
                                     ignoreDragBelowFraction = 0.68f,
                                 ),
-                            shape = RoundedCornerShape(
-                                topStart = 16.dp, topEnd = 0.dp, bottomEnd = 0.dp, bottomStart = 16.dp,
-                            ),
+                            shape = RoundedCornerShape(16.dp),
                             colors = CardDefaults.cardColors(containerColor = Color(0xFF17211F)),
                             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
                         ) {
@@ -3595,8 +3600,9 @@ private fun MusicMetaApp() {
                         onPrevious = { playAdjacentPreview(-1) },
                         onNext = { playAdjacentPreview(1) },
                         modifier = Modifier.align(Alignment.CenterStart)
-                            .offset(x = panelWidth)
+                            .offset(x = panelWidth + controlsLyricsGap)
                             .width(sideControlsWidth).height(64.dp)
+                            .clip(controlsShape)
                             .background(Color(0xFF171E1A)),
                     )
                     Column(
@@ -3607,9 +3613,9 @@ private fun MusicMetaApp() {
                         Box(
                             modifier = Modifier
                                 .size(64.dp)
-                                .clip(RoundedCornerShape(18.dp))
-                                .background(SurfaceColor)
-                                .border(1.dp, Hairline, RoundedCornerShape(18.dp))
+                                .clip(coverShape)
+                                .background(Color(0xFF171E1A))
+                                .border(1.dp, Color(0xFF2B3730), coverShape)
                                 .overlayDragGesture(
                                     key = listOf(activePreviewSong, minDragX, maxDragX, maxDragY, showPreviewDetails),
                                     onDrag = { dx, dy ->

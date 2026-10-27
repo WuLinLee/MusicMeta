@@ -138,7 +138,7 @@ class MusicSourceConfigTest {
     fun defaultOverlayCentersTheWholeGroupAndMaximizesLyricsWidth() {
         val coverWidth = 64
         val desiredLyricsWidth = 334
-        val gap = 2
+        val gap = 4
         val margin = 4
         val controlsWidth = 28
         for (displayWidth in listOf(360, 390, 720, 1080)) {
