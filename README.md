@@ -7,7 +7,7 @@ MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 A
 > 技术栈：Kotlin、Jetpack Compose、Material 3、Coroutines、OkHttp、Coil、jaudiotagger。
 
 - **正式版发布页：** [GitHub Releases](https://github.com/WuLinLee/MusicMeta/releases)
-- **v1.34 APK 直链：** [MusicMeta-v1.33.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.34/MusicMeta-v1.34.apk)
+- **v1.34 APK 直链：** [MusicMeta-v1.34.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.34/MusicMeta-v1.34.apk)
 - **悬浮窗实现基线 v1.29：** [MusicMeta-v1.29.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.29/MusicMeta-v1.29.apk)
 - **v1.30 历史版（系统媒体卡片参考）：** [MusicMeta-v1.30.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.30/MusicMeta-v1.30.apk)
 - **构建记录：** [GitHub Actions](https://github.com/WuLinLee/MusicMeta/actions)
