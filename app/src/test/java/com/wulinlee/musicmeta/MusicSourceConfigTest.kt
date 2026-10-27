@@ -7,6 +7,13 @@ import org.junit.Test
 
 class MusicSourceConfigTest {
     @Test
+    fun mediaCardPrefersCurrentLyricForTitleAndFallsBackToSongTitle() {
+        assertEquals("翻译歌词", mediaDisplayTitle("  翻译歌词  ", "歌曲名"))
+        assertEquals("歌曲名", mediaDisplayTitle("   ", "歌曲名"))
+        assertEquals("歌曲名", mediaDisplayTitle("", "歌曲名"))
+    }
+
+    @Test
     fun defaultLimitMatchesGdStudioDocumentation() {
         // GdStudioRequestLimiter exposes its configured ceiling through a testable helper.
         assertEquals(50, GdStudioRequestLimiter.maxRequestsForTests())
