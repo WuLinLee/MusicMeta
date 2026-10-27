@@ -1202,19 +1202,6 @@ private fun OverlayLyricsUi(
                     contentAlignment = Alignment.Center,
                 ) { OverlaySkipGlyph(previous = true) }
                 Box(
-                    modifier = Modifier.width(20.dp).height(28.dp).clip(CircleShape)
-                        .clickable { onToggleMute() }
-                        .semantics { contentDescription = if (isMuted) "取消静音" else "静音" },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        painter = painterResource(if (isMuted) R.drawable.lucide_volume_x else R.drawable.lucide_volume_2),
-                        contentDescription = null,
-                        tint = if (isMuted) Color(0xFFFFB4A8) else Color(0xFF9FF0C9),
-                        modifier = Modifier.size(15.dp),
-                    )
-                }
-                Box(
                     modifier = Modifier.weight(1f).fillMaxSize()
                         .clip(RoundedCornerShape(9.dp))
                         .background(Color(0xFF243631))
