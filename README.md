@@ -2,16 +2,17 @@
 
 MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 Android 应用：读取可公开访问的网易云歌单，搜索并核对音源，下载音频，并尽可能补齐封面、歌词和音频标签。
 
-> **当前开发版本：1.27** · `versionCode = 31`  
+> **当前开发版本：1.28** · `versionCode = 32`  
 > 应用 ID：`com.wulinlee.musicmeta` · 最低 Android：10（API 29）· 目标 SDK：35  
 > 技术栈：Kotlin、Jetpack Compose、Material 3、Coroutines、OkHttp、Coil、jaudiotagger。
 
 - **正式版发布页：** [GitHub Releases](https://github.com/WuLinLee/MusicMeta/releases)
-- **v1.27 APK 直链：** [MusicMeta-v1.27.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.27/MusicMeta-v1.27.apk)
-- **上一版 v1.26：** [MusicMeta-v1.26.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.26/MusicMeta-v1.26.apk)
+- **v1.28 APK 直链：** [MusicMeta-v1.28.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.28/MusicMeta-v1.28.apk)
+- **上一版 v1.27：** [MusicMeta-v1.27.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.27/MusicMeta-v1.27.apk)
+- **历史版 v1.26：** [MusicMeta-v1.26.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.26/MusicMeta-v1.26.apk)
 - **构建记录：** [GitHub Actions](https://github.com/WuLinLee/MusicMeta/actions)
 
-v1.27 修复右侧悬浮歌词栏展开 / 收起时封面跳动的问题，将封面窗口与歌词窗口分开管理；歌词默认字号及更小字号优先用两行显示；本地内嵌歌词支持原文 / 译文解析和点击切换，“优先显示翻译歌词”设置统一作用于本地与在线曲目。v1.26 引入本地封面与歌词离线读取、可调字体、封面点击排入下一首和交互教程。下载链接只有在对应 Release 资产创建成功后才可用。版本号、Git 标签、Actions 构建结果和 Release 附件是不同的事实；请以对应提交的成功构建结果和实际资产为准，不要仅凭本文件中的版本号判断已发布。
+v1.28 增加锁屏 / 通知栏媒体播放卡片与 Android MediaSession 控制，可通过系统按钮及兼容的蓝牙媒体键控制同一试听播放器；GD Studio 对 NetEase 查询返回 HTTP 5xx 时尝试回退到 flac.music.hi.cn，播放地址失效时尝试当前候选队列的下一个版本。v1.27 修复右侧悬浮歌词栏闪动、歌词双行显示和本地原文 / 译文切换。v1.26 引入本地封面与歌词离线读取、可调字体、封面点击排入下一首和交互教程。下载链接只有在对应 Release 资产创建成功后才可用。版本号、Git 标签、Actions 构建结果和 Release 附件是不同的事实；请以对应提交的成功构建结果和实际资产为准，不要仅凭本文件中的版本号判断已发布。
 
 ## 目录
 
