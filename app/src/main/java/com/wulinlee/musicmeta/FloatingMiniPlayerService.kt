@@ -846,26 +846,28 @@ private fun OverlayLyricsWindowUi(
     Box(Modifier.fillMaxSize()) {
         val sideWidth = sideControlsWidthDp.dp
         val lyricsOffset = if (lyricsOnRight) 0.dp else sideWidth
-        OverlayLyricsUi(
-            lyricsFontSizeSp = lyricsFontSizeSp,
-            originalLyrics = originalLyrics,
-            translatedLyrics = translatedLyrics,
-            showTranslation = showTranslation,
-            positionMs = positionMs,
-            durationMs = durationMs,
-            onToggleTranslation = onToggleTranslation,
-            onSeek = onSeek,
-            onDrag = onDrag,
-            onCircularDrag = onCircularDrag,
-            onLongPress = onLongPress,
-            onDragEnd = onDragEnd,
-            modifier = Modifier.offset(x = lyricsOffset).width(lyricsWidthDp.dp).height(64.dp)
-                .graphicsLayer {
-                    alpha = progress.value
-                    scaleX = progress.value
-                    transformOrigin = if (lyricsOnRight) TransformOrigin(0f, 0.5f) else TransformOrigin(1f, 0.5f)
-                },
-        )
+        if (progress.value > 0.001f) {
+            OverlayLyricsUi(
+                lyricsFontSizeSp = lyricsFontSizeSp,
+                originalLyrics = originalLyrics,
+                translatedLyrics = translatedLyrics,
+                showTranslation = showTranslation,
+                positionMs = positionMs,
+                durationMs = durationMs,
+                onToggleTranslation = onToggleTranslation,
+                onSeek = onSeek,
+                onDrag = onDrag,
+                onCircularDrag = onCircularDrag,
+                onLongPress = onLongPress,
+                onDragEnd = onDragEnd,
+                modifier = Modifier.offset(x = lyricsOffset).width(lyricsWidthDp.dp).height(64.dp)
+                    .graphicsLayer {
+                        alpha = progress.value
+                        scaleX = progress.value
+                        transformOrigin = if (lyricsOnRight) TransformOrigin(0f, 0.5f) else TransformOrigin(1f, 0.5f)
+                    },
+            )
+        }
         OverlaySideTrackControls(
             onPrevious = onPrevious,
             onNext = onNext,
