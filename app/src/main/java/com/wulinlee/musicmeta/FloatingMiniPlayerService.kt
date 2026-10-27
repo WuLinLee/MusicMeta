@@ -258,6 +258,37 @@ internal object FloatingOverlayPlacement {
     } else {
         coverX
     }
+
+    fun lyricsWindowWidthPx(
+        lyricsWidthPx: Int,
+        gapPx: Int,
+        sideControlsWidthPx: Int,
+        expandedBounds: Boolean,
+    ): Int {
+        val controlsWidth = sideControlsWidthPx.coerceAtLeast(0)
+        return if (expandedBounds) {
+            (lyricsWidthPx.coerceAtLeast(0) + gapPx.coerceAtLeast(0) + controlsWidth).coerceAtLeast(controlsWidth)
+        } else {
+            controlsWidth
+        }
+    }
+
+    fun lyricsWindowHeightPx(
+        expandedBounds: Boolean,
+        expandedHeightPx: Int,
+        collapsedHeightPx: Int,
+    ): Int = (if (expandedBounds) expandedHeightPx else collapsedHeightPx).coerceAtLeast(0)
+
+    fun collapsedControlsWindowX(
+        coverX: Int,
+        coverWidthPx: Int,
+        sideControlsWidthPx: Int,
+        controlsOnRight: Boolean,
+    ): Int = if (controlsOnRight) {
+        coverX + coverWidthPx.coerceAtLeast(0)
+    } else {
+        coverX - sideControlsWidthPx.coerceAtLeast(0)
+    }
 }
 
 
@@ -416,6 +447,8 @@ class FloatingMiniPlayerService : LifecycleService() {
     private var isPlaying by mutableStateOf(false)
     private var isLoading by mutableStateOf(false)
     private var expanded by mutableStateOf(false)
+    // Keep expanded bounds during the exit animation, then shrink to the side keys only.
+    private var lyricsWindowBoundsExpanded = false
     private var lyricsPanelOnRight by mutableStateOf(false)
     private var lyricsPanelWidthPx by mutableIntStateOf(0)
     private var lyricsPanelGapPx by mutableIntStateOf(0)
@@ -530,7 +563,11 @@ class FloatingMiniPlayerService : LifecycleService() {
         if (intent.hasExtra(EXTRA_POSITION_MS)) positionMs = intent.getIntExtra(EXTRA_POSITION_MS, positionMs).coerceAtLeast(0)
         if (intent.hasExtra(EXTRA_IS_PLAYING)) isPlaying = intent.getBooleanExtra(EXTRA_IS_PLAYING, isPlaying)
         if (intent.hasExtra(EXTRA_IS_LOADING)) isLoading = intent.getBooleanExtra(EXTRA_IS_LOADING, isLoading)
-        if (intent.hasExtra(EXTRA_EXPANDED)) expanded = intent.getBooleanExtra(EXTRA_EXPANDED, expanded)
+        if (intent.hasExtra(EXTRA_EXPANDED)) {
+            expanded = intent.getBooleanExtra(EXTRA_EXPANDED, expanded)
+            // Grow before the expand animation; defer shrinking until the collapse animation ends.
+            if (expanded) lyricsWindowBoundsExpanded = true
+        }
         if (intent.hasExtra(EXTRA_SHOW_TRANSLATION)) {
             showTranslation = intent.getBooleanExtra(EXTRA_SHOW_TRANSLATION, showTranslation)
         }
@@ -677,12 +714,26 @@ class FloatingMiniPlayerService : LifecycleService() {
             this.y = y
         }
 
-    private fun lyricsWindowX(): Int =
+    private fun lyricsWindowX(): Int = if (lyricsWindowBoundsExpanded) {
         if (lyricsPanelOnRight) coverX + dp(64)
         else coverX - lyricsPanelWidthPx - lyricsPanelGapPx - dp(sideControlsWidthDp)
+    } else {
+        FloatingOverlayPlacement.collapsedControlsWindowX(
+            coverX = coverX,
+            coverWidthPx = dp(64),
+            sideControlsWidthPx = dp(sideControlsWidthDp),
+            controlsOnRight = lyricsPanelOnRight,
+        )
+    }
 
     private fun onExpansionAnimationFinished(isExpanded: Boolean) {
-        mainHandler.post { savePosition() }
+        mainHandler.post {
+            if (lyricsWindowBoundsExpanded != isExpanded) {
+                lyricsWindowBoundsExpanded = isExpanded
+                updateWindowPositions()
+            }
+            savePosition()
+        }
     }
 
     private fun ensureOverlayWindow() {
@@ -768,8 +819,19 @@ class FloatingMiniPlayerService : LifecycleService() {
             }
         }
         val params = createLayoutParams(
-            (lyricsPanelWidthPx + dp(sideControlsWidthDp) + lyricsPanelGapPx).coerceAtLeast(dp(sideControlsWidthDp)),
-            dp(88),
+            FloatingOverlayPlacement.lyricsWindowWidthPx(
+                lyricsWidthPx = lyricsPanelWidthPx,
+                gapPx = lyricsPanelGapPx,
+                sideControlsWidthPx = dp(sideControlsWidthDp),
+                expandedBounds = lyricsWindowBoundsExpanded,
+            ),
+            dp(
+                FloatingOverlayPlacement.lyricsWindowHeightPx(
+                    expandedBounds = lyricsWindowBoundsExpanded,
+                    expandedHeightPx = 88,
+                    collapsedHeightPx = 64,
+                ),
+            ),
             lyricsWindowX(),
             coverY,
         )
@@ -811,8 +873,19 @@ class FloatingMiniPlayerService : LifecycleService() {
         lyricsOverlayParams?.let { params ->
             val nextX = lyricsWindowX()
             val nextY = coverY
-            val nextWidth = (lyricsPanelWidthPx + dp(sideControlsWidthDp) + lyricsPanelGapPx).coerceAtLeast(dp(sideControlsWidthDp))
-            val nextHeight = dp(88)
+            val nextWidth = FloatingOverlayPlacement.lyricsWindowWidthPx(
+                lyricsWidthPx = lyricsPanelWidthPx,
+                gapPx = lyricsPanelGapPx,
+                sideControlsWidthPx = dp(sideControlsWidthDp),
+                expandedBounds = lyricsWindowBoundsExpanded,
+            )
+            val nextHeight = dp(
+                FloatingOverlayPlacement.lyricsWindowHeightPx(
+                    expandedBounds = lyricsWindowBoundsExpanded,
+                    expandedHeightPx = 88,
+                    collapsedHeightPx = 64,
+                ),
+            )
             if (params.x != nextX || params.y != nextY ||
                 params.width != nextWidth || params.height != nextHeight
             ) {
