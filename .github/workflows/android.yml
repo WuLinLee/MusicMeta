@@ -1,7 +1,7 @@
 name: MusicMeta Android - Build and Preview Release
 
 concurrency:
-  group: musicmeta-android-release
+  group: musicmeta-android-${{ github.ref }}
   cancel-in-progress: true
 
 on:
@@ -61,7 +61,7 @@ jobs:
           PY
       - name: Read app version
         run: |
-VERSION_NAME="$(grep 'versionName = "' app/build.gradle.kts | sed -E 's/.*versionName = "([^"]+)".*/\1/' | head -n 1)"
+          VERSION_NAME="$(grep 'versionName = "' app/build.gradle.kts | sed -E 's/.*versionName = "([^"]+)".*/\1/' | head -n 1)"
           APPLICATION_ID="$(grep 'applicationId = "' app/build.gradle.kts | sed -E 's/.*applicationId = "([^"]+)".*/\1/' | head -n 1)"
           if [[ -z "$VERSION_NAME" ]]; then
             echo "Could not determine Android versionName." >&2
