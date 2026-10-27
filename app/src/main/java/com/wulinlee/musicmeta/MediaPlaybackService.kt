@@ -1,6 +1,5 @@
 package com.wulinlee.musicmeta
 
-
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -228,7 +227,7 @@ class MediaPlaybackService : Service() {
     private fun publishMetadata() {
         val lyricTitle = mediaDisplayTitle(currentLyric, trackTitle)
         val metadata = MediaMetadataCompat.Builder()
-            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, trackTitle)
+            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, lyricTitle)
             .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, trackArtist)
             .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, "音笺")
             .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE, lyricTitle)
