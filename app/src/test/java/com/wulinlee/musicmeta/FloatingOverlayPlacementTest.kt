@@ -47,13 +47,10 @@ class FloatingOverlayPlacementTest {
     }
 
     @Test
-    fun collapsedLyricsWindowShrinksToControlButtonsAndPassesThroughTheRest() {
-        assertEquals(232, FloatingOverlayPlacement.lyricsWindowWidthPx(200, 4, 28, true))
-        assertEquals(28, FloatingOverlayPlacement.lyricsWindowWidthPx(200, 4, 28, false))
-        assertEquals(88, FloatingOverlayPlacement.lyricsWindowHeightPx(true, 88, 64))
-        assertEquals(64, FloatingOverlayPlacement.lyricsWindowHeightPx(false, 88, 64))
-        // The compact window stays attached to the cover in either mirrored layout.
+    fun collapsedSideControlsKeepFixedAnchorsAndLyricsUseAnIndependentWindow() {
         assertEquals(164, FloatingOverlayPlacement.collapsedControlsWindowX(100, 64, 28, true))
-        assertEquals(72, FloatingOverlayPlacement.collapsedControlsWindowX(100, 64, 28, false))
+        assertEquals(208, FloatingOverlayPlacement.collapsedControlsWindowX(236, 64, 28, false))
+        assertEquals(196, FloatingOverlayPlacement.lyricsPanelWindowX(100, 64, 28, 4, 200, true))
+        assertEquals(4, FloatingOverlayPlacement.lyricsPanelWindowX(236, 64, 28, 4, 200, false))
     }
 }

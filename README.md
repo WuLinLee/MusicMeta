@@ -2,12 +2,13 @@
 
 MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 Android 应用：读取可公开访问的网易云歌单，搜索并核对音源，下载音频，并尽可能补齐封面、歌词和音频标签。
 
-> **当前版本：1.42** · `versionCode = 46`  
+> **当前版本：1.43** · `versionCode = 47`  
 > 应用 ID：`com.wulinlee.musicmeta` · 最低 Android：10（API 29）· 目标 SDK：35  
 > 技术栈：Kotlin、Jetpack Compose、Material 3、Coroutines、OkHttp、Coil、jaudiotagger。
 
 - **正式版发布页：** [GitHub Releases](https://github.com/WuLinLee/MusicMeta/releases)
-- **v1.42 APK 直链：** [MusicMeta-v1.42.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.42/MusicMeta-v1.42.apk)
+- **v1.43 APK 直链：** [MusicMeta-v1.43.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.43/MusicMeta-v1.43.apk)
+- **上一版本 APK：** [MusicMeta-v1.42.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.42/MusicMeta-v1.42.apk)
 - **上一版本 APK：** [MusicMeta-v1.41.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.41/MusicMeta-v1.41.apk)
 - **上一版本 APK：** [MusicMeta-v1.40.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.40/MusicMeta-v1.40.apk)
 - **上一版本 APK：** [MusicMeta-v1.39.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.39/MusicMeta-v1.39.apk)
@@ -17,7 +18,7 @@ MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 A
 - **v1.30 历史版（系统媒体卡片参考）：** [MusicMeta-v1.30.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.30/MusicMeta-v1.30.apk)
 - **构建记录：** [GitHub Actions](https://github.com/WuLinLee/MusicMeta/actions)
 
-v1.42 修复透明歌词悬浮窗在收起后仍遮挡后方画面的问题：收起动画结束时将系统歌词窗口缩小为贴近封面的 28×64dp 侧键区域，歌词区域之外不再拦截其他应用的滑动；收起状态侧键仍可点击，左右布局镜像。v1.41 移除收起后的歌词透明区域拖动手势，封面保持可拖动；v1.40 恢复封面四角圆角和无底色独立箭头。默认歌词字号为 15.04sp，并保留本地歌曲定位与滚动。下载链接仅在对应 Release 资产创建成功后可用。请以对应提交的成功构建结果和实际资产为准，不要仅凭本文件中的版本号判断已发布。
+v1.43 修复右侧封面展开/收起歌词时侧键跟着闪烁的问题：封面和侧键保持在各自固定窗口，歌词卡片拆成独立窗口，仅卡片执行展开/收起动画；收起动画结束后移除歌词窗口，保留后方应用的触摸穿透。v1.42 修复收起歌词后透明区域遮挡后方画面的问题。v1.41 移除收起后的歌词透明区域拖动手势，v1.40 恢复封面四角圆角和无底色独立箭头。默认歌词字号为 15.04sp，并保留本地歌曲定位与滚动。下载链接仅在对应 Release 资产创建成功后可用。请以对应提交的成功构建结果和实际资产为准，不要仅凭本文件中的版本号判断已发布。
 
 ## 目录
 

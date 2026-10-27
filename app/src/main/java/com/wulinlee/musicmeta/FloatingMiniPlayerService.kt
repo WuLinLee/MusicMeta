@@ -289,6 +289,21 @@ internal object FloatingOverlayPlacement {
     } else {
         coverX - sideControlsWidthPx.coerceAtLeast(0)
     }
+
+    fun lyricsPanelWindowX(
+        coverX: Int,
+        coverWidthPx: Int,
+        sideControlsWidthPx: Int,
+        gapPx: Int,
+        lyricsWidthPx: Int,
+        lyricsOnRight: Boolean,
+    ): Int = if (lyricsOnRight) {
+        coverX + coverWidthPx.coerceAtLeast(0) +
+            sideControlsWidthPx.coerceAtLeast(0) + gapPx.coerceAtLeast(0)
+    } else {
+        coverX - sideControlsWidthPx.coerceAtLeast(0) -
+            gapPx.coerceAtLeast(0) - lyricsWidthPx.coerceAtLeast(0)
+    }
 }
 
 
@@ -433,8 +448,11 @@ class FloatingMiniPlayerService : LifecycleService() {
     private val overlayViewTreeOwner = FloatingOverlayViewTreeOwner()
     private var overlayView: ComposeView? = null
     private var overlayParams: WindowManager.LayoutParams? = null
+    // Side controls stay in a fixed-size window. The lyric card gets its own animated window.
     private var lyricsOverlayView: ComposeView? = null
     private var lyricsOverlayParams: WindowManager.LayoutParams? = null
+    private var lyricsPanelOverlayView: ComposeView? = null
+    private var lyricsPanelOverlayParams: WindowManager.LayoutParams? = null
     private val sideControlsWidthDp = 28
 
     private var coverUrl by mutableStateOf("")
@@ -448,7 +466,7 @@ class FloatingMiniPlayerService : LifecycleService() {
     private var isLoading by mutableStateOf(false)
     private var expanded by mutableStateOf(false)
     // Keep expanded bounds during the exit animation, then shrink to the side keys only.
-    private var lyricsWindowBoundsExpanded = false
+    private var lyricsPanelWindowMounted = false
     private var lyricsPanelOnRight by mutableStateOf(false)
     private var lyricsPanelWidthPx by mutableIntStateOf(0)
     private var lyricsPanelGapPx by mutableIntStateOf(0)
@@ -521,6 +539,7 @@ class FloatingMiniPlayerService : LifecycleService() {
         if (intent?.action == ACTION_UPDATE) applyUpdate(intent)
         ensureOverlayWindow()
         ensureLyricsOverlayWindow()
+        ensureLyricsPanelOverlayWindow()
         updateWindowPositions()
         return START_NOT_STICKY
     }
@@ -566,7 +585,7 @@ class FloatingMiniPlayerService : LifecycleService() {
         if (intent.hasExtra(EXTRA_EXPANDED)) {
             expanded = intent.getBooleanExtra(EXTRA_EXPANDED, expanded)
             // Grow before the expand animation; defer shrinking until the collapse animation ends.
-            if (expanded) lyricsWindowBoundsExpanded = true
+            if (expanded) lyricsPanelWindowMounted = true
         }
         if (intent.hasExtra(EXTRA_SHOW_TRANSLATION)) {
             showTranslation = intent.getBooleanExtra(EXTRA_SHOW_TRANSLATION, showTranslation)
@@ -714,22 +733,31 @@ class FloatingMiniPlayerService : LifecycleService() {
             this.y = y
         }
 
-    private fun lyricsWindowX(): Int = if (lyricsWindowBoundsExpanded) {
-        if (lyricsPanelOnRight) coverX + dp(64)
-        else coverX - lyricsPanelWidthPx - lyricsPanelGapPx - dp(sideControlsWidthDp)
-    } else {
+    private fun sideControlsWindowX(): Int =
         FloatingOverlayPlacement.collapsedControlsWindowX(
             coverX = coverX,
             coverWidthPx = dp(64),
             sideControlsWidthPx = dp(sideControlsWidthDp),
             controlsOnRight = lyricsPanelOnRight,
         )
-    }
+
+    private fun lyricsPanelWindowX(): Int =
+        FloatingOverlayPlacement.lyricsPanelWindowX(
+            coverX = coverX,
+            coverWidthPx = dp(64),
+            sideControlsWidthPx = dp(sideControlsWidthDp),
+            gapPx = lyricsPanelGapPx,
+            lyricsWidthPx = lyricsPanelWidthPx,
+            lyricsOnRight = lyricsPanelOnRight,
+        )
 
     private fun onExpansionAnimationFinished(isExpanded: Boolean) {
         mainHandler.post {
-            if (lyricsWindowBoundsExpanded != isExpanded) {
-                lyricsWindowBoundsExpanded = isExpanded
+            // Ignore stale animation completions when a newer long-press has already toggled state.
+            if (isExpanded != expanded) return@post
+            if (lyricsPanelWindowMounted != isExpanded) {
+                lyricsPanelWindowMounted = isExpanded
+                if (isExpanded) ensureLyricsPanelOverlayWindow() else removeLyricsPanelOverlayWindow()
                 updateWindowPositions()
             }
             savePosition()
@@ -785,54 +813,18 @@ class FloatingMiniPlayerService : LifecycleService() {
             setViewTreeLifecycleOwner(overlayViewTreeOwner)
             setViewTreeSavedStateRegistryOwner(overlayViewTreeOwner)
             setContent {
-                OverlayLyricsWindowUi(
-                    expanded = expanded,
-                    lyricsFontSizeSp = lyricsFontSizeSp,
-                    lyricsWidthDp = lyricsPanelWidthPx / density,
-                    sideControlsWidthDp = sideControlsWidthDp.toFloat(),
-                    lyricsGapDp = lyricsPanelGapPx / density,
-                    originalLyrics = originalLyrics,
-                    translatedLyrics = translatedLyrics,
-                    showTranslation = showTranslation,
-                    positionMs = positionMs,
-                    durationMs = durationMs,
-                    onExpansionAnimationFinished = { onExpansionAnimationFinished(it) },
-                    onToggleTranslation = {
-                        sendCommand(this@FloatingMiniPlayerService, COMMAND_TOGGLE_TRANSLATION)
-                    },
-                    onSeek = { seekMs ->
-                        positionMs = seekMs.coerceIn(0, durationMs.coerceAtLeast(0))
-                        sendCommand(this@FloatingMiniPlayerService, COMMAND_SEEK, positionMs)
-                    },
+                // Fixed side-key window: lyrics animations never resize/reposition this window.
+                OverlaySideTrackControls(
                     onPrevious = { sendCommand(this@FloatingMiniPlayerService, COMMAND_PREVIOUS) },
                     onNext = { sendCommand(this@FloatingMiniPlayerService, COMMAND_NEXT) },
-                    onDrag = { dx, dy -> moveBy(dx, dy) },
-                    onCircularDrag = { openAppAndLocateSong() },
-                    onLongPress = { toggleExpanded() },
-                    onDragEnd = {
-                        dragRemainderX = 0f
-                        dragRemainderY = 0f
-                        savePosition()
-                    },
-                    lyricsOnRight = lyricsPanelOnRight,
+                    modifier = Modifier.fillMaxSize(),
                 )
             }
         }
         val params = createLayoutParams(
-            FloatingOverlayPlacement.lyricsWindowWidthPx(
-                lyricsWidthPx = lyricsPanelWidthPx,
-                gapPx = lyricsPanelGapPx,
-                sideControlsWidthPx = dp(sideControlsWidthDp),
-                expandedBounds = lyricsWindowBoundsExpanded,
-            ),
-            dp(
-                FloatingOverlayPlacement.lyricsWindowHeightPx(
-                    expandedBounds = lyricsWindowBoundsExpanded,
-                    expandedHeightPx = 88,
-                    collapsedHeightPx = 64,
-                ),
-            ),
-            lyricsWindowX(),
+            dp(sideControlsWidthDp),
+            dp(64),
+            sideControlsWindowX(),
             coverY,
         )
         lyricsOverlayView = view
@@ -844,6 +836,65 @@ class FloatingMiniPlayerService : LifecycleService() {
             lyricsOverlayParams = null
             throw error
         }
+    }
+
+    private fun ensureLyricsPanelOverlayWindow() {
+        if (!lyricsPanelWindowMounted || lyricsPanelOverlayView != null) return
+        val wm = windowManager ?: return
+        val view = ComposeView(this).apply {
+            setViewTreeLifecycleOwner(overlayViewTreeOwner)
+            setViewTreeSavedStateRegistryOwner(overlayViewTreeOwner)
+            setContent {
+                OverlayLyricsPanelWindowUi(
+                    expanded = expanded,
+                    lyricsFontSizeSp = lyricsFontSizeSp,
+                    originalLyrics = originalLyrics,
+                    translatedLyrics = translatedLyrics,
+                    showTranslation = showTranslation,
+                    positionMs = positionMs,
+                    durationMs = durationMs,
+                    lyricsOnRight = lyricsPanelOnRight,
+                    onExpansionAnimationFinished = { onExpansionAnimationFinished(it) },
+                    onToggleTranslation = {
+                        sendCommand(this@FloatingMiniPlayerService, COMMAND_TOGGLE_TRANSLATION)
+                    },
+                    onSeek = { seekMs ->
+                        positionMs = seekMs.coerceIn(0, durationMs.coerceAtLeast(0))
+                        sendCommand(this@FloatingMiniPlayerService, COMMAND_SEEK, positionMs)
+                    },
+                    onDrag = { dx, dy -> moveBy(dx, dy) },
+                    onCircularDrag = { openAppAndLocateSong() },
+                    onLongPress = { toggleExpanded() },
+                    onDragEnd = {
+                        dragRemainderX = 0f
+                        dragRemainderY = 0f
+                        savePosition()
+                    },
+                )
+            }
+        }
+        val params = createLayoutParams(
+            lyricsPanelWidthPx.coerceAtLeast(1),
+            dp(64),
+            lyricsPanelWindowX(),
+            coverY + dp(4),
+        )
+        lyricsPanelOverlayView = view
+        lyricsPanelOverlayParams = params
+        try {
+            wm.addView(view, params)
+        } catch (error: Exception) {
+            lyricsPanelOverlayView = null
+            lyricsPanelOverlayParams = null
+            throw error
+        }
+    }
+
+    private fun removeLyricsPanelOverlayWindow() {
+        val wm = windowManager
+        lyricsPanelOverlayView?.let { view -> runCatching { wm?.removeView(view) } }
+        lyricsPanelOverlayView = null
+        lyricsPanelOverlayParams = null
     }
 
     private fun removeLyricsOverlayWindow() {
@@ -871,21 +922,10 @@ class FloatingMiniPlayerService : LifecycleService() {
             }
         }
         lyricsOverlayParams?.let { params ->
-            val nextX = lyricsWindowX()
+            val nextX = sideControlsWindowX()
             val nextY = coverY
-            val nextWidth = FloatingOverlayPlacement.lyricsWindowWidthPx(
-                lyricsWidthPx = lyricsPanelWidthPx,
-                gapPx = lyricsPanelGapPx,
-                sideControlsWidthPx = dp(sideControlsWidthDp),
-                expandedBounds = lyricsWindowBoundsExpanded,
-            )
-            val nextHeight = dp(
-                FloatingOverlayPlacement.lyricsWindowHeightPx(
-                    expandedBounds = lyricsWindowBoundsExpanded,
-                    expandedHeightPx = 88,
-                    collapsedHeightPx = 64,
-                ),
-            )
+            val nextWidth = dp(sideControlsWidthDp)
+            val nextHeight = dp(64)
             if (params.x != nextX || params.y != nextY ||
                 params.width != nextWidth || params.height != nextHeight
             ) {
@@ -894,6 +934,21 @@ class FloatingMiniPlayerService : LifecycleService() {
                 params.width = nextWidth
                 params.height = nextHeight
                 lyricsOverlayView?.let { view -> runCatching { wm.updateViewLayout(view, params) } }
+            }
+        }
+        lyricsPanelOverlayParams?.let { params ->
+            val nextX = lyricsPanelWindowX()
+            val nextY = coverY + dp(4)
+            val nextWidth = lyricsPanelWidthPx.coerceAtLeast(1)
+            val nextHeight = dp(64)
+            if (params.x != nextX || params.y != nextY ||
+                params.width != nextWidth || params.height != nextHeight
+            ) {
+                params.x = nextX
+                params.y = nextY
+                params.width = nextWidth
+                params.height = nextHeight
+                lyricsPanelOverlayView?.let { view -> runCatching { wm.updateViewLayout(view, params) } }
             }
         }
     }
@@ -924,6 +979,7 @@ class FloatingMiniPlayerService : LifecycleService() {
     }
 
     private fun removeOverlayViews() {
+        removeLyricsPanelOverlayWindow()
         removeLyricsOverlayWindow()
         val wm = windowManager
         overlayView?.let { runCatching { wm?.removeView(it) } }
@@ -933,27 +989,22 @@ class FloatingMiniPlayerService : LifecycleService() {
 }
 
 @Composable
-private fun OverlayLyricsWindowUi(
+private fun OverlayLyricsPanelWindowUi(
     expanded: Boolean,
     lyricsFontSizeSp: Float,
-    lyricsWidthDp: Float,
-    sideControlsWidthDp: Float,
-    lyricsGapDp: Float,
     originalLyrics: String,
     translatedLyrics: String,
     showTranslation: Boolean,
     positionMs: Int,
     durationMs: Int,
+    lyricsOnRight: Boolean,
     onExpansionAnimationFinished: (Boolean) -> Unit,
     onToggleTranslation: () -> Unit,
     onSeek: (Int) -> Unit,
-    onPrevious: () -> Unit,
-    onNext: () -> Unit,
     onDrag: (Float, Float) -> Unit,
     onCircularDrag: () -> Unit,
     onLongPress: () -> Unit,
     onDragEnd: () -> Unit,
-    lyricsOnRight: Boolean,
 ) {
     val progress = remember { Animatable(0f) }
     LaunchedEffect(expanded) {
@@ -963,43 +1014,32 @@ private fun OverlayLyricsWindowUi(
         )
         onExpansionAnimationFinished(expanded)
     }
-    // Collapsing the lyrics panel must not make its transparent area draggable.
-    // Only the cover overlay owns the drag gesture while the panel is collapsed.
-    Box(Modifier.fillMaxSize()) {
-        val sideWidth = sideControlsWidthDp.dp
-        val lyricsGap = lyricsGapDp.dp
-        // The control strip is attached to the cover; only the lyric panel gets a small gap.
-        // Reserve a transparent 28dp hit target for each independent arrow; the lyric card stays separate.
-        val lyricsOffset = if (lyricsOnRight) sideWidth + lyricsGap else 0.dp
-        if (progress.value > 0.001f) {
-            OverlayLyricsUi(
-                lyricsFontSizeSp = lyricsFontSizeSp,
-                originalLyrics = originalLyrics,
-                translatedLyrics = translatedLyrics,
-                showTranslation = showTranslation,
-                positionMs = positionMs,
-                durationMs = durationMs,
-                onToggleTranslation = onToggleTranslation,
-                onSeek = onSeek,
-                onDrag = onDrag,
-                onCircularDrag = onCircularDrag,
-                onLongPress = onLongPress,
-                onDragEnd = onDragEnd,
-                modifier = Modifier.offset(x = lyricsOffset, y = 4.dp).width(lyricsWidthDp.dp).height(64.dp)
-                    .graphicsLayer {
-                        alpha = progress.value
-                        scaleX = progress.value
-                        transformOrigin = if (lyricsOnRight) TransformOrigin(0f, 0.5f) else TransformOrigin(1f, 0.5f)
-                    },
-            )
-        }
-        OverlaySideTrackControls(
-            onPrevious = onPrevious,
-            onNext = onNext,
-            modifier = Modifier.width(sideWidth).height(64.dp)
-                .align(if (lyricsOnRight) Alignment.TopStart else Alignment.TopEnd),
-        )
-    }
+
+    OverlayLyricsUi(
+        lyricsFontSizeSp = lyricsFontSizeSp,
+        originalLyrics = originalLyrics,
+        translatedLyrics = translatedLyrics,
+        showTranslation = showTranslation,
+        positionMs = positionMs,
+        durationMs = durationMs,
+        onToggleTranslation = onToggleTranslation,
+        onSeek = onSeek,
+        onDrag = onDrag,
+        onCircularDrag = onCircularDrag,
+        onLongPress = onLongPress,
+        onDragEnd = onDragEnd,
+        modifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                alpha = progress.value
+                scaleX = progress.value
+                transformOrigin = if (lyricsOnRight) {
+                    TransformOrigin(0f, 0.5f)
+                } else {
+                    TransformOrigin(1f, 0.5f)
+                }
+            },
+    )
 }
 
 @Composable
