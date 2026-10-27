@@ -57,8 +57,15 @@ internal fun currentLyricLine(
     if (isTranslation) {
         val originalTimed = parseTimedLyricLines(originalLyrics)
         if (originalTimed.isNotEmpty()) {
-            if (plain.size != originalTimed.size) return UNTITLED_TRANSLATION_SYNC_HINT
-            return currentTimedLine(originalTimed.mapIndexed { index, line -> line.copy(text = plain[index]) }, positionMs)
+            // Translation providers often return plain translated text with a different number
+            // of rows than the original LRC (credits, merged verses, etc.). Map the active
+            // original timestamp row proportionally onto the translation rows rather than
+            // pinning the translation to row zero or dropping credit lines.
+            val originalIndex = originalTimed.indexOfLast { it.timeMs <= positionMs.coerceAtLeast(0) }
+                .coerceAtLeast(0)
+            val translatedIndex = ((originalIndex.toLong() * plain.size) / originalTimed.size)
+                .toInt().coerceIn(0, plain.lastIndex)
+            return plain[translatedIndex]
         }
         if (plain.size > 1) return UNTITLED_TRANSLATION_SYNC_HINT
     }
