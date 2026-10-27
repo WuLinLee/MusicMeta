@@ -2,12 +2,13 @@
 
 MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 Android 应用：读取可公开访问的网易云歌单，搜索并核对音源，下载音频，并尽可能补齐封面、歌词和音频标签。
 
-> **当前版本：1.38** · `versionCode = 42`  
+> **当前版本：1.39** · `versionCode = 43`  
 > 应用 ID：`com.wulinlee.musicmeta` · 最低 Android：10（API 29）· 目标 SDK：35  
 > 技术栈：Kotlin、Jetpack Compose、Material 3、Coroutines、OkHttp、Coil、jaudiotagger。
 
 - **正式版发布页：** [GitHub Releases](https://github.com/WuLinLee/MusicMeta/releases)
-- **v1.38 APK 直链：** [MusicMeta-v1.38.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.38/MusicMeta-v1.38.apk)
+- **v1.39 APK 直链：** [MusicMeta-v1.39.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.39/MusicMeta-v1.39.apk)
+- **上一版本 APK：** [MusicMeta-v1.38.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.38/MusicMeta-v1.38.apk)
 - **上一版本 APK：** [MusicMeta-v1.37.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.37/MusicMeta-v1.37.apk)
 - **悬浮窗实现基线 v1.29：** [MusicMeta-v1.29.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.29/MusicMeta-v1.29.apk)
 - **v1.30 历史版（系统媒体卡片参考）：** [MusicMeta-v1.30.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.30/MusicMeta-v1.30.apk)
@@ -51,6 +52,10 @@ v1.38 修正侧键视觉归属：侧键与封面边缘贴合并共享外观，�
 5. 在设置中选择 API 服务（GD Studio 或 flac.music.hi.cn）、次级音乐源、音质、保存目录及悬浮歌词偏好。
 
 首次使用跨应用悬浮播放器时，需要在 Android 系统设置中授予“显示在其他应用上层”权限。撤销权限后，跨应用浮层不可用。
+
+## v1.39 本次修正
+- **两个独立按键：** 上下键分别绘制成独立按钮，各自有背景和圆角，中间留 2dp 间隔，不再显示为一整条控制栏。
+- **封面边缘对齐：** 按键组贴合封面一侧，上键顶边、下键底边分别与封面上下边缘齐平；歌词栏独立并保留间距。
 
 ## v1.38 本次修正
 - **侧键与封面连体：** 封面靠近侧键一侧改为平边，侧键条用相同底色直接贴合封面，形成封面附属控制区。
