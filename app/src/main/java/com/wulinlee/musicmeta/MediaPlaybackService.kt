@@ -30,6 +30,9 @@ import java.net.URL
 
 internal fun mediaDescriptionLyrics(currentLyric: String): String = currentLyric.trim()
 
+internal fun mediaDisplaySubtitle(artist: String, currentLyric: String): String =
+    listOf(artist.trim(), mediaDescriptionLyrics(currentLyric)).filter { it.isNotBlank() }.joinToString(" · ")
+
 internal fun overlayToggleLabel(overlayEnabled: Boolean): String =
     if (overlayEnabled) "关闭悬浮窗" else "开启悬浮窗"
 
@@ -239,7 +242,7 @@ class MediaPlaybackService : Service() {
             .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist)
             .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, "音笺")
             .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE, title)
-            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_SUBTITLE, artist)
+            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_SUBTITLE, mediaDisplaySubtitle(artist, currentLyric))
             .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_DESCRIPTION, mediaDescriptionLyrics(currentLyric))
             .putString(MediaMetadataCompat.METADATA_KEY_ART_URI, coverUri)
             .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, durationMs.toLong())
