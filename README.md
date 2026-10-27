@@ -2,17 +2,17 @@
 
 MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 Android 应用：读取可公开访问的网易云歌单，搜索并核对音源，下载音频，并尽可能补齐封面、歌词和音频标签。
 
-> **当前版本：1.32** · `versionCode = 36`  
+> **当前版本：1.33** · `versionCode = 37`  
 > 应用 ID：`com.wulinlee.musicmeta` · 最低 Android：10（API 29）· 目标 SDK：35  
 > 技术栈：Kotlin、Jetpack Compose、Material 3、Coroutines、OkHttp、Coil、jaudiotagger。
 
 - **正式版发布页：** [GitHub Releases](https://github.com/WuLinLee/MusicMeta/releases)
-- **v1.32 APK 直链：** [MusicMeta-v1.32.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.32/MusicMeta-v1.32.apk)
+- **v1.33 APK 直链：** [MusicMeta-v1.33.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.33/MusicMeta-v1.33.apk)
 - **悬浮窗实现基线 v1.29：** [MusicMeta-v1.29.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.29/MusicMeta-v1.29.apk)
 - **v1.30 历史版（系统媒体卡片参考）：** [MusicMeta-v1.30.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.30/MusicMeta-v1.30.apk)
 - **构建记录：** [GitHub Actions](https://github.com/WuLinLee/MusicMeta/actions)
 
-v1.32 保持 v1.31 已发布的悬浮窗封面、歌词栏布局与交互不变；仅恢复系统下拉栏和锁屏媒体卡片正常显示歌曲标题与艺人，不再用当前歌词覆盖标题，也不再向系统媒体会话传递歌词。MediaSession / MediaStyle、播放控制与系统卡片上的悬浮窗全局开关均保留。歌词行更新不再触发系统媒体卡片刷新；历史版本说明仍保留在下方对应章节。下载链接只有在对应 Release 资产创建成功后才可用。版本号、Git 标签、Actions 构建结果和 Release 附件是不同的事实；请以对应提交的成功构建结果和实际资产为准，不要仅凭本文件中的版本号判断已发布。
+v1.33 增加了本地曲库文件新旧排序与统一歌词同步处理：本地分页可循环切换“新→旧”“旧→新”和“A–Z”；译文有自身时间戳时按译文时间轴显示，缺少时间戳时只在行数能与原文严格对应时借用时间轴，否则提示无法准确同步，不删除“作曲”“编曲”等原始歌词行。系统媒体卡片仍保持正常歌曲标题与艺人。下载链接只有在对应 Release 资产创建成功后才可用。版本号、Git 标签、Actions 构建结果和 Release 附件是不同的事实；请以对应提交的成功构建结果和实际资产为准，不要仅凭本文件中的版本号判断已发布。
 
 ## 目录
 
@@ -50,6 +50,13 @@ v1.32 保持 v1.31 已发布的悬浮窗封面、歌词栏布局与交互不变�
 5. 在设置中选择 API 服务（GD Studio 或 flac.music.hi.cn）、次级音乐源、音质、保存目录及悬浮歌词偏好。
 
 首次使用跨应用悬浮播放器时，需要在 Android 系统设置中授予“显示在其他应用上层”权限。撤销权限后，跨应用浮层不可用。
+
+## v1.33 本次改动
+
+- **歌词同步：** 原文与译文分别解析自身时间戳；无时间戳译文只有在行数严格匹配原文时才复用原文时间轴，无法对应时提示缺少同步信息。保留包括作曲、编曲在内的歌词原文。
+- **本地排序按钮：** 在“扫描”右侧新增标准 Material 3 按钮，按“新→旧”→“旧→新”→“A–Z”循环；默认新到旧，排序偏好会保留。
+- **文件时间：** MediaStore 与选定目录扫描均记录文件修改时间，升级后可在具备权限时刷新旧曲库缓存。
+- **版本号：** 1.33，`versionCode = 37`。
 
 ## v1.32 本次改动
 
@@ -243,17 +250,17 @@ CI 会另外执行 APK 对齐、签名、签名证书验证和包名检查。构
 
 ## 版本与签名
 
-- 当前版本名：`1.32`
-- 当前版本号：`versionCode = 36`
+- 当前版本名：`1.33`
+- 当前版本号：`versionCode = 37`
 - Gradle 版本元数据位于 `app/build.gradle.kts`；用户可见变更记录位于 `RELEASE_NOTES.md`。
 
 GitHub Actions 工作流会设置 JDK 17 和 Gradle 8.9，检查资源后运行 JVM 单元测试、构建 Release、对 APK 执行 zipalign / 签名 / 校验，再上传 APK 并创建 Release。常规 `main` push 会创建预览发布；提交信息以 `release:` 开头时走正式发布逻辑。已有同名 Release 默认不会覆盖，只有明确的 `release: refresh v...` 提交才允许刷新现有版本。
 
 正式发布前应检查：
-- `main` 最新 commit 与 `v1.32` 标签指向一致；
+- `main` 最新 commit 与 `v1.33` 标签指向一致；
 - 对应 Actions run 为 `completed / success`；
 - Release 不是草稿或预发布；
-- `MusicMeta-v1.32.apk` 资产已上传，签名及 package metadata 检查通过。
+- `MusicMeta-v1.33.apk` 资产已上传，签名及 package metadata 检查通过。
 
 ### APK 签名注意事项
 
