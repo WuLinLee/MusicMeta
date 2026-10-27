@@ -191,7 +191,7 @@ jobs:
           CURRENT_VERSION="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n 1)"
           CURRENT_TAG="v$CURRENT_VERSION"
           # Keep the current version plus nine milestones that show the project's evolution.
-          KEEP_TAGS=" $CURRENT_TAG v1.28 v1.27 v1.26 v1.25 v1.23 v1.22 v1.21 v1.20 v1.19 "
+          KEEP_TAGS=" $CURRENT_TAG v1.29 v1.28 v1.27 v1.26 v1.25 v1.23 v1.22 v1.21 v1.20 "
           while IFS= read -r TAG; do
             [[ -z "$TAG" ]] && continue
             if [[ "$KEEP_TAGS" == *" $TAG "* ]]; then
