@@ -6,7 +6,7 @@ concurrency:
 
 on:
   push:
-    branches: [main]
+    branches: [main, preview/system-lyrics-description]
   workflow_dispatch:
     inputs:
       release_type:
@@ -61,12 +61,14 @@ jobs:
           PY
       - name: Read app version
         run: |
-          VERSION_NAME="$(grep 'versionName = "' app/build.gradle.kts | sed -E 's/.*versionName = "([^"]+)".*/\1/' | head -n 1)"
+VERSION_NAME="$(grep 'versionName = "' app/build.gradle.kts | sed -E 's/.*versionName = "([^"]+)".*/\1/' | head -n 1)"
+          APPLICATION_ID="$(grep 'applicationId = "' app/build.gradle.kts | sed -E 's/.*applicationId = "([^"]+)".*/\1/' | head -n 1)"
           if [[ -z "$VERSION_NAME" ]]; then
             echo "Could not determine Android versionName." >&2
             exit 1
           fi
           echo "MUSICMETA_VERSION=$VERSION_NAME" >> "$GITHUB_ENV"
+          echo "MUSICMETA_APPLICATION_ID=$APPLICATION_ID" >> "$GITHUB_ENV"
           echo "MUSICMETA_APK=MusicMeta-v$VERSION_NAME.apk" >> "$GITHUB_ENV"
       - name: Run tests and build release APK
         run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease
@@ -117,7 +119,7 @@ jobs:
       - name: Check APK package metadata
         run: |
           test -s "$MUSICMETA_APK"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$MUSICMETA_APK" | grep -q "package: name='com.wulinlee.musicmeta'"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$MUSICMETA_APK" | grep -q "package: name='$MUSICMETA_APPLICATION_ID'"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify "$MUSICMETA_APK"
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
