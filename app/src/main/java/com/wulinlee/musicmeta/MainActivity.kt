@@ -473,6 +473,7 @@ private fun MusicMetaApp() {
     var isDownloading by remember { mutableStateOf(false) }
     var verificationOpen by remember { mutableStateOf(false) }
     var floatingOverlayEnabled by remember { mutableStateOf(folderPreferences.getBoolean("floating_overlay_enabled", Settings.canDrawOverlays(context))) }
+    var floatingOverlayDismissedForSession by remember { mutableStateOf(false) }
     var floatingLyricsExpandedByDefault by remember {
         mutableStateOf(folderPreferences.getBoolean("floating_lyrics_expanded_by_default", true))
     }
@@ -515,7 +516,6 @@ private fun MusicMetaApp() {
     var previewTranslatedLyrics by remember { mutableStateOf("") }
     var isPreviewLoading by remember { mutableStateOf(false) }
     var isPreviewPlaying by remember { mutableStateOf(false) }
-    var previewMuted by remember { mutableStateOf(folderPreferences.getBoolean("preview_muted", false)) }
     var mediaCurrentLyric by remember { mutableStateOf("") }
     var isPreviewLyricsLoading by remember { mutableStateOf(false) }
     var showPreviewDetails by remember { mutableStateOf(floatingLyricsExpandedByDefault) }
@@ -1271,7 +1271,6 @@ private fun MusicMetaApp() {
                         ) {
                             previewDurationMs = runCatching { prepared.duration }.getOrDefault(0).coerceAtLeast(0)
                             previewPositionMs = runCatching { prepared.currentPosition }.getOrDefault(0).coerceAtLeast(0)
-                            runCatching { prepared.setVolume(if (previewMuted) 0f else 1f, if (previewMuted) 0f else 1f) }
                             runCatching { prepared.start() }
                                 .onSuccess {
                                     isPreviewPlaying = true
@@ -1495,6 +1494,10 @@ private fun MusicMetaApp() {
     SideEffect {
         FloatingMiniPlayerBridge.onCommand = { command, seekPosition ->
             when (command) {
+                FloatingMiniPlayerService.COMMAND_CLOSE_OVERLAY -> {
+                    floatingOverlayDismissedForSession = true
+                    FloatingMiniPlayerService.stop(context)
+                }
                 FloatingMiniPlayerService.COMMAND_TOGGLE_PLAY -> previewSong?.let { playPreview(it) }
                 FloatingMiniPlayerService.COMMAND_MEDIA_PLAY -> {
                     val player = previewPlayer.value
@@ -1502,7 +1505,6 @@ private fun MusicMetaApp() {
                         isPreviewLoading -> Unit
                         player != null && previewSong != null -> runCatching {
                             if (!player.isPlaying) {
-                                player.setVolume(if (previewMuted) 0f else 1f, if (previewMuted) 0f else 1f)
                                 player.start()
                                 isPreviewPlaying = true
                                 previewPositionMs = player.currentPosition.coerceAtLeast(0)
@@ -1522,12 +1524,6 @@ private fun MusicMetaApp() {
                             status = "播放已暂停。"
                         }
                     }.onFailure { status = "暂停播放失败：" + (it.message ?: "请重试") }
-                }
-                FloatingMiniPlayerService.COMMAND_MEDIA_TOGGLE_MUTE -> {
-                    previewMuted = !previewMuted
-                    folderPreferences.edit().putBoolean("preview_muted", previewMuted).apply()
-                    runCatching { previewPlayer.value?.setVolume(if (previewMuted) 0f else 1f, if (previewMuted) 0f else 1f) }
-                    status = if (previewMuted) "已静音。" else "已取消静音。"
                 }
                 FloatingMiniPlayerService.COMMAND_PREVIOUS -> previewNavigationHandler?.invoke(-1)
                 FloatingMiniPlayerService.COMMAND_NEXT -> previewNavigationHandler?.invoke(1)
@@ -1554,6 +1550,7 @@ private fun MusicMetaApp() {
 
     LaunchedEffect(
         floatingOverlayEnabled,
+        floatingOverlayDismissedForSession,
         previewSong?.platform,
         previewSong?.id,
         previewCoverUrl,
@@ -1571,7 +1568,7 @@ private fun MusicMetaApp() {
         floatingLyricsFontSizeSp,
     ) {
         val song = previewSong
-        if (floatingOverlayEnabled && song != null && Settings.canDrawOverlays(context)) {
+        if (floatingOverlayEnabled && !floatingOverlayDismissedForSession && song != null && Settings.canDrawOverlays(context)) {
             FloatingMiniPlayerService.showOrUpdate(
                 context = context,
                 coverUrl = previewCoverUrl.ifBlank { song.coverUrl },
@@ -1603,7 +1600,7 @@ private fun MusicMetaApp() {
 
     LaunchedEffect(floatingOverlayEnabled, previewSong?.id, previewPositionMs) {
         val song = previewSong
-        if (floatingOverlayEnabled && song != null && Settings.canDrawOverlays(context)) {
+        if (floatingOverlayEnabled && !floatingOverlayDismissedForSession && song != null && Settings.canDrawOverlays(context)) {
             // Progress uses a lightweight service action, not a foreground-service restart.
             FloatingMiniPlayerService.updatePosition(context, previewPositionMs)
         }
@@ -1645,7 +1642,6 @@ private fun MusicMetaApp() {
         previewDurationMs,
         isPreviewPlaying,
         isPreviewLoading,
-        previewMuted,
         playbackMode,
     ) {
         val song = previewSong
@@ -1662,7 +1658,6 @@ private fun MusicMetaApp() {
                 positionMs = previewPositionMs,
                 isPlaying = isPreviewPlaying,
                 isLoading = isPreviewLoading,
-                isMuted = previewMuted,
                 playbackMode = playbackMode,
             )
         }
@@ -1689,6 +1684,8 @@ private fun MusicMetaApp() {
     }
 
     LaunchedEffect(floatingOverlayEnabled) {
+        // Explicit global off/on toggles restore an overlay dismissed from media controls.
+        floatingOverlayDismissedForSession = false
         if (floatingOverlayEnabled && !Settings.canDrawOverlays(context)) {
             // Keep the preference: granting the permission again should restore the overlay.
             floatingOverlayEnabled = false
