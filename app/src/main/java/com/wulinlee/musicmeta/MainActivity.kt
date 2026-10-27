@@ -516,6 +516,7 @@ private fun MusicMetaApp() {
     var isPreviewLoading by remember { mutableStateOf(false) }
     var isPreviewPlaying by remember { mutableStateOf(false) }
     var previewMuted by remember { mutableStateOf(folderPreferences.getBoolean("preview_muted", false)) }
+    var mediaCurrentLyric by remember { mutableStateOf("") }
     var isPreviewLyricsLoading by remember { mutableStateOf(false) }
     var showPreviewDetails by remember { mutableStateOf(floatingLyricsExpandedByDefault) }
     var showTranslatedPreviewLyric by remember { mutableStateOf(floatingLyricsTranslatedByDefault) }
@@ -1557,7 +1558,6 @@ private fun MusicMetaApp() {
                 expanded = showPreviewDetails,
                 showTranslation = showTranslatedPreviewLyric,
                 lyricsFontSizeSp = floatingLyricsFontSizeSp,
-                isMuted = previewMuted,
                 playbackMode = playbackMode,
                 openMode = when {
                     song.platform == "local" -> "local"
@@ -1578,6 +1578,71 @@ private fun MusicMetaApp() {
         if (floatingOverlayEnabled && song != null && Settings.canDrawOverlays(context)) {
             // Progress uses a lightweight service action, not a foreground-service restart.
             FloatingMiniPlayerService.updatePosition(context, previewPositionMs)
+        }
+    }
+
+    LaunchedEffect(
+        previewSong?.id,
+        previewPositionMs,
+        previewLyrics,
+        previewTranslatedLyrics,
+        showTranslatedPreviewLyric,
+    ) {
+        val song = previewSong
+        if (song == null) {
+            mediaCurrentLyric = ""
+        } else {
+            val activeLyrics = if (showTranslatedPreviewLyric && previewTranslatedLyrics.isNotBlank()) {
+                previewTranslatedLyrics
+            } else previewLyrics
+            val timedLines = parseTimedPreviewLyrics(activeLyrics)
+            val currentLine = when {
+                activeLyrics.isBlank() -> ""
+                timedLines.isNotEmpty() -> timedLines.lastOrNull { it.first <= previewPositionMs + 180 }?.second
+                    ?: timedLines.first().second
+                else -> formatPreviewLyrics(activeLyrics).lineSequence().firstOrNull { it.isNotBlank() }.orEmpty()
+            }
+            if (mediaCurrentLyric != currentLine) mediaCurrentLyric = currentLine
+        }
+    }
+
+    // The notification and lock-screen session mirrors the same in-app player state.
+    // Only metadata / lyric changes rebuild the notification; the position ticker is lightweight.
+    LaunchedEffect(
+        previewSong?.id,
+        previewSong?.title,
+        previewSong?.artist,
+        previewCoverUrl,
+        mediaCurrentLyric,
+        previewDurationMs,
+        isPreviewPlaying,
+        isPreviewLoading,
+        previewMuted,
+        playbackMode,
+    ) {
+        val song = previewSong
+        if (song == null) {
+            MediaPlaybackService.stop(context)
+        } else {
+            MediaPlaybackService.update(
+                context = context,
+                title = song.title,
+                artist = song.artist,
+                coverUri = previewCoverUrl.ifBlank { song.coverUrl },
+                currentLyric = mediaCurrentLyric,
+                durationMs = previewDurationMs,
+                positionMs = previewPositionMs,
+                isPlaying = isPreviewPlaying,
+                isLoading = isPreviewLoading,
+                isMuted = previewMuted,
+                playbackMode = playbackMode,
+            )
+        }
+    }
+
+    LaunchedEffect(previewSong?.id, previewPositionMs, previewDurationMs) {
+        if (previewSong != null) {
+            MediaPlaybackService.updatePosition(context, previewPositionMs, previewDurationMs)
         }
     }
 
