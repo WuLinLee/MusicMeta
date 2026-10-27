@@ -1012,7 +1012,7 @@ private fun OverlayLyricsUi(
                 onDragEnd = onDragEnd,
             ),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xD91A2521)),
+        colors = CardDefaults.cardColors(containerColor = Color(0xB81A2521)),
         elevation = CardDefaults.cardElevation(defaultElevation = 10.dp),
     ) {
         Column(
@@ -1035,7 +1035,7 @@ private fun OverlayLyricsUi(
                 Box(
                     modifier = Modifier.weight(1f).fillMaxSize()
                         .clip(RoundedCornerShape(9.dp))
-                        .background(Color(0xC0243631))
+                        .background(Color(0x7830443C))
                         .border(1.dp, Color(0x559FF0C9), RoundedCornerShape(9.dp))
                         .pointerInput(Unit) {
                             detectTapGestures(
