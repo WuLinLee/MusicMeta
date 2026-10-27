@@ -18,6 +18,7 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -285,7 +286,7 @@ class FloatingMiniPlayerService : LifecycleService() {
         const val COMMAND_MEDIA_PAUSE = "media_pause"
         const val COMMAND_PREVIOUS = "previous_track"
         const val COMMAND_NEXT = "next_track"
-        const val COMMAND_CLOSE_OVERLAY = "close_overlay"
+        const val COMMAND_TOGGLE_OVERLAY = "toggle_overlay"
         const val COMMAND_TOGGLE_DETAILS = "toggle_details"
         const val COMMAND_TOGGLE_TRANSLATION = "toggle_translation"
         const val COMMAND_TOGGLE_PLAYBACK_MODE = "toggle_playback_mode"
@@ -523,7 +524,7 @@ class FloatingMiniPlayerService : LifecycleService() {
         FloatingOverlayPlacement.scaledPreferredLyricsWidthPx(
             baseGroupWidthPx = dp(356),
             nonLyricsWidthPx = dp(78),
-            scale = 1.2f,
+            scale = 1.35f,
         )
 
     private fun groupWidthPx(): Int = dp(64) + lyricsPanelGapPx + lyricsPanelWidthPx
@@ -710,7 +711,7 @@ class FloatingMiniPlayerService : LifecycleService() {
         }
         val params = createLayoutParams(
             lyricsPanelWidthPx.coerceAtLeast(dp(1)),
-            dp(64),
+            dp(78),
             lyricsWindowX(),
             coverY,
         )
@@ -753,7 +754,7 @@ class FloatingMiniPlayerService : LifecycleService() {
             val nextX = lyricsWindowX()
             val nextY = coverY
             val nextWidth = lyricsPanelWidthPx.coerceAtLeast(dp(1))
-            val nextHeight = dp(64)
+            val nextHeight = dp(78)
             if (params.x != nextX || params.y != nextY ||
                 params.width != nextWidth || params.height != nextHeight
             ) {
@@ -1100,7 +1101,7 @@ private fun OverlayLyricsUi(
     ) {
         Column(
             modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp, vertical = 2.dp),
-            verticalArrangement = Arrangement.spacedBy(0.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Row(
@@ -1141,8 +1142,10 @@ private fun OverlayLyricsUi(
                         fontSize = lyricsFontSizeSp.sp,
                         lineHeight = (lyricsFontSizeSp * 1.12f).sp,
                         textAlign = TextAlign.Center,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.basicMarquee(),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Clip,
                     )
                 }
                 Box(
@@ -1153,7 +1156,7 @@ private fun OverlayLyricsUi(
                 ) { OverlaySkipGlyph(previous = false) }
             }
             Box(
-                modifier = Modifier.fillMaxWidth().height(8.dp)
+                modifier = Modifier.fillMaxWidth().height(16.dp)
                     .pointerInput(durationMs) {
                         detectTapGestures { tap ->
                             if (durationMs > 0 && size.width > 0) {
