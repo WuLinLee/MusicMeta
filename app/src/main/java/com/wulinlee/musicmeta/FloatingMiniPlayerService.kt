@@ -1042,7 +1042,6 @@ private fun OverlayPlayerUi(
             onOpenApp = onOpenApp,
             onDrag = onDrag,
             onDragEnd = onDragEnd,
-            controlsOnRight = lyricsOnRight,
             modifier = Modifier.align(if (lyricsOnRight) Alignment.TopStart else Alignment.TopEnd),
         )
     }
@@ -1063,13 +1062,13 @@ private fun OverlayCoverUi(
     onOpenApp: () -> Unit,
     onDrag: (Float, Float) -> Unit,
     onDragEnd: () -> Unit,
-    controlsOnRight: Boolean = false,
+    controlsOnRight: Boolean? = null,
     modifier: Modifier = Modifier,
 ) {
-    val coverShape = if (controlsOnRight) {
-        RoundedCornerShape(topStart = 18.dp, topEnd = 0.dp, bottomEnd = 0.dp, bottomStart = 18.dp)
-    } else {
-        RoundedCornerShape(topStart = 0.dp, topEnd = 18.dp, bottomEnd = 18.dp, bottomStart = 0.dp)
+    val coverShape = when (controlsOnRight) {
+        true -> RoundedCornerShape(topStart = 18.dp, topEnd = 0.dp, bottomEnd = 0.dp, bottomStart = 18.dp)
+        false -> RoundedCornerShape(topStart = 0.dp, topEnd = 18.dp, bottomEnd = 18.dp, bottomStart = 0.dp)
+        null -> RoundedCornerShape(18.dp)
     }
     Column(
         modifier = modifier.width(64.dp),
@@ -1295,7 +1294,7 @@ private fun OverlaySideTrackControls(
             modifier = Modifier.fillMaxWidth().height(32.dp)
                 .clickable { onPrevious() }
                 .semantics { contentDescription = "上一首" },
-            contentAlignment = Alignment.Center,
+            contentAlignment = Alignment.TopCenter,
         ) {
             Canvas(Modifier.size(18.dp)) {
                 val stroke = 1.7.dp.toPx()
@@ -1330,7 +1329,7 @@ private fun OverlaySideTrackControls(
             modifier = Modifier.fillMaxWidth().height(32.dp)
                 .clickable { onNext() }
                 .semantics { contentDescription = "下一首" },
-            contentAlignment = Alignment.Center,
+            contentAlignment = Alignment.BottomCenter,
         ) {
             Canvas(Modifier.size(18.dp)) {
                 val stroke = 1.7.dp.toPx()

@@ -4276,7 +4276,7 @@ private fun MiniPlayerSideTrackControls(
             modifier = Modifier.fillMaxWidth().height(32.dp)
                 .clickable { onPrevious() }
                 .semantics { contentDescription = "上一首" },
-            contentAlignment = Alignment.Center,
+            contentAlignment = Alignment.TopCenter,
         ) {
             Canvas(Modifier.size(18.dp)) {
                 val stroke = 1.7.dp.toPx()
@@ -4293,7 +4293,7 @@ private fun MiniPlayerSideTrackControls(
             modifier = Modifier.fillMaxWidth().height(32.dp)
                 .clickable { onNext() }
                 .semantics { contentDescription = "下一首" },
-            contentAlignment = Alignment.Center,
+            contentAlignment = Alignment.BottomCenter,
         ) {
             Canvas(Modifier.size(18.dp)) {
                 val stroke = 1.7.dp.toPx()
