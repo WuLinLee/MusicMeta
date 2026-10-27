@@ -192,6 +192,27 @@ class FlacMusicProvider {
         } catch (error: GdStudioRateLimitException) {
             throw error
         } catch (error: Exception) {
+            val gdSource = song.platform.removePrefix("gd:").ifBlank { "netease" }
+            if (usedGdStudio && gdSource == "netease" && isGdStudioTransientServiceError(error)) {
+                val alternatives = withContext(Dispatchers.IO) {
+                    searchFlacSite(
+                        keyword = listOf(song.title, song.artist).filter { it.isNotBlank() }.joinToString(" "),
+                        normalizedPlatform = "netease",
+                        cookie = cookie,
+                        userAgent = userAgent,
+                    )
+                }
+                val titleKey = normalizeMatch(song.title)
+                val artistKey = normalizeMatch(song.artist.substringBefore(" / "))
+                val alternative = alternatives.firstOrNull { candidate ->
+                    val candidateArtist = normalizeMatch(candidate.artist)
+                    normalizeMatch(candidate.title) == titleKey &&
+                        (candidateArtist.contains(artistKey) || artistKey.contains(candidateArtist))
+                }
+                if (alternative != null) {
+                    return resolveDownloadUrl(alternative, format, bitrate, cookie, userAgent) to false
+                }
+            }
             throw IOException(
                 "无法通过所选服务解析《${song.title}》的下载地址（${error.message ?: "未知错误"}）。可切换 API 服务后重试。",
                 error,
