@@ -81,6 +81,7 @@ internal object MusicMetaPersistence {
                 album = item.optString("album"),
                 durationMs = item.optLong("durationMs", 0L),
                 coverUri = item.optString("coverUri"),
+                modifiedAtMs = item.optLong("modifiedAtMs", 0L).coerceAtLeast(0L),
             )
         }
         return tracks.distinctBy { it.uri.toString() }
@@ -96,7 +97,8 @@ internal object MusicMetaPersistence {
                     .put("artist", track.artist)
                     .put("album", track.album)
                     .put("durationMs", track.durationMs)
-                    .put("coverUri", track.coverUri),
+                    .put("coverUri", track.coverUri)
+                    .put("modifiedAtMs", track.modifiedAtMs),
             )
         }
         val target = File(context.filesDir, LOCAL_TRACKS_FILE)
