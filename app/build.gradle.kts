@@ -7,11 +7,11 @@ android {
     namespace = "com.wulinlee.musicmeta"
     compileSdk = 35
     defaultConfig {
-        applicationId = "com.wulinlee.musicmeta"
+        applicationId = "com.wulinlee.musicmeta.preview"
         minSdk = 29
         targetSdk = 35
-        versionCode = 35
-        versionName = "1.31"
+        versionCode = 36
+        versionName = "1.31-preview"
     }
     buildTypes {
         debug {
