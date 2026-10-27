@@ -100,6 +100,30 @@ class MusicSourceConfigTest {
         assertEquals(0, FloatingOverlayPlacement.scaledPreferredLyricsWidthPx(64, 78, 1.35f))
         assertEquals(88, FLOATING_OVERLAY_GROUP_HEIGHT_DP)
         assertEquals(64 + 2 + 22, FLOATING_OVERLAY_GROUP_HEIGHT_DP)
+        assertTrue(
+            FloatingOverlayPlacement.shouldMigrateCenteredOverlayPosition(
+                savedCoverXDp = 148f,
+                displayWidthDp = 360f,
+                coverWidthDp = 64f,
+                savedLayoutVersion = 0,
+            ),
+        )
+        assertFalse(
+            FloatingOverlayPlacement.shouldMigrateCenteredOverlayPosition(
+                savedCoverXDp = 148f,
+                displayWidthDp = 360f,
+                coverWidthDp = 64f,
+                savedLayoutVersion = 1,
+            ),
+        )
+        assertFalse(
+            FloatingOverlayPlacement.shouldMigrateCenteredOverlayPosition(
+                savedCoverXDp = 18f,
+                displayWidthDp = 360f,
+                coverWidthDp = 64f,
+                savedLayoutVersion = 0,
+            ),
+        )
     }
 
     @Test
