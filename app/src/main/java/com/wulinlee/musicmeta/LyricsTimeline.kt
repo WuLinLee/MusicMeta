@@ -34,8 +34,8 @@ private fun currentTimedLine(lines: List<TimedLyricLine>, positionMs: Int): Stri
     lines.lastOrNull { it.timeMs <= positionMs.coerceAtLeast(0) }?.text ?: lines.firstOrNull()?.text.orEmpty()
 
 /**
- * Prefer timestamps on the selected lyrics. Untimed translations may use the original timeline
- * only if every row matches one-to-one; otherwise show a clear limitation, not a stuck first line.
+ * Prefer timestamps on the selected lyrics. Untimed translations use the original timeline
+ * when available, mapping rows proportionally if the providers return different row counts.
  * This is display logic only; the underlying lyric text is never removed or rewritten.
  */
 internal fun currentLyricLine(
