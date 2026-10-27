@@ -236,10 +236,10 @@ CI 会另外执行 APK 对齐、签名、签名证书验证和包名检查。构
 GitHub Actions 工作流会设置 JDK 17 和 Gradle 8.9，检查资源后运行 JVM 单元测试、构建 Release、对 APK 执行 zipalign / 签名 / 校验，再上传 APK 并创建 Release。常规 `main` push 会创建预览发布；提交信息以 `release:` 开头时走正式发布逻辑。已有同名 Release 默认不会覆盖，只有明确的 `release: refresh v...` 提交才允许刷新现有版本。
 
 正式发布前应检查：
-- `main` 最新 commit 与 `v1.29` 标签指向一致；
+- `main` 最新 commit 与 `v1.30` 标签指向一致；
 - 对应 Actions run 为 `completed / success`；
 - Release 不是草稿或预发布；
-- `MusicMeta-v1.29.apk` 资产已上传，签名及 package metadata 检查通过。
+- `MusicMeta-v1.30.apk` 资产已上传，签名及 package metadata 检查通过。
 
 ### APK 签名注意事项
 
