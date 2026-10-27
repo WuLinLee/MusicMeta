@@ -189,6 +189,19 @@ internal object FloatingOverlayPlacement {
         availableSpacePx(displayWidth, coverX, coverWidthPx, marginPx, lyricsOnRight),
     )
 
+    fun initialCoverX(
+        displayWidth: Int,
+        coverWidthPx: Int,
+        desiredLyricsWidthPx: Int,
+        gapPx: Int,
+        marginPx: Int,
+    ): Int {
+        val preferredGroupWidth = coverWidthPx + gapPx + desiredLyricsWidthPx.coerceAtLeast(0)
+        val groupLeft = ((displayWidth - preferredGroupWidth) / 2).coerceAtLeast(marginPx)
+        val maximumCoverX = (displayWidth - marginPx - coverWidthPx).coerceAtLeast(marginPx)
+        return (groupLeft + desiredLyricsWidthPx.coerceAtLeast(0) + gapPx).coerceAtMost(maximumCoverX)
+    }
+
     fun scaledPreferredLyricsWidthPx(baseGroupWidthPx: Int, nonLyricsWidthPx: Int, scale: Float = 1.35f): Int =
         ((baseGroupWidthPx - nonLyricsWidthPx).coerceAtLeast(0) * scale.coerceAtLeast(0f)).roundToInt()
 
@@ -507,8 +520,6 @@ class FloatingMiniPlayerService : LifecycleService() {
             scale = 1.35f,
         )
 
-    private fun groupWidthPx(): Int = dp(FLOATING_COVER_SIZE_DP) + lyricsPanelGapPx + lyricsPanelWidthPx
-
     private fun restoreOrInitializePosition() {
         if (initializedPosition) return
         val preferences = getSharedPreferences("music_meta_settings", Context.MODE_PRIVATE)
@@ -518,8 +529,13 @@ class FloatingMiniPlayerService : LifecycleService() {
             coverX = (storedX * density).roundToInt()
             coverY = (storedY * density).roundToInt()
         } else {
-            val groupWidth = groupWidthPx()
-            coverX = (displayWidth - groupWidth) / 2 + groupWidth - dp(FLOATING_COVER_SIZE_DP)
+            coverX = FloatingOverlayPlacement.initialCoverX(
+                displayWidth = displayWidth,
+                coverWidthPx = dp(FLOATING_COVER_SIZE_DP),
+                desiredLyricsWidthPx = desiredLyricsWidthPx(),
+                gapPx = dp(FLOATING_LYRICS_GAP_DP),
+                marginPx = dp(4),
+            )
             coverY = (displayHeight - dp(FLOATING_OVERLAY_GROUP_HEIGHT_DP + FLOATING_BOTTOM_SAFE_MARGIN_DP)).coerceAtLeast(dp(24))
         }
         initializedPosition = true
