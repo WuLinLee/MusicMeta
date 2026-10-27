@@ -2,7 +2,7 @@
 
 ## Lucide Icons
 
-MusicMeta 1.25 使用并转换了 Lucide Icons 项目的部分 SVG 图标为 Android VectorDrawable XML，文件位于 `app/src/main/res/drawable/lucide_*.xml`，并用相同图标替换播放器播放模式资源。
+MusicMeta 使用并转换了 Lucide Icons 项目的部分 SVG 图标为 Android VectorDrawable XML，文件位于 `app/src/main/res/drawable/lucide_*.xml`，并用相同图标替换播放器播放模式资源。v1.30 新增 `lucide_toggle_left.xml` / `lucide_toggle_right.xml` 用作系统媒体卡片悬浮窗开关，保留官方路径并在 VectorDrawable 中缩放显示。
 
 上游项目：https://github.com/lucide-icons/lucide  
 图标文件目录：https://github.com/lucide-icons/lucide/tree/main/icons  

@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.res.Configuration
 import android.content.Intent
 import android.graphics.PixelFormat
-import android.os.Build
 import android.os.IBinder
 import android.os.Handler
 import android.os.Looper
@@ -15,9 +14,9 @@ import android.view.Gravity
 import android.view.WindowManager
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -29,12 +28,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -43,7 +40,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Text
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -53,7 +49,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -63,9 +58,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.positionChangeIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -84,11 +77,18 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import coil.compose.AsyncImage
-import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
+
+internal const val FLOATING_COVER_SIZE_DP = 64
+internal const val FLOATING_CONTROLS_ROW_HEIGHT_DP = 22
+internal const val FLOATING_CONTROLS_GAP_DP = 2
+internal const val FLOATING_OVERLAY_GROUP_HEIGHT_DP =
+    FLOATING_COVER_SIZE_DP + FLOATING_CONTROLS_ROW_HEIGHT_DP + FLOATING_CONTROLS_GAP_DP
+private const val FLOATING_LYRICS_GAP_DP = 14
+private const val FLOATING_BOTTOM_SAFE_MARGIN_DP = 18
 
 internal fun Modifier.overlayDragGesture(
     key: Any? = Unit,
@@ -189,7 +189,28 @@ internal object FloatingOverlayPlacement {
         availableSpacePx(displayWidth, coverX, coverWidthPx, marginPx, lyricsOnRight),
     )
 
-    fun scaledPreferredLyricsWidthPx(baseGroupWidthPx: Int, nonLyricsWidthPx: Int, scale: Float = 1.2f): Int =
+    fun initialCoverX(
+        displayWidth: Int,
+        coverWidthPx: Int,
+        desiredLyricsWidthPx: Int,
+        gapPx: Int,
+        marginPx: Int,
+    ): Int {
+        val preferredGroupWidth = coverWidthPx + gapPx + desiredLyricsWidthPx.coerceAtLeast(0)
+        val groupLeft = ((displayWidth - preferredGroupWidth) / 2).coerceAtLeast(marginPx)
+        val maximumCoverX = (displayWidth - marginPx - coverWidthPx).coerceAtLeast(marginPx)
+        return (groupLeft + desiredLyricsWidthPx.coerceAtLeast(0) + gapPx).coerceAtMost(maximumCoverX)
+    }
+
+    fun shouldMigrateCenteredOverlayPosition(
+        savedCoverXDp: Float,
+        displayWidthDp: Float,
+        coverWidthDp: Float,
+        savedLayoutVersion: Int,
+    ): Boolean =
+        savedLayoutVersion < 1 && abs(savedCoverXDp - (displayWidthDp - coverWidthDp) / 2f) <= 12f
+
+    fun scaledPreferredLyricsWidthPx(baseGroupWidthPx: Int, nonLyricsWidthPx: Int, scale: Float = 1.35f): Int =
         ((baseGroupWidthPx - nonLyricsWidthPx).coerceAtLeast(0) * scale.coerceAtLeast(0f)).roundToInt()
 
     fun lyricsWidthPx(
@@ -205,24 +226,6 @@ internal object FloatingOverlayPlacement {
         (availableSpacePx(displayWidth, coverX, coverWidthPx, marginPx, lyricsOnRight) - gapPx).coerceAtLeast(0),
     )
 
-    fun windowWidthPx(
-        coverWidthPx: Int,
-        lyricsWidthPx: Int,
-        gapPx: Int,
-        expandedBounds: Boolean,
-    ): Int = coverWidthPx + if (expandedBounds) lyricsWidthPx + gapPx else 0
-
-    fun windowOriginX(
-        coverX: Int,
-        lyricsWidthPx: Int,
-        gapPx: Int,
-        lyricsOnRight: Boolean,
-        expandedBounds: Boolean,
-    ): Int = if (expandedBounds && !lyricsOnRight) {
-        coverX - lyricsWidthPx - gapPx
-    } else {
-        coverX
-    }
 }
 
 
@@ -285,7 +288,7 @@ class FloatingMiniPlayerService : LifecycleService() {
         const val COMMAND_MEDIA_PAUSE = "media_pause"
         const val COMMAND_PREVIOUS = "previous_track"
         const val COMMAND_NEXT = "next_track"
-        const val COMMAND_CLOSE_OVERLAY = "close_overlay"
+        const val COMMAND_TOGGLE_OVERLAY = "toggle_overlay"
         const val COMMAND_TOGGLE_DETAILS = "toggle_details"
         const val COMMAND_TOGGLE_TRANSLATION = "toggle_translation"
         const val COMMAND_TOGGLE_PLAYBACK_MODE = "toggle_playback_mode"
@@ -435,7 +438,6 @@ class FloatingMiniPlayerService : LifecycleService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
         if (intent?.action == ACTION_STOP || !Settings.canDrawOverlays(this)) {
-            sendCommand(this, COMMAND_CLOSE_OVERLAY)
             removeOverlayViews()
             stopSelf()
             return START_NOT_STICKY
@@ -522,33 +524,53 @@ class FloatingMiniPlayerService : LifecycleService() {
     private fun desiredLyricsWidthPx(): Int =
         FloatingOverlayPlacement.scaledPreferredLyricsWidthPx(
             baseGroupWidthPx = dp(356),
-            nonLyricsWidthPx = dp(78),
-            scale = 1.2f,
+            nonLyricsWidthPx = dp(FLOATING_COVER_SIZE_DP + FLOATING_LYRICS_GAP_DP),
+            scale = 1.35f,
         )
 
-    private fun groupWidthPx(): Int = dp(64) + lyricsPanelGapPx + lyricsPanelWidthPx
-
-    private fun lyricsWidthPx(): Int = lyricsPanelWidthPx
     private fun restoreOrInitializePosition() {
         if (initializedPosition) return
         val preferences = getSharedPreferences("music_meta_settings", Context.MODE_PRIVATE)
         val storedX = preferences.getFloat("overlay_cover_x_dp", -1f)
         val storedY = preferences.getFloat("overlay_cover_y_dp", -1f)
         if (storedX >= 0f && storedY >= 0f) {
-            coverX = (storedX * density).roundToInt()
+            val displayWidthDp = displayWidth / density
+            val shouldMigrateLegacyCenteredPosition = FloatingOverlayPlacement.shouldMigrateCenteredOverlayPosition(
+                savedCoverXDp = storedX,
+                displayWidthDp = displayWidthDp,
+                coverWidthDp = FLOATING_COVER_SIZE_DP.toFloat(),
+                savedLayoutVersion = preferences.getInt("floating_overlay_layout_version", 0),
+            )
+            coverX = if (shouldMigrateLegacyCenteredPosition) {
+                FloatingOverlayPlacement.initialCoverX(
+                    displayWidth = displayWidth,
+                    coverWidthPx = dp(FLOATING_COVER_SIZE_DP),
+                    desiredLyricsWidthPx = desiredLyricsWidthPx(),
+                    gapPx = dp(FLOATING_LYRICS_GAP_DP),
+                    marginPx = dp(4),
+                )
+            } else {
+                (storedX * density).roundToInt()
+            }
             coverY = (storedY * density).roundToInt()
         } else {
-            val groupWidth = groupWidthPx()
-            coverX = (displayWidth - groupWidth) / 2 + groupWidth - dp(64)
-            coverY = (displayHeight - dp(106)).coerceAtLeast(dp(24))
+            coverX = FloatingOverlayPlacement.initialCoverX(
+                displayWidth = displayWidth,
+                coverWidthPx = dp(FLOATING_COVER_SIZE_DP),
+                desiredLyricsWidthPx = desiredLyricsWidthPx(),
+                gapPx = dp(FLOATING_LYRICS_GAP_DP),
+                marginPx = dp(4),
+            )
+            coverY = (displayHeight - dp(FLOATING_OVERLAY_GROUP_HEIGHT_DP + FLOATING_BOTTOM_SAFE_MARGIN_DP)).coerceAtLeast(dp(24))
         }
+        preferences.edit().putInt("floating_overlay_layout_version", 1).apply()
         initializedPosition = true
         clampPosition()
     }
 
     private fun clampPosition() {
         val margin = dp(4)
-        val coverWidth = dp(64)
+        val coverWidth = dp(FLOATING_COVER_SIZE_DP)
         coverX = coverX.coerceIn(margin, (displayWidth - margin - coverWidth).coerceAtLeast(margin))
 
         val panelOnRight = FloatingOverlayPlacement.lyricsPanelOnRight(coverX, coverWidth, displayWidth)
@@ -557,7 +579,7 @@ class FloatingMiniPlayerService : LifecycleService() {
             displayWidth = displayWidth,
             coverX = coverX,
             coverWidthPx = coverWidth,
-            preferredGapPx = dp(14),
+            preferredGapPx = dp(FLOATING_LYRICS_GAP_DP),
             marginPx = margin,
             lyricsOnRight = panelOnRight,
         )
@@ -572,7 +594,7 @@ class FloatingMiniPlayerService : LifecycleService() {
             lyricsOnRight = panelOnRight,
         )
         val minimumY = dp(24)
-        val maximumY = (displayHeight - dp(106)).coerceAtLeast(minimumY)
+        val maximumY = (displayHeight - dp(FLOATING_OVERLAY_GROUP_HEIGHT_DP + FLOATING_BOTTOM_SAFE_MARGIN_DP)).coerceAtLeast(minimumY)
         coverY = coverY.coerceIn(minimumY, maximumY)
     }
     private fun savePosition() {
@@ -586,7 +608,7 @@ class FloatingMiniPlayerService : LifecycleService() {
         // Keep fractional pixels across input samples; rounding every sample discarded tiny
         // movements and made the cross-app overlay feel slightly sticky.
         val margin = dp(4)
-        val coverWidth = dp(64)
+        val coverWidth = dp(FLOATING_COVER_SIZE_DP)
         val minX = margin
         val maxX = (displayWidth - margin - coverWidth).coerceAtLeast(minX)
         val nextX = (coverX + dragRemainderX + dx).coerceIn(minX.toFloat(), maxX.toFloat())
@@ -594,7 +616,7 @@ class FloatingMiniPlayerService : LifecycleService() {
         dragRemainderX = nextX - coverX
 
         val minY = dp(24)
-        val maxY = (displayHeight - dp(106)).coerceAtLeast(minY)
+        val maxY = (displayHeight - dp(FLOATING_OVERLAY_GROUP_HEIGHT_DP + FLOATING_BOTTOM_SAFE_MARGIN_DP)).coerceAtLeast(minY)
         val nextY = (coverY + dragRemainderY + dy).coerceIn(minY.toFloat(), maxY.toFloat())
         coverY = nextY.roundToInt()
         dragRemainderY = nextY - coverY
@@ -621,7 +643,7 @@ class FloatingMiniPlayerService : LifecycleService() {
         }
 
     private fun lyricsWindowX(): Int =
-        if (lyricsPanelOnRight) coverX + dp(64) + lyricsPanelGapPx
+        if (lyricsPanelOnRight) coverX + dp(FLOATING_COVER_SIZE_DP) + lyricsPanelGapPx
         else coverX - lyricsPanelWidthPx - lyricsPanelGapPx
 
     private fun onExpansionAnimationFinished(isExpanded: Boolean) {
@@ -658,7 +680,7 @@ class FloatingMiniPlayerService : LifecycleService() {
                 )
             }
         }
-        val params = createLayoutParams(dp(64), dp(88), coverX, coverY)
+        val params = createLayoutParams(dp(FLOATING_COVER_SIZE_DP), dp(FLOATING_OVERLAY_GROUP_HEIGHT_DP), coverX, coverY)
         overlayView = view
         overlayParams = params
         try {
@@ -710,7 +732,7 @@ class FloatingMiniPlayerService : LifecycleService() {
         }
         val params = createLayoutParams(
             lyricsPanelWidthPx.coerceAtLeast(dp(1)),
-            dp(64),
+            dp(FLOATING_OVERLAY_GROUP_HEIGHT_DP),
             lyricsWindowX(),
             coverY,
         )
@@ -737,8 +759,8 @@ class FloatingMiniPlayerService : LifecycleService() {
         overlayParams?.let { params ->
             val nextX = coverX
             val nextY = coverY
-            val nextWidth = dp(64)
-            val nextHeight = dp(88)
+            val nextWidth = dp(FLOATING_COVER_SIZE_DP)
+            val nextHeight = dp(FLOATING_OVERLAY_GROUP_HEIGHT_DP)
             if (params.x != nextX || params.y != nextY ||
                 params.width != nextWidth || params.height != nextHeight
             ) {
@@ -753,7 +775,7 @@ class FloatingMiniPlayerService : LifecycleService() {
             val nextX = lyricsWindowX()
             val nextY = coverY
             val nextWidth = lyricsPanelWidthPx.coerceAtLeast(dp(1))
-            val nextHeight = dp(64)
+            val nextHeight = dp(FLOATING_OVERLAY_GROUP_HEIGHT_DP)
             if (params.x != nextX || params.y != nextY ||
                 params.width != nextWidth || params.height != nextHeight
             ) {
@@ -852,113 +874,6 @@ private fun OverlayLyricsWindowUi(
 }
 
 @Composable
-private fun OverlayPlayerUi(
-    expanded: Boolean,
-    windowBoundsExpanded: Boolean,
-    lyricsOnRight: Boolean,
-    lyricsWidthDp: Float,
-    lyricsGapDp: Float,
-    lyricsFontSizeSp: Float,
-    onExpansionAnimationFinished: (Boolean) -> Unit,
-    onWindowBoundsCompositionReady: () -> Unit,
-    coverUrl: String,
-    isPlaying: Boolean,
-    isLoading: Boolean,
-    positionMs: Int,
-    durationMs: Int,
-    onTogglePlay: () -> Unit,
-    onLongPress: () -> Unit,
-    onClose: () -> Unit,
-    onTogglePlaybackMode: () -> Unit,
-    playbackMode: Int,
-    onOpenApp: () -> Unit,
-    onDrag: (Float, Float) -> Unit,
-    originalLyrics: String,
-    translatedLyrics: String,
-    showTranslation: Boolean,
-    onToggleTranslation: () -> Unit,
-    onSeek: (Int) -> Unit,
-    onPrevious: () -> Unit,
-    onNext: () -> Unit,
-    onCircularDrag: () -> Unit,
-    onDragEnd: () -> Unit,
-) {
-    val haptics = LocalHapticFeedback.current
-    val handleLongPress = {
-        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-        onLongPress()
-    }
-    val expansionProgress by animateFloatAsState(
-        targetValue = if (expanded) 1f else 0f,
-        animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
-        finishedListener = { onExpansionAnimationFinished(expanded) },
-        label = "lyricsPanelExpansion",
-    )
-
-    // WindowManager bounds are fixed through animation: only lyrics alpha/scale changes,
-    // so the cover's absolute X coordinate remains stable on both sides of the screen.
-    val groupWidthDp = if (windowBoundsExpanded) 64f + lyricsWidthDp + lyricsGapDp else 64f
-    SideEffect { onWindowBoundsCompositionReady() }
-    val lyricsModifier = Modifier
-        .offset(x = if (lyricsOnRight) (64f + lyricsGapDp).dp else 0.dp)
-        .width(lyricsWidthDp.dp)
-        .height(64.dp)
-        .graphicsLayer {
-            scaleX = expansionProgress
-            alpha = expansionProgress
-            transformOrigin = if (lyricsOnRight) {
-                TransformOrigin(0f, 0.5f)
-            } else {
-                TransformOrigin(1f, 0.5f)
-            }
-        }
-
-    Box(
-        modifier = Modifier
-            .width(groupWidthDp.dp)
-            .height(88.dp)
-            .clipToBounds(),
-    ) {
-        if (windowBoundsExpanded && expansionProgress > 0.001f) {
-            OverlayLyricsUi(
-                originalLyrics = originalLyrics,
-                translatedLyrics = translatedLyrics,
-                showTranslation = showTranslation,
-                positionMs = positionMs,
-                durationMs = durationMs,
-                onToggleTranslation = onToggleTranslation,
-                onSeek = onSeek,
-                onPrevious = onPrevious,
-                onNext = onNext,
-                onDrag = onDrag,
-                onCircularDrag = onCircularDrag,
-                onLongPress = handleLongPress,
-                onDragEnd = onDragEnd,
-                lyricsFontSizeSp = lyricsFontSizeSp,
-                modifier = lyricsModifier,
-            )
-        }
-
-        OverlayCoverUi(
-            coverUrl = coverUrl,
-            isPlaying = isPlaying,
-            isLoading = isLoading,
-            positionMs = positionMs,
-            durationMs = durationMs,
-            onTogglePlay = onTogglePlay,
-            onLongPress = handleLongPress,
-            onClose = onClose,
-            onTogglePlaybackMode = onTogglePlaybackMode,
-            playbackMode = playbackMode,
-            onOpenApp = onOpenApp,
-            onDrag = onDrag,
-            onDragEnd = onDragEnd,
-            modifier = Modifier.align(if (lyricsOnRight) Alignment.TopStart else Alignment.TopEnd),
-        )
-    }
-}
-
-@Composable
 private fun OverlayCoverUi(
     coverUrl: String,
     isPlaying: Boolean,
@@ -976,13 +891,13 @@ private fun OverlayCoverUi(
     modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier = modifier.width(64.dp),
+        modifier = modifier.width(FLOATING_COVER_SIZE_DP.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+        verticalArrangement = Arrangement.spacedBy(FLOATING_CONTROLS_GAP_DP.dp),
     ) {
         Box(
             modifier = Modifier
-                .size(64.dp)
+                .size(FLOATING_COVER_SIZE_DP.dp)
                 .clip(RoundedCornerShape(18.dp))
                 .background(Color(0xFF171E1A))
                 .border(1.dp, Color(0xFF2B3730), RoundedCornerShape(18.dp))
@@ -1015,7 +930,7 @@ private fun OverlayCoverUi(
             }
         }
         Row(
-            modifier = Modifier.width(64.dp).height(22.dp),
+            modifier = Modifier.width(FLOATING_COVER_SIZE_DP.dp).height(FLOATING_CONTROLS_ROW_HEIGHT_DP.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
@@ -1051,7 +966,7 @@ private fun OverlayCoverUi(
                 textAlign = TextAlign.Center,
             )
             Box(
-                modifier = Modifier.size(22.dp)
+                modifier = Modifier.size(FLOATING_CONTROLS_ROW_HEIGHT_DP.dp)
                     .clickable { onTogglePlay() }
                     .semantics {
                         contentDescription = if (isPlaying) "暂停播放" else "继续播放"
@@ -1089,18 +1004,20 @@ private fun OverlayLyricsUi(
     }
     val progress = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
     Card(
-        modifier = modifier.fillMaxSize().overlayDragGesture(
-            onDrag = onDrag,
-            onCircularDrag = onCircularDrag,
-            onDragEnd = onDragEnd,
-        ),
+        modifier = modifier.fillMaxSize()
+            .border(1.dp, Color(0x779FF0C9), RoundedCornerShape(16.dp))
+            .overlayDragGesture(
+                onDrag = onDrag,
+                onCircularDrag = onCircularDrag,
+                onDragEnd = onDragEnd,
+            ),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF17211F)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xB81A2521)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 10.dp),
     ) {
         Column(
             modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp, vertical = 2.dp),
-            verticalArrangement = Arrangement.spacedBy(0.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Row(
@@ -1109,7 +1026,8 @@ private fun OverlayLyricsUi(
                 horizontalArrangement = Arrangement.spacedBy(3.dp),
             ) {
                 Box(
-                    modifier = Modifier.width(20.dp).height(28.dp).clip(CircleShape)
+                    modifier = Modifier.width(24.dp).height(40.dp).clip(CircleShape)
+                        .background(Color(0x50384F47))
                         .clickable { onPrevious() }
                         .semantics { contentDescription = "按当前播放队列播放上一首" },
                     contentAlignment = Alignment.Center,
@@ -1117,7 +1035,8 @@ private fun OverlayLyricsUi(
                 Box(
                     modifier = Modifier.weight(1f).fillMaxSize()
                         .clip(RoundedCornerShape(9.dp))
-                        .background(Color(0xFF243631))
+                        .background(Color(0x7830443C))
+                        .border(1.dp, Color(0x559FF0C9), RoundedCornerShape(9.dp))
                         .pointerInput(Unit) {
                             detectTapGestures(
                                 onTap = { onToggleTranslation() },
@@ -1141,19 +1060,27 @@ private fun OverlayLyricsUi(
                         fontSize = lyricsFontSizeSp.sp,
                         lineHeight = (lyricsFontSizeSp * 1.12f).sp,
                         textAlign = TextAlign.Center,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.basicMarquee(
+                            iterations = Int.MAX_VALUE,
+                            initialDelayMillis = 700,
+                            repeatDelayMillis = 900,
+                            velocity = 24.dp,
+                        ),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Clip,
                     )
                 }
                 Box(
-                    modifier = Modifier.width(20.dp).height(28.dp).clip(CircleShape)
+                    modifier = Modifier.width(24.dp).height(40.dp).clip(CircleShape)
+                        .background(Color(0x50384F47))
                         .clickable { onNext() }
                         .semantics { contentDescription = "按当前播放队列播放下一首" },
                     contentAlignment = Alignment.Center,
                 ) { OverlaySkipGlyph(previous = false) }
             }
             Box(
-                modifier = Modifier.fillMaxWidth().height(8.dp)
+                modifier = Modifier.fillMaxWidth().height(16.dp)
                     .pointerInput(durationMs) {
                         detectTapGestures { tap ->
                             if (durationMs > 0 && size.width > 0) {

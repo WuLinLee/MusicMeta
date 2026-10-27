@@ -11,7 +11,6 @@ import android.net.Uri
 import android.provider.Settings
 import android.media.AudioAttributes
 import android.media.MediaPlayer
-import android.provider.MediaStore
 import android.os.Bundle
 import android.os.Build
 import android.widget.Toast
@@ -97,8 +96,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
@@ -117,7 +114,6 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.semantics.contentDescription
@@ -473,7 +469,6 @@ private fun MusicMetaApp() {
     var isDownloading by remember { mutableStateOf(false) }
     var verificationOpen by remember { mutableStateOf(false) }
     var floatingOverlayEnabled by remember { mutableStateOf(folderPreferences.getBoolean("floating_overlay_enabled", Settings.canDrawOverlays(context))) }
-    var floatingOverlayDismissedForSession by remember { mutableStateOf(false) }
     var floatingLyricsExpandedByDefault by remember {
         mutableStateOf(folderPreferences.getBoolean("floating_lyrics_expanded_by_default", true))
     }
@@ -1494,9 +1489,22 @@ private fun MusicMetaApp() {
     SideEffect {
         FloatingMiniPlayerBridge.onCommand = { command, seekPosition ->
             when (command) {
-                FloatingMiniPlayerService.COMMAND_CLOSE_OVERLAY -> {
-                    floatingOverlayDismissedForSession = true
-                    FloatingMiniPlayerService.stop(context)
+                FloatingMiniPlayerService.COMMAND_TOGGLE_OVERLAY -> {
+                    if (floatingOverlayEnabled) {
+                        floatingOverlayEnabled = false
+                        folderPreferences.edit().putBoolean("floating_overlay_enabled", false).apply()
+                        FloatingMiniPlayerService.stop(context)
+                        Toast.makeText(context, "已关闭悬浮窗，试听继续播放。", Toast.LENGTH_SHORT).show()
+                    } else if (Settings.canDrawOverlays(context)) {
+                        floatingOverlayEnabled = true
+                        folderPreferences.edit().putBoolean("floating_overlay_enabled", true).apply()
+                        Toast.makeText(context, "已开启悬浮窗。", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, "需要先授予显示在其他应用上层的权限。", Toast.LENGTH_SHORT).show()
+                        overlayPermissionLauncher.launch(
+                            Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}")),
+                        )
+                    }
                 }
                 FloatingMiniPlayerService.COMMAND_TOGGLE_PLAY -> previewSong?.let { playPreview(it) }
                 FloatingMiniPlayerService.COMMAND_MEDIA_PLAY -> {
@@ -1550,7 +1558,6 @@ private fun MusicMetaApp() {
 
     LaunchedEffect(
         floatingOverlayEnabled,
-        floatingOverlayDismissedForSession,
         previewSong?.platform,
         previewSong?.id,
         previewCoverUrl,
@@ -1568,7 +1575,7 @@ private fun MusicMetaApp() {
         floatingLyricsFontSizeSp,
     ) {
         val song = previewSong
-        if (floatingOverlayEnabled && !floatingOverlayDismissedForSession && song != null && Settings.canDrawOverlays(context)) {
+        if (floatingOverlayEnabled && song != null && Settings.canDrawOverlays(context)) {
             FloatingMiniPlayerService.showOrUpdate(
                 context = context,
                 coverUrl = previewCoverUrl.ifBlank { song.coverUrl },
@@ -1600,7 +1607,7 @@ private fun MusicMetaApp() {
 
     LaunchedEffect(floatingOverlayEnabled, previewSong?.id, previewPositionMs) {
         val song = previewSong
-        if (floatingOverlayEnabled && !floatingOverlayDismissedForSession && song != null && Settings.canDrawOverlays(context)) {
+        if (floatingOverlayEnabled && song != null && Settings.canDrawOverlays(context)) {
             // Progress uses a lightweight service action, not a foreground-service restart.
             FloatingMiniPlayerService.updatePosition(context, previewPositionMs)
         }
@@ -1642,6 +1649,7 @@ private fun MusicMetaApp() {
         previewDurationMs,
         isPreviewPlaying,
         isPreviewLoading,
+        floatingOverlayEnabled,
         playbackMode,
     ) {
         val song = previewSong
@@ -1658,6 +1666,7 @@ private fun MusicMetaApp() {
                 positionMs = previewPositionMs,
                 isPlaying = isPreviewPlaying,
                 isLoading = isPreviewLoading,
+                overlayEnabled = floatingOverlayEnabled,
                 playbackMode = playbackMode,
             )
         }
@@ -1684,8 +1693,6 @@ private fun MusicMetaApp() {
     }
 
     LaunchedEffect(floatingOverlayEnabled) {
-        // Explicit global off/on toggles restore an overlay dismissed from media controls.
-        floatingOverlayDismissedForSession = false
         if (floatingOverlayEnabled && !Settings.canDrawOverlays(context)) {
             // Keep the preference: granting the permission again should restore the overlay.
             floatingOverlayEnabled = false

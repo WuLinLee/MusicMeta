@@ -2,17 +2,17 @@
 
 MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 Android 应用：读取可公开访问的网易云歌单，搜索并核对音源，下载音频，并尽可能补齐封面、歌词和音频标签。
 
-> **当前版本：1.29** · `versionCode = 33`  
+> **当前版本：1.30** · `versionCode = 34`  
 > 应用 ID：`com.wulinlee.musicmeta` · 最低 Android：10（API 29）· 目标 SDK：35  
 > 技术栈：Kotlin、Jetpack Compose、Material 3、Coroutines、OkHttp、Coil、jaudiotagger。
 
 - **正式版发布页：** [GitHub Releases](https://github.com/WuLinLee/MusicMeta/releases)
-- **v1.29 APK 直链：** [MusicMeta-v1.29.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.29/MusicMeta-v1.29.apk)
-- **上一版 v1.28：** [MusicMeta-v1.28.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.28/MusicMeta-v1.28.apk)
-- **历史版 v1.27：** [MusicMeta-v1.27.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.27/MusicMeta-v1.27.apk)
+- **v1.30 APK 直链：** [MusicMeta-v1.30.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.30/MusicMeta-v1.30.apk)
+- **上一版 v1.29：** [MusicMeta-v1.29.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.29/MusicMeta-v1.29.apk)
+- **历史版 v1.28：** [MusicMeta-v1.28.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.28/MusicMeta-v1.28.apk)
 - **构建记录：** [GitHub Actions](https://github.com/WuLinLee/MusicMeta/actions)
 
-v1.29 调整系统媒体卡片：标题优先显示当前歌词（遵循“优先显示翻译歌词”设置），媒体操作改为关闭悬浮窗而非静音，关闭后试听继续；同时移除悬浮服务的第二条“正在播放试听”常驻通知。v1.28 引入系统媒体卡片与 GD Studio 临时故障回退，v1.27 修复悬浮歌词布局、歌词双行显示和本地原文 / 译文切换，v1.26 引入本地封面与歌词离线读取、可调字体、封面点击排入下一首和交互教程。下载链接只有在对应 Release 资产创建成功后才可用。版本号、Git 标签、Actions 构建结果和 Release 附件是不同的事实；请以对应提交的成功构建结果和实际资产为准，不要仅凭本文件中的版本号判断已发布。
+v1.30 为悬浮歌词栏加入真正的横向跑马灯、扩大触控区域并调整面板尺寸；系统媒体卡片上的悬浮窗按钮改为小尺寸开关图标，直接同步全局设置。系统媒体标题会收到完整当前歌词，但锁屏 / 通知栏文字的滚动方式仍由 Android System UI 和设备厂商控制。v1.29 移除重复通知并加入歌词媒体标题，v1.28 引入系统媒体卡片与 GD Studio 临时故障回退，v1.27 修复悬浮歌词布局和本地原文 / 译文切换。下载链接只有在对应 Release 资产创建成功后才可用。版本号、Git 标签、Actions 构建结果和 Release 附件是不同的事实；请以对应提交的成功构建结果和实际资产为准，不要仅凭本文件中的版本号判断已发布。
 
 ## 目录
 
@@ -38,7 +38,7 @@ v1.29 调整系统媒体卡片：标题优先显示当前歌词（遵循“优�
 - **音频格式：** 支持选择 MP3 128 kbps、MP3 320 kbps 或 FLAC 来源。应用不把低规格音频转码或伪装成无损；实际质量取决于音源本身。
 - **本地信息复制：** 长按本地歌曲可复制歌曲名和艺人名。
 - **错误报告：** 页面上的错误报告入口可复制最近捕获的错误信息；生成的报告会隐藏 URL 及可能的敏感字段。
-- **锁屏与通知栏媒体控制：** 系统媒体卡片优先显示当前活动歌词（遵循“优先显示翻译歌词”设置），提供上一首 / 播放暂停 / 下一首控制及“关闭悬浮窗”操作。关闭悬浮窗不会停止试听；兼容的蓝牙耳机和车机媒体键通过同一 MediaSession 控制当前播放器。通知栏只保留系统媒体卡片，不额外显示悬浮服务的“正在播放试听”常驻通知。
+- **锁屏与通知栏媒体控制：** 系统媒体卡片优先显示当前活动歌词（遵循“优先显示翻译歌词”设置），提供上一首 / 播放暂停 / 下一首和悬浮窗开关。开关直接修改全局悬浮窗设置，不影响当前播放状态；通知栏只保留系统媒体卡片。系统 UI 是否滚动长标题由 Android / 设备厂商决定，应用完整提供歌词元数据，但不能强制所有系统卡片使用跑马灯。
 - **站点验证：** 需要时可在应用内 WebView 手动完成来源站要求的验证；应用不绕过验证码、登录限制或其他访问控制。
 
 ## 使用说明
@@ -50,6 +50,15 @@ v1.29 调整系统媒体卡片：标题优先显示当前歌词（遵循“优�
 5. 在设置中选择 API 服务（GD Studio 或 flac.music.hi.cn）、次级音乐源、音质、保存目录及悬浮歌词偏好。
 
 首次使用跨应用悬浮播放器时，需要在 Android 系统设置中授予“显示在其他应用上层”权限。撤销权限后，跨应用浮层不可用。
+
+## v1.30 本次改进
+
+- **展开悬浮窗整体对齐：** 歌词面板宽度比例提升到 1.35，并设为 88dp 高；它的上沿与 64dp 封面顶部对齐，下沿与封面下方三合一播放模式 / 时间 / 播放暂停控制行的底部齐平。首次显示时按整个组合宽度计算位置，窄屏尽量占满可用宽度；旧版保存位置若只是默认居中，会迁移到新布局位置，手动拖到其他位置的坐标仍会保留。歌词与进度条间隔 4dp，进度条触控高度由 8dp 提高到 16dp。
+- **悬浮歌词不再省略：** 歌词行使用 Compose `basicMarquee` 平滑慢速横向滚动，长句会慢慢滑过而不是用省略号截断；展开栏采用约 72% 不透明度的深色半透明底、细亮边框与较亮的半透明歌词内层，保留背景层次但维持文字对比度。
+- **媒体按钮变成全局开关：** 使用 Lucide `toggle-left` / `toggle-right` 开源图标，并将图形缩小到标准 24dp 图标画布约一半；点击会直接切换 `floating_overlay_enabled` 全局设置，播放继续不受影响。系统媒体卡片按钮状态跟随设置更新。
+- **系统歌词元数据：** 持续向 `MediaSession` 提供完整当前歌词作为标题；系统 UI 的滚动 / 截断由 Android 和 OEM 决定，不使用高频伪滚动来制造闪烁。
+- **代码逻辑检查：** 删除 v1.29 临时的会话级隐藏状态，避免它与全局设置出现两套真值；新增长歌词元数据与开关标签回归测试。
+- **文档与版本：** 更新 README、第三方图标声明及正式 Release 记录；版本号 `1.30` / `versionCode = 34`。
 
 ## v1.29 本次改进
 
@@ -220,17 +229,17 @@ CI 会另外执行 APK 对齐、签名、签名证书验证和包名检查。构
 
 ## 版本与签名
 
-- 当前版本名：`1.29`
-- 当前版本号：`versionCode = 33`
+- 当前版本名：`1.30`
+- 当前版本号：`versionCode = 34`
 - Gradle 版本元数据位于 `app/build.gradle.kts`；用户可见变更记录位于 `RELEASE_NOTES.md`。
 
 GitHub Actions 工作流会设置 JDK 17 和 Gradle 8.9，检查资源后运行 JVM 单元测试、构建 Release、对 APK 执行 zipalign / 签名 / 校验，再上传 APK 并创建 Release。常规 `main` push 会创建预览发布；提交信息以 `release:` 开头时走正式发布逻辑。已有同名 Release 默认不会覆盖，只有明确的 `release: refresh v...` 提交才允许刷新现有版本。
 
 正式发布前应检查：
-- `main` 最新 commit 与 `v1.29` 标签指向一致；
+- `main` 最新 commit 与 `v1.30` 标签指向一致；
 - 对应 Actions run 为 `completed / success`；
 - Release 不是草稿或预发布；
-- `MusicMeta-v1.29.apk` 资产已上传，签名及 package metadata 检查通过。
+- `MusicMeta-v1.30.apk` 资产已上传，签名及 package metadata 检查通过。
 
 ### APK 签名注意事项
 
