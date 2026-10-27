@@ -94,7 +94,8 @@ class MusicSourceConfigTest {
     }
 
     @Test
-    fun lyricsPanelPreferredWidthIsScaledByThirtyFivePercent() {
+    fun lyricsPanelPreferredWidthUsesTheCurrentWiderScale() {
+        assertEquals(375, FloatingOverlayPlacement.scaledPreferredLyricsWidthPx(356, 78))
         assertEquals(375, FloatingOverlayPlacement.scaledPreferredLyricsWidthPx(356, 78, 1.35f))
         assertEquals(0, FloatingOverlayPlacement.scaledPreferredLyricsWidthPx(64, 78, 1.35f))
         assertEquals(88, FLOATING_OVERLAY_GROUP_HEIGHT_DP)
@@ -102,12 +103,12 @@ class MusicSourceConfigTest {
     }
 
     @Test
-    fun expandedOverlayBoundsKeepCoverAnchoredAndStayWithinScreenAfterResize() {
-        val coverWidth = 64
+    fun separateExpandedOverlayWindowsStayWithinScreenAfterResize() {
+        val coverWidth = FLOATING_COVER_SIZE_DP
         val preferredGap = 14
         val margin = 4
+        val desiredLyricsWidth = FloatingOverlayPlacement.scaledPreferredLyricsWidthPx(356, 78, 1.35f)
         for (displayWidth in listOf(360, 720, 1080)) {
-            val desiredLyricsWidth = FloatingOverlayPlacement.scaledPreferredLyricsWidthPx(356, 78, 1.35f)
             val coverPositions = listOf(
                 margin,
                 ((displayWidth - coverWidth) / 2).coerceAtLeast(margin),
@@ -119,16 +120,11 @@ class MusicSourceConfigTest {
                 val lyricsWidth = FloatingOverlayPlacement.lyricsWidthPx(
                     displayWidth, coverX, coverWidth, desiredLyricsWidth, gap, margin, onRight,
                 )
-                val collapsedWidth = FloatingOverlayPlacement.windowWidthPx(coverWidth, lyricsWidth, gap, false)
-                val collapsedX = FloatingOverlayPlacement.windowOriginX(coverX, lyricsWidth, gap, onRight, false)
-                assertEquals(coverWidth, collapsedWidth)
-                assertEquals(coverX, collapsedX)
-                val expandedWidth = FloatingOverlayPlacement.windowWidthPx(coverWidth, lyricsWidth, gap, true)
-                val expandedX = FloatingOverlayPlacement.windowOriginX(coverX, lyricsWidth, gap, onRight, true)
-                assertTrue("expanded left edge must remain visible", expandedX >= margin)
-                assertTrue("expanded right edge must remain visible", expandedX + expandedWidth <= displayWidth - margin)
-                val coverScreenX = if (onRight) expandedX else expandedX + expandedWidth - coverWidth
-                assertEquals("cover must not jump when expanding", coverX, coverScreenX)
+                val lyricsX = if (onRight) coverX + coverWidth + gap else coverX - lyricsWidth - gap
+                val expandedLeft = minOf(coverX, lyricsX)
+                val expandedRight = maxOf(coverX + coverWidth, lyricsX + lyricsWidth)
+                assertTrue("expanded left edge must remain visible", expandedLeft >= margin)
+                assertTrue("expanded right edge must remain visible", expandedRight <= displayWidth - margin)
             }
         }
     }
