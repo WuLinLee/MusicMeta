@@ -26,10 +26,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -2747,18 +2745,20 @@ private fun MusicMetaApp() {
                     Card(
                         Modifier.fillMaxWidth()
                             .then(if (isLocalHighlight) Modifier.border(1.5.dp, Accent, rowShape) else Modifier)
-                            .combinedClickable(
-                                onClick = {
-                                    val song = FlacSiteSong(track.uri.toString(), "local", track.title, track.artist, track.album, "", track.durationMs.toString(), track.coverUri)
-                                    highlightedLocalTrackUri = track.uri.toString()
-                                    previewQueue = localVisible.map { FlacSiteSong(it.uri.toString(), "local", it.title, it.artist, it.album, "", it.durationMs.toString(), it.coverUri) }
-                                    previewCurrentTrack = null
-                                    previewCurrentPlaylistId = null
-                                    selectedTrack = null
-                                    playPreview(song)
-                                },
-                                onLongClick = { copySongAndArtist(track.title, track.artist) },
-                            ),
+                            .pointerInput(track.uri) {
+                                detectTapGestures(
+                                    onTap = {
+                                        val song = FlacSiteSong(track.uri.toString(), "local", track.title, track.artist, track.album, "", track.durationMs.toString(), track.coverUri)
+                                        highlightedLocalTrackUri = track.uri.toString()
+                                        previewQueue = localVisible.map { FlacSiteSong(it.uri.toString(), "local", it.title, it.artist, it.album, "", it.durationMs.toString(), it.coverUri) }
+                                        previewCurrentTrack = null
+                                        previewCurrentPlaylistId = null
+                                        selectedTrack = null
+                                        playPreview(song)
+                                    },
+                                    onLongPress = { copySongAndArtist(track.title, track.artist) },
+                                )
+                            },
                         shape = rowShape,
                         colors = CardDefaults.cardColors(containerColor = if (isLocalHighlight) SoftAccent else SurfaceColor),
                     ) {
@@ -4177,7 +4177,6 @@ private fun HomeGlyph() {
 }
 
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TrackRow(
     track: MusicTrack,
