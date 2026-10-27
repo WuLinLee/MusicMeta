@@ -57,7 +57,6 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.StrokeCap
@@ -405,7 +404,7 @@ class FloatingMiniPlayerService : LifecycleService() {
     private var overlayParams: WindowManager.LayoutParams? = null
     private var lyricsOverlayView: ComposeView? = null
     private var lyricsOverlayParams: WindowManager.LayoutParams? = null
-    private val sideControlsWidthDp = 34
+    private val sideControlsWidthDp = 28
 
     private var coverUrl by mutableStateOf("")
     private var title by mutableStateOf("")
@@ -570,7 +569,7 @@ class FloatingMiniPlayerService : LifecycleService() {
             displayWidth = displayWidth,
             coverWidthPx = dp(64),
             desiredLyricsWidthPx = desiredLyricsWidthPx(),
-            preferredGapPx = dp(14),
+            preferredGapPx = dp(2),
             marginPx = dp(4),
             sideControlsWidthPx = dp(sideControlsWidthDp),
         )
@@ -614,7 +613,7 @@ class FloatingMiniPlayerService : LifecycleService() {
             displayWidth = displayWidth,
             coverX = coverX,
             coverWidthPx = coverWidth,
-            preferredGapPx = dp(14),
+            preferredGapPx = dp(2),
             marginPx = margin,
             lyricsOnRight = panelOnRight,
         )
@@ -908,7 +907,7 @@ private fun OverlayLyricsWindowUi(
                 onCircularDrag = onCircularDrag,
                 onLongPress = onLongPress,
                 onDragEnd = onDragEnd,
-                modifier = Modifier.offset(x = lyricsOffset).width(lyricsWidthDp.dp).height(64.dp)
+                modifier = Modifier.offset(x = lyricsOffset, y = 4.dp).width(lyricsWidthDp.dp).height(64.dp)
                     .graphicsLayer {
                         alpha = progress.value
                         scaleX = progress.value
@@ -919,7 +918,7 @@ private fun OverlayLyricsWindowUi(
         OverlaySideTrackControls(
             onPrevious = onPrevious,
             onNext = onNext,
-            modifier = Modifier.width(sideWidth).height(64.dp)
+            modifier = Modifier.width(sideWidth).height(64.dp).offset(y = 4.dp)
                 .align(if (lyricsOnRight) Alignment.TopStart else Alignment.TopEnd),
         )
     }
@@ -1211,7 +1210,7 @@ private fun OverlayLyricsUi(
                 )
             }
             Box(
-                modifier = Modifier.fillMaxWidth(0.94f).height(18.dp)
+                modifier = Modifier.fillMaxWidth(0.94f).height(18.dp).offset(y = 2.dp)
                     .pointerInput(durationMs) {
                         detectTapGestures { tap ->
                             if (durationMs > 0 && size.width > 0) {
@@ -1261,41 +1260,80 @@ private fun OverlaySideTrackControls(
     onNext: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val arrowColor = Color(0xFF9FF0C9)
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
+        verticalArrangement = Arrangement.spacedBy(1.dp, Alignment.CenterVertically),
     ) {
         Box(
-            modifier = Modifier.size(width = 34.dp, height = 30.dp)
+            modifier = Modifier.size(28.dp)
                 .clickable { onPrevious() }
                 .semantics { contentDescription = "上一首" },
             contentAlignment = Alignment.Center,
         ) {
-            Canvas(Modifier.size(width = 13.dp, height = 9.dp)) {
-                val triangle = Path().apply {
-                    moveTo(size.width / 2f, 0f)
-                    lineTo(size.width, size.height)
-                    lineTo(0f, size.height)
-                    close()
-                }
-                drawPath(triangle, Color(0xFF9FF0C9))
+            Canvas(Modifier.size(18.dp)) {
+                val stroke = 1.7.dp.toPx()
+                val centerX = size.width / 2f
+                val top = 1.75.dp.toPx()
+                val bottom = size.height - 1.75.dp.toPx()
+                val headDepth = 5.5.dp.toPx()
+                drawLine(
+                    arrowColor,
+                    Offset(centerX, bottom),
+                    Offset(centerX, top + headDepth),
+                    strokeWidth = stroke,
+                    cap = StrokeCap.Round,
+                )
+                drawLine(
+                    arrowColor,
+                    Offset(centerX, top),
+                    Offset(centerX - headDepth, top + headDepth),
+                    strokeWidth = stroke,
+                    cap = StrokeCap.Round,
+                )
+                drawLine(
+                    arrowColor,
+                    Offset(centerX, top),
+                    Offset(centerX + headDepth, top + headDepth),
+                    strokeWidth = stroke,
+                    cap = StrokeCap.Round,
+                )
             }
         }
         Box(
-            modifier = Modifier.size(width = 34.dp, height = 30.dp)
+            modifier = Modifier.size(28.dp)
                 .clickable { onNext() }
                 .semantics { contentDescription = "下一首" },
             contentAlignment = Alignment.Center,
         ) {
-            Canvas(Modifier.size(width = 13.dp, height = 9.dp)) {
-                val triangle = Path().apply {
-                    moveTo(0f, 0f)
-                    lineTo(size.width, 0f)
-                    lineTo(size.width / 2f, size.height)
-                    close()
-                }
-                drawPath(triangle, Color(0xFF9FF0C9))
+            Canvas(Modifier.size(18.dp)) {
+                val stroke = 1.7.dp.toPx()
+                val centerX = size.width / 2f
+                val top = 1.75.dp.toPx()
+                val bottom = size.height - 1.75.dp.toPx()
+                val headDepth = 5.5.dp.toPx()
+                drawLine(
+                    arrowColor,
+                    Offset(centerX, top),
+                    Offset(centerX, bottom - headDepth),
+                    strokeWidth = stroke,
+                    cap = StrokeCap.Round,
+                )
+                drawLine(
+                    arrowColor,
+                    Offset(centerX, bottom),
+                    Offset(centerX - headDepth, bottom - headDepth),
+                    strokeWidth = stroke,
+                    cap = StrokeCap.Round,
+                )
+                drawLine(
+                    arrowColor,
+                    Offset(centerX, bottom),
+                    Offset(centerX + headDepth, bottom - headDepth),
+                    strokeWidth = stroke,
+                    cap = StrokeCap.Round,
+                )
             }
         }
     }

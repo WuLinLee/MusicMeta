@@ -97,12 +97,12 @@ class MusicSourceConfigTest {
     @Test
     fun expandedOverlayBoundsKeepCoverAnchoredAndStayWithinScreenAfterResize() {
         val coverWidth = 64
-        val preferredGap = 14
+        val preferredGap = 2
         val margin = 4
-        val sideControlsWidth = 34
+        val sideControlsWidth = 28
         for (displayWidth in listOf(360, 720, 1080)) {
             val desiredGroupWidth = minOf(368, (displayWidth - 8).coerceAtLeast(64))
-            val desiredLyricsWidth = (desiredGroupWidth - 78).coerceAtLeast(0)
+            val desiredLyricsWidth = (desiredGroupWidth - coverWidth - preferredGap - sideControlsWidth).coerceAtLeast(0)
             val coverPositions = listOf(
                 margin,
                 ((displayWidth - coverWidth) / 2).coerceAtLeast(margin),
@@ -138,9 +138,9 @@ class MusicSourceConfigTest {
     fun defaultOverlayCentersTheWholeGroupAndMaximizesLyricsWidth() {
         val coverWidth = 64
         val desiredLyricsWidth = 334
-        val gap = 14
+        val gap = 2
         val margin = 4
-        val controlsWidth = 34
+        val controlsWidth = 28
         for (displayWidth in listOf(360, 390, 720, 1080)) {
             val coverX = FloatingOverlayPlacement.centeredCoverXForExpandedGroup(
                 displayWidth = displayWidth,
@@ -169,6 +169,18 @@ class MusicSourceConfigTest {
             assertTrue("expanded group must fit the right margin", right <= displayWidth - margin)
             assertEquals("whole group should be centered", displayWidth, left + right)
         }
+    }
+
+    @Test
+    fun overlayControlsStayCloseToCoverAndKeepUsableTouchArea() {
+        assertEquals(2, FloatingOverlayPlacement.panelGapPx(
+            displayWidth = 1080,
+            coverX = 200,
+            coverWidthPx = 192,
+            preferredGapPx = 2,
+            marginPx = 12,
+            lyricsOnRight = true,
+        ))
     }
 
     @Test
