@@ -571,7 +571,6 @@ class FloatingMiniPlayerService : LifecycleService() {
             preferredGapPx = dp(14),
             marginPx = margin,
             lyricsOnRight = panelOnRight,
-            reservedSideControlsPx = dp(sideControlsWidthDp),
         )
         lyricsPanelGapPx = gap
         lyricsPanelWidthPx = FloatingOverlayPlacement.lyricsWidthPx(
@@ -582,6 +581,7 @@ class FloatingMiniPlayerService : LifecycleService() {
             gapPx = gap,
             marginPx = margin,
             lyricsOnRight = panelOnRight,
+            reservedSideControlsPx = dp(sideControlsWidthDp),
         )
         val minimumY = dp(24)
         val maximumY = (displayHeight - dp(106)).coerceAtLeast(minimumY)
