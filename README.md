@@ -2,17 +2,17 @@
 
 MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 Android 应用：读取可公开访问的网易云歌单，搜索并核对音源，下载音频，并尽可能补齐封面、歌词和音频标签。
 
-> **当前版本：1.30** · `versionCode = 34`  
+> **当前版本：1.31** · `versionCode = 35`  
 > 应用 ID：`com.wulinlee.musicmeta` · 最低 Android：10（API 29）· 目标 SDK：35  
 > 技术栈：Kotlin、Jetpack Compose、Material 3、Coroutines、OkHttp、Coil、jaudiotagger。
 
 - **正式版发布页：** [GitHub Releases](https://github.com/WuLinLee/MusicMeta/releases)
-- **v1.30 APK 直链：** [MusicMeta-v1.30.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.30/MusicMeta-v1.30.apk)
-- **上一版 v1.29：** [MusicMeta-v1.29.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.29/MusicMeta-v1.29.apk)
-- **历史版 v1.28：** [MusicMeta-v1.28.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.28/MusicMeta-v1.28.apk)
+- **v1.31 APK 直链：** [MusicMeta-v1.31.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.31/MusicMeta-v1.31.apk)
+- **上一版 v1.30：** [MusicMeta-v1.30.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.30/MusicMeta-v1.30.apk)
+- **历史版 v1.29：** [MusicMeta-v1.29.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.29/MusicMeta-v1.29.apk)
 - **构建记录：** [GitHub Actions](https://github.com/WuLinLee/MusicMeta/actions)
 
-v1.30 为悬浮歌词栏加入真正的横向跑马灯、扩大触控区域并调整面板尺寸；系统媒体卡片上的悬浮窗按钮改为小尺寸开关图标，直接同步全局设置。系统媒体标题会收到完整当前歌词，但锁屏 / 通知栏文字的滚动方式仍由 Android System UI 和设备厂商控制。v1.29 移除重复通知并加入歌词媒体标题，v1.28 引入系统媒体卡片与 GD Studio 临时故障回退，v1.27 修复悬浮歌词布局和本地原文 / 译文切换。下载链接只有在对应 Release 资产创建成功后才可用。版本号、Git 标签、Actions 构建结果和 Release 附件是不同的事实；请以对应提交的成功构建结果和实际资产为准，不要仅凭本文件中的版本号判断已发布。
+v1.31 回退 v1.30 的悬浮窗 / 左侧歌词栏布局与显示改动，恢复 v1.29 的悬浮层行为；系统下拉栏与锁屏媒体卡片保留 v1.30 的全局开关和媒体控制逻辑。v1.30 的系统标题仍由 Android System UI / 设备厂商决定滚动或截断。下载链接只有在对应 Release 资产创建成功后才可用。版本号、Git 标签、Actions 构建结果和 Release 附件是不同的事实；请以对应提交的成功构建结果和实际资产为准，不要仅凭本文件中的版本号判断已发布。
 
 ## 目录
 
@@ -50,6 +50,12 @@ v1.30 为悬浮歌词栏加入真正的横向跑马灯、扩大触控区域并�
 5. 在设置中选择 API 服务（GD Studio 或 flac.music.hi.cn）、次级音乐源、音质、保存目录及悬浮歌词偏好。
 
 首次使用跨应用悬浮播放器时，需要在 Android 系统设置中授予“显示在其他应用上层”权限。撤销权限后，跨应用浮层不可用。
+
+## v1.31 本次改进
+
+- **回退悬浮窗及左侧歌词栏：** 恢复 v1.29 的悬浮窗服务实现，撤销 v1.30 的跑马灯、半透明面板、尺寸与定位迁移等改动，避免这些改动继续影响悬浮播放体验。
+- **保留下拉栏与锁屏：** 不回退 `MediaPlaybackService` 和系统媒体卡片相关的 v1.30 改动；媒体卡片继续使用 Lucide 小型开关图标并同步全局悬浮窗设置，播放器控制保持不变。
+- **测试与版本：** 将悬浮窗布局测试恢复到对应实现，保留媒体标题回归测试；版本号 `1.31` / `versionCode = 35`。
 
 ## v1.30 本次改进
 
@@ -229,17 +235,17 @@ CI 会另外执行 APK 对齐、签名、签名证书验证和包名检查。构
 
 ## 版本与签名
 
-- 当前版本名：`1.30`
-- 当前版本号：`versionCode = 34`
+- 当前版本名：`1.31`
+- 当前版本号：`versionCode = 35`
 - Gradle 版本元数据位于 `app/build.gradle.kts`；用户可见变更记录位于 `RELEASE_NOTES.md`。
 
 GitHub Actions 工作流会设置 JDK 17 和 Gradle 8.9，检查资源后运行 JVM 单元测试、构建 Release、对 APK 执行 zipalign / 签名 / 校验，再上传 APK 并创建 Release。常规 `main` push 会创建预览发布；提交信息以 `release:` 开头时走正式发布逻辑。已有同名 Release 默认不会覆盖，只有明确的 `release: refresh v...` 提交才允许刷新现有版本。
 
 正式发布前应检查：
-- `main` 最新 commit 与 `v1.30` 标签指向一致；
+- `main` 最新 commit 与 `v1.31` 标签指向一致；
 - 对应 Actions run 为 `completed / success`；
 - Release 不是草稿或预发布；
-- `MusicMeta-v1.30.apk` 资产已上传，签名及 package metadata 检查通过。
+- `MusicMeta-v1.31.apk` 资产已上传，签名及 package metadata 检查通过。
 
 ### APK 签名注意事项
 
