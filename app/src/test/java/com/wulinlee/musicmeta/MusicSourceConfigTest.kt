@@ -167,7 +167,7 @@ class MusicSourceConfigTest {
             val right = coverX + coverWidth
             assertTrue("expanded group must fit the left margin", left >= margin)
             assertTrue("expanded group must fit the right margin", right <= displayWidth - margin)
-            assertEquals("whole group should be centered", displayWidth, left + right, 1)
+            assertEquals("whole group should be centered", displayWidth, left + right)
         }
     }
 
