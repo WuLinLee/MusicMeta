@@ -436,7 +436,6 @@ class FloatingMiniPlayerService : LifecycleService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
         if (intent?.action == ACTION_STOP || !Settings.canDrawOverlays(this)) {
-            sendCommand(this, COMMAND_CLOSE_OVERLAY)
             removeOverlayViews()
             stopSelf()
             return START_NOT_STICKY
@@ -711,7 +710,7 @@ class FloatingMiniPlayerService : LifecycleService() {
         }
         val params = createLayoutParams(
             lyricsPanelWidthPx.coerceAtLeast(dp(1)),
-            dp(78),
+            dp(88),
             lyricsWindowX(),
             coverY,
         )
@@ -754,7 +753,7 @@ class FloatingMiniPlayerService : LifecycleService() {
             val nextX = lyricsWindowX()
             val nextY = coverY
             val nextWidth = lyricsPanelWidthPx.coerceAtLeast(dp(1))
-            val nextHeight = dp(78)
+            val nextHeight = dp(88)
             if (params.x != nextX || params.y != nextY ||
                 params.width != nextWidth || params.height != nextHeight
             ) {
