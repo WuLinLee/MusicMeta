@@ -110,7 +110,6 @@ class FlacMusicProvider {
                 // by trying the implemented flac.music.hi.cn adapter. Never silently switch
                 // JOOX/Bilibili requests onto a different music catalog.
                 if (source != "netease" || !isGdStudioTransientServiceError(error)) throw error
-                val fallbackPlatform = MusicSourceConfig.toFlacSitePlatform(source)
                 var candidates = searchFlacSite(keyword, source, cookie, userAgent)
                 if (candidates.isEmpty() && !fallbackKeyword.isNullOrBlank()) {
                     candidates = searchFlacSite(fallbackKeyword, source, cookie, userAgent)
@@ -194,14 +193,16 @@ class FlacMusicProvider {
         } catch (error: Exception) {
             val gdSource = song.platform.removePrefix("gd:").ifBlank { "netease" }
             if (usedGdStudio && gdSource == "netease" && isGdStudioTransientServiceError(error)) {
-                val alternatives = withContext(Dispatchers.IO) {
-                    searchFlacSite(
-                        keyword = listOf(song.title, song.artist).filter { it.isNotBlank() }.joinToString(" "),
-                        normalizedPlatform = "netease",
-                        cookie = cookie,
-                        userAgent = userAgent,
-                    )
-                }
+                val alternatives = runCatching {
+                    withContext(Dispatchers.IO) {
+                        searchFlacSite(
+                            keyword = listOf(song.title, song.artist).filter { it.isNotBlank() }.joinToString(" "),
+                            normalizedPlatform = "netease",
+                            cookie = cookie,
+                            userAgent = userAgent,
+                        )
+                    }
+                }.getOrDefault(emptyList())
                 val titleKey = normalizeMatch(song.title)
                 val artistKey = normalizeMatch(song.artist.substringBefore(" / "))
                 val alternative = alternatives.firstOrNull { candidate ->
