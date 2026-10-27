@@ -2,17 +2,17 @@
 
 MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 Android 应用：读取可公开访问的网易云歌单，搜索并核对音源，下载音频，并尽可能补齐封面、歌词和音频标签。
 
-> **当前开发版本：1.28** · `versionCode = 32`  
+> **当前版本：1.29** · `versionCode = 33`  
 > 应用 ID：`com.wulinlee.musicmeta` · 最低 Android：10（API 29）· 目标 SDK：35  
 > 技术栈：Kotlin、Jetpack Compose、Material 3、Coroutines、OkHttp、Coil、jaudiotagger。
 
 - **正式版发布页：** [GitHub Releases](https://github.com/WuLinLee/MusicMeta/releases)
-- **v1.28 APK 直链：** [MusicMeta-v1.28.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.28/MusicMeta-v1.28.apk)
-- **上一版 v1.27：** [MusicMeta-v1.27.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.27/MusicMeta-v1.27.apk)
-- **历史版 v1.26：** [MusicMeta-v1.26.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.26/MusicMeta-v1.26.apk)
+- **v1.29 APK 直链：** [MusicMeta-v1.29.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.29/MusicMeta-v1.29.apk)
+- **上一版 v1.28：** [MusicMeta-v1.28.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.28/MusicMeta-v1.28.apk)
+- **历史版 v1.27：** [MusicMeta-v1.27.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.27/MusicMeta-v1.27.apk)
 - **构建记录：** [GitHub Actions](https://github.com/WuLinLee/MusicMeta/actions)
 
-v1.28 增加锁屏 / 通知栏媒体播放卡片与 Android MediaSession 控制，可通过系统按钮及兼容的蓝牙媒体键控制同一试听播放器；GD Studio 对 NetEase 查询返回 HTTP 5xx 时尝试回退到 flac.music.hi.cn，播放地址失效时尝试当前候选队列的下一个版本。v1.27 修复右侧悬浮歌词栏闪动、歌词双行显示和本地原文 / 译文切换。v1.26 引入本地封面与歌词离线读取、可调字体、封面点击排入下一首和交互教程。下载链接只有在对应 Release 资产创建成功后才可用。版本号、Git 标签、Actions 构建结果和 Release 附件是不同的事实；请以对应提交的成功构建结果和实际资产为准，不要仅凭本文件中的版本号判断已发布。
+v1.29 调整系统媒体卡片：标题优先显示当前歌词（遵循“优先显示翻译歌词”设置），媒体操作改为关闭悬浮窗而非静音，关闭后试听继续；同时移除悬浮服务的第二条“正在播放试听”常驻通知。v1.28 引入系统媒体卡片与 GD Studio 临时故障回退，v1.27 修复悬浮歌词布局、歌词双行显示和本地原文 / 译文切换，v1.26 引入本地封面与歌词离线读取、可调字体、封面点击排入下一首和交互教程。下载链接只有在对应 Release 资产创建成功后才可用。版本号、Git 标签、Actions 构建结果和 Release 附件是不同的事实；请以对应提交的成功构建结果和实际资产为准，不要仅凭本文件中的版本号判断已发布。
 
 ## 目录
 
@@ -38,7 +38,7 @@ v1.28 增加锁屏 / 通知栏媒体播放卡片与 Android MediaSession 控制�
 - **音频格式：** 支持选择 MP3 128 kbps、MP3 320 kbps 或 FLAC 来源。应用不把低规格音频转码或伪装成无损；实际质量取决于音源本身。
 - **本地信息复制：** 长按本地歌曲可复制歌曲名和艺人名。
 - **错误报告：** 页面上的错误报告入口可复制最近捕获的错误信息；生成的报告会隐藏 URL 及可能的敏感字段。
-- **锁屏与通知栏媒体控制：** 系统媒体卡片显示封面、曲名、艺人和当前歌词，可控制上一首 / 下一首、播放 / 暂停与静音；兼容的蓝牙耳机和车机媒体键也通过同一 MediaSession 控制当前试听。保留原有悬浮窗按钮布局。
+- **锁屏与通知栏媒体控制：** 系统媒体卡片优先显示当前活动歌词（遵循“优先显示翻译歌词”设置），提供上一首 / 播放暂停 / 下一首控制及“关闭悬浮窗”操作。关闭悬浮窗不会停止试听；兼容的蓝牙耳机和车机媒体键通过同一 MediaSession 控制当前播放器。通知栏只保留系统媒体卡片，不额外显示悬浮服务的“正在播放试听”常驻通知。
 - **站点验证：** 需要时可在应用内 WebView 手动完成来源站要求的验证；应用不绕过验证码、登录限制或其他访问控制。
 
 ## 使用说明
@@ -50,6 +50,15 @@ v1.28 增加锁屏 / 通知栏媒体播放卡片与 Android MediaSession 控制�
 5. 在设置中选择 API 服务（GD Studio 或 flac.music.hi.cn）、次级音乐源、音质、保存目录及悬浮歌词偏好。
 
 首次使用跨应用悬浮播放器时，需要在 Android 系统设置中授予“显示在其他应用上层”权限。撤销权限后，跨应用浮层不可用。
+
+## v1.29 本次改进
+
+- **唯一系统媒体通知：** 移除悬浮窗服务重复的“正在播放试听 / 悬浮播放器已开启”常驻通知；通知栏与锁屏只保留系统媒体播放卡片。
+- **媒体标题显示歌词：** 系统媒体卡片优先使用当前活动歌词作为显示标题，遵循全局“优先显示翻译歌词”设置；没有可用歌词时回退到歌曲名，并在描述字段保留曲名与艺人信息。
+- **关闭悬浮窗而不停止播放：** 将媒体卡片原来的静音操作替换为“关闭悬浮窗”，只关闭悬浮窗口，不暂停或销毁当前试听；本次会话内不会因进度同步或播放状态变化自动重新弹出。通过设置关闭再开启悬浮窗可恢复显示。
+- **代码清理：** 移除未再使用的静音状态与命令、媒体服务闲置的控制辅助函数和悬浮服务重复通知构建逻辑；新增媒体标题回归测试。
+- **文档校准：** 更正 README 中的旧版本号、媒体架构说明、发布检查版本和当前限制，更新 Release 保留策略。
+- **版本号：** 1.29，`versionCode = 33`。
 
 ## v1.28 本次改进
 
@@ -135,7 +144,7 @@ v1.28 增加锁屏 / 通知栏媒体播放卡片与 Android MediaSession 控制�
 | 文件 | 主要职责 |
 |---|---|
 | `app/src/main/java/com/wulinlee/musicmeta/MainActivity.kt` | Compose 界面、歌单状态与分页、音源搜索、下载编排、试听、歌词和 WebView 验证 |
-| `app/src/main/java/com/wulinlee/musicmeta/FloatingMiniPlayerService.kt` | 跨应用悬浮窗、单窗口布局、拖动 / 画圈手势、前台通知与控制命令 |
+| `app/src/main/java/com/wulinlee/musicmeta/FloatingMiniPlayerService.kt` | 跨应用悬浮窗、布局、拖动 / 画圈手势与控制命令；不再发布第二条常驻通知 |
 | `MusicModels.kt` | 歌曲、歌单与媒体元数据模型 |
 | `PublicPlaylistProvider.kt` | 网易云公开歌单元数据、曲目列表与批量读取 |
 | `FlacMusicProvider.kt` | 候选搜索、下载地址解析、来源封面 / 歌词与备用来源 |
@@ -153,7 +162,7 @@ v1.28 增加锁屏 / 通知栏媒体播放卡片与 Android MediaSession 控制�
 
 **下载：** 搜索候选 → 核对版本 → 解析下载 URL → 校验响应与音频内容 → 临时文件下载 → 可选写标签 / 封面 / LRC → 发布到 MediaStore 或用户授权目录。网络或文件操作失败时应清理临时文件。
 
-**播放器：** Activity 持有试听播放器与当前播放状态 → 以轻量进度更新同步悬浮层 → 服务通过广播把播放、暂停、跳转和歌曲导航请求交回 Activity。悬浮层不维护第二套播放时间轴。
+**播放器：** `MainActivity` 持有试听 `MediaPlayer`、队列与进度；`FloatingMiniPlayerService` 只负责跨应用窗口和命令转发，`MediaPlaybackService` 负责 `MediaSessionCompat`、系统媒体卡片与兼容媒体键。通知栏、锁屏与悬浮窗通过同一命令桥控制 Activity 内的播放器，不各自维护第二套时间轴。
 
 ### 当前依赖
 
@@ -162,7 +171,7 @@ v1.28 增加锁屏 / 通知栏媒体播放卡片与 Android MediaSession 控制�
 - Kotlin Coroutines、OkHttp 4.12.0、Coil 2.7.0、jaudiotagger 3.0.1。
 - JUnit 4；当前自动化测试主要覆盖歌词转换和合并。
 
-项目目前没有集成 Room、DI 框架、Media3 / ExoPlayer 或 MediaSession。不要把这些规划中的能力写成现成功能。
+项目目前没有集成 Room、DI 框架或 Media3 / ExoPlayer；系统媒体控制使用 AndroidX `MediaSessionCompat` 与 `MediaStyle`。当前仍由 Activity 持有播放器，不能把它描述成已迁移到 Media3 的独立后台播放架构。
 
 ## 数据源与使用边界
 
@@ -211,17 +220,17 @@ CI 会另外执行 APK 对齐、签名、签名证书验证和包名检查。构
 
 ## 版本与签名
 
-- 当前版本名：`1.24`
-- 当前版本号：`versionCode = 28`
+- 当前版本名：`1.29`
+- 当前版本号：`versionCode = 33`
 - Gradle 版本元数据位于 `app/build.gradle.kts`；用户可见变更记录位于 `RELEASE_NOTES.md`。
 
 GitHub Actions 工作流会设置 JDK 17 和 Gradle 8.9，检查资源后运行 JVM 单元测试、构建 Release、对 APK 执行 zipalign / 签名 / 校验，再上传 APK 并创建 Release。常规 `main` push 会创建预览发布；提交信息以 `release:` 开头时走正式发布逻辑。已有同名 Release 默认不会覆盖，只有明确的 `release: refresh v...` 提交才允许刷新现有版本。
 
 正式发布前应检查：
-- `main` 最新 commit 与 `v1.23` 标签指向一致；
+- `main` 最新 commit 与 `v1.29` 标签指向一致；
 - 对应 Actions run 为 `completed / success`；
 - Release 不是草稿或预发布；
-- `MusicMeta-v1.23.apk` 资产已上传，签名及 package metadata 检查通过。
+- `MusicMeta-v1.29.apk` 资产已上传，签名及 package metadata 检查通过。
 
 ### APK 签名注意事项
 
@@ -236,7 +245,7 @@ GitHub Actions 工作流会设置 JDK 17 和 Gradle 8.9，检查资源后运行 
 
 ## 当前限制
 
-- 播放器使用 Activity 内的 `MediaPlayer`，尚无完整的 Media3 / ExoPlayer、MediaSession、系统媒体通知、锁屏 / 蓝牙控制和独立持久播放队列。
+- 播放器仍由 Activity 内的 `MediaPlayer` 持有；已实现 `MediaSessionCompat` 系统媒体卡片与兼容媒体键控制，但尚未迁移到 Media3 / ExoPlayer，也没有独立于 Activity 的持久播放队列。进程被系统终止或 Activity 状态丢失时，不保证后台连续播放。
 - 自动化测试覆盖有限；网络接口变化、音源匹配、真实下载与设备厂商差异需要额外验证。
 - 悬浮窗需要系统权限；系统回收进程或用户撤销权限后，不保证跨应用显示和播放持续。
 - `MainActivity.kt` 仍承载大量业务状态，后续应渐进拆分播放器、歌单、搜索和下载职责，并为网络解析、下载校验、导航竞态补充测试。
