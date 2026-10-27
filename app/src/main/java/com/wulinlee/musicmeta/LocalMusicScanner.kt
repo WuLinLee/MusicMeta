@@ -12,6 +12,8 @@ import java.security.MessageDigest
 import java.io.IOException
 import java.io.File
 import org.jaudiotagger.tag.FieldKey
+import org.jaudiotagger.tag.TagTextField
+import java.util.Base64
 import org.jaudiotagger.audio.AudioFileIO
 import java.util.Locale
 
@@ -125,33 +127,74 @@ object LocalMusicScanner {
         }
     }
 
-    /** Reads embedded LYRICS tag from local files; no network calls are made for local items. */
-    suspend fun readEmbeddedLyrics(context: Context, uri: Uri): String = withContext(Dispatchers.IO) {
-        val cacheKey = sha256(uri.toString())
-        val cacheDirectory = File(context.filesDir, "local-lyrics-cache")
-        val cacheFile = File(cacheDirectory, "$cacheKey.lrc")
-        if (cacheFile.isFile && cacheFile.length() <= 4L * 1024L * 1024L) {
-            runCatching { cacheFile.readText(Charsets.UTF_8) }.getOrNull()
-                ?.takeIf { it.isNotBlank() }?.let { return@withContext it }
-        }
-        val directFile = findDirectAudioFile(context, uri)
-        if (directFile != null && directFile.length() > maxLyricsTagSourceBytes) return@withContext ""
-        var temporaryFile: File? = null
-        val audioFile = directFile ?: runCatching { copyUriToTemporaryAudioFile(context, uri) }
-            .getOrNull().also { temporaryFile = it }
-        if (audioFile == null) return@withContext ""
-        try {
-            val lyrics = runCatching { AudioFileIO.read(audioFile).tag?.getFirst(FieldKey.LYRICS).orEmpty().trim() }
-                .getOrDefault("")
-            if (lyrics.isNotBlank()) runCatching {
-                if (!cacheDirectory.exists()) cacheDirectory.mkdirs()
-                cacheFile.writeText(lyrics, Charsets.UTF_8)
+    /** Reads local embedded lyrics without network access. Existing callers receive the original track. */
+    suspend fun readEmbeddedLyrics(context: Context, uri: Uri): String =
+        readEmbeddedLyricsPair(context, uri).original
+
+    /**
+     * Reads every embedded LYRICS field, then splits MusicMeta's same-timestamp original/translation
+     * format when a file stores both languages in a single LRC field.
+     */
+    suspend fun readEmbeddedLyricsPair(context: Context, uri: Uri): PreviewLyrics =
+        withContext(Dispatchers.IO) {
+            val cacheKey = sha256(uri.toString())
+            val cacheDirectory = File(context.filesDir, "local-lyrics-cache")
+            val cacheFile = File(cacheDirectory, "$cacheKey.pair")
+            if (cacheFile.isFile && cacheFile.length() <= 8L * 1024L * 1024L) {
+                val cached = runCatching {
+                    val encoded = cacheFile.readText(Charsets.UTF_8)
+                    val separator = encoded.indexOf('|')
+                    if (separator < 0) null else PreviewLyrics(
+                        original = String(Base64.getDecoder().decode(encoded.substring(0, separator)), Charsets.UTF_8),
+                        translated = String(Base64.getDecoder().decode(encoded.substring(separator + 1)), Charsets.UTF_8),
+                    )
+                }.getOrNull()
+                if (cached != null && (cached.original.isNotBlank() || cached.translated.isNotBlank())) {
+                    return@withContext cached
+                }
+            }
+
+            val directFile = findDirectAudioFile(context, uri)
+            if (directFile != null && directFile.length() > maxLyricsTagSourceBytes) {
+                return@withContext PreviewLyrics()
+            }
+            var temporaryFile: File? = null
+            val audioFile = directFile ?: runCatching { copyUriToTemporaryAudioFile(context, uri) }
+                .getOrNull().also { temporaryFile = it }
+            if (audioFile == null) return@withContext PreviewLyrics()
+
+            val lyrics = try {
+                val tag = AudioFileIO.read(audioFile).tag
+                val fields = runCatching {
+                    tag?.getFields(FieldKey.LYRICS).orEmpty()
+                        .mapNotNull { (it as? TagTextField)?.content?.trim()?.takeIf(String::isNotBlank) }
+                        .distinct()
+                }.getOrDefault(emptyList())
+                val firstField = fields.firstOrNull()
+                    ?: runCatching { tag?.getFirst(FieldKey.LYRICS).orEmpty().trim() }.getOrDefault("")
+                when {
+                    fields.size >= 2 -> PreviewLyrics(
+                        original = fields.first(),
+                        translated = fields.drop(1).joinToString("\n"),
+                    )
+                    else -> EmbeddedLyricsParser.split(firstField)
+                }
+            } catch (_: Exception) {
+                PreviewLyrics()
+            } finally {
+                temporaryFile?.delete()
+            }
+
+            if (lyrics.original.isNotBlank() || lyrics.translated.isNotBlank()) {
+                runCatching {
+                    if (!cacheDirectory.exists()) cacheDirectory.mkdirs()
+                    val encodedOriginal = Base64.getEncoder().encodeToString(lyrics.original.toByteArray(Charsets.UTF_8))
+                    val encodedTranslation = Base64.getEncoder().encodeToString(lyrics.translated.toByteArray(Charsets.UTF_8))
+                    cacheFile.writeText("$encodedOriginal|$encodedTranslation", Charsets.UTF_8)
+                }
             }
             lyrics
-        } finally {
-            temporaryFile?.delete()
         }
-    }
 
     private fun findDirectAudioFile(context: Context, uri: Uri): File? {
         val path = when (uri.scheme?.lowercase(Locale.ROOT)) {
