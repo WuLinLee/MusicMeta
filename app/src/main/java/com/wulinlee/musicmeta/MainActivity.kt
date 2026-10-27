@@ -1394,7 +1394,8 @@ private fun MusicMetaApp() {
                                 }.getOrDefault(PreviewLyrics())
                             } else PreviewLyrics()
                             var tracks = if (song.platform == "local") {
-                                embeddedLocalLyrics                            } else {
+                                embeddedLocalLyrics
+                            } else {
                                 runCatching {
                                     metadataProvider.resolveNetEaseLyrics(
                                         title = song.title,
