@@ -1448,7 +1448,23 @@ private fun MusicMetaApp() {
                     ) {
                         isPreviewLoading = false
                         isPreviewLyricsLoading = false
-                        if (error is GdStudioRateLimitException) {
+                        val chainMessage = generateSequence(error as Throwable?) { it.cause }
+                            .mapNotNull { it.message }
+                            .joinToString(" ")
+                        val candidateUnavailable =
+                            chainMessage.contains("下载站无法解析该候选歌曲的下载地址") ||
+                                chainMessage.contains("Song not found", ignoreCase = true) ||
+                                chainMessage.contains("下载站没有返回有效的下载地址") ||
+                                chainMessage.contains("GD Studio API 请求失败：HTTP 503")
+                        val queue = previewQueue
+                        val currentIndex = queue.indexOfFirst { sourceSongKey(it) == songKey }
+                        val nextCandidate = if (currentIndex >= 0) {
+                            queue.drop(currentIndex + 1).firstOrNull()
+                        } else null
+                        if (candidateUnavailable && nextCandidate != null) {
+                            status = "当前候选音源暂不可用，正在自动尝试下一个版本：《${nextCandidate.title}》。"
+                            playPreviewRef.value(nextCandidate)
+                        } else if (error is GdStudioRateLimitException) {
                             status = "GD Studio 请求较多，暂时无法开始该曲试听。约 ${error.retryAfterSeconds} 秒后可重试，或切换到 flac.music.hi.cn。"
                         } else {
                             status = "试听失败：" + (error.message?.takeIf { it.isNotBlank() } ?: "音源暂不可用")
