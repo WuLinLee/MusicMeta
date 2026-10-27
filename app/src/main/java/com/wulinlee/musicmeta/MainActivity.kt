@@ -492,6 +492,9 @@ private fun MusicMetaApp() {
         status = "播放模式：" + listOf("顺序播放", "乱序播放", "单曲循环")[playbackMode]
     }
     var localMusicTracks by remember { mutableStateOf<List<LocalAudioTrack>>(emptyList()) }
+    var localMusicSortMode by remember {
+        mutableStateOf(LocalMusicSortMode.fromPreference(folderPreferences.getString("local_music_sort_mode", null)))
+    }
     var isRestoringCaches by remember { mutableStateOf(true) }
     var didCheckLocalArtworkMigration by remember { mutableStateOf(false) }
     var highlightedPlaylistMode by remember { mutableStateOf("") }
@@ -563,7 +566,7 @@ private fun MusicMetaApp() {
                     withContext(Dispatchers.IO) {
                         MusicMetaPersistence.saveLocalTracks(context, scannedTracks)
                     }
-                    folderPreferences.edit().putInt("local_artwork_migration_version", 1).apply()
+                    folderPreferences.edit().putInt("local_artwork_migration_version", 2).apply()
                     localCurrentPage = 1
                     folderPreferences.edit().putInt("local_current_page", 1).apply()
                     jumpPageInput = "1"
@@ -612,9 +615,8 @@ private fun MusicMetaApp() {
                 context,
                 audioPermission,
             ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-            if (migrationVersion < 1 && localMusicTracks.isNotEmpty() && (hasTreePermission || hasMediaPermission)) {
-                // Upgrade existing cached local tracks so coverUri points at embedded art
-                // instead of a stale album-art URI from the previous scanner.
+            if (migrationVersion < 2 && localMusicTracks.isNotEmpty() && (hasTreePermission || hasMediaPermission)) {
+                // Refresh older cache entries to include file modification timestamps.
                 scanLocalMusic()
             }
         }
@@ -1636,16 +1638,14 @@ private fun MusicMetaApp() {
         if (song == null) {
             mediaCurrentLyric = ""
         } else {
-            val activeLyrics = if (showTranslatedPreviewLyric && previewTranslatedLyrics.isNotBlank()) {
-                previewTranslatedLyrics
-            } else previewLyrics
-            val timedLines = parseTimedPreviewLyrics(activeLyrics)
-            val currentLine = when {
-                activeLyrics.isBlank() -> ""
-                timedLines.isNotEmpty() -> timedLines.lastOrNull { it.first <= previewPositionMs + 180 }?.second
-                    ?: timedLines.first().second
-                else -> formatPreviewLyrics(activeLyrics).lineSequence().firstOrNull { it.isNotBlank() }.orEmpty()
-            }
+            val showingTranslation = showTranslatedPreviewLyric && previewTranslatedLyrics.isNotBlank()
+            val activeLyrics = if (showingTranslation) previewTranslatedLyrics else previewLyrics
+            val currentLine = currentLyricLine(
+                activeLyrics = activeLyrics,
+                originalLyrics = previewLyrics,
+                positionMs = previewPositionMs + 180,
+                isTranslation = showingTranslation,
+            )
             if (mediaCurrentLyric != currentLine) mediaCurrentLyric = currentLine
         }
     }
@@ -2078,10 +2078,15 @@ private fun MusicMetaApp() {
     SideEffect {
         previewNavigationHandler = navigatePreview
     }
-    val filteredLocalMusicTracks = localMusicTracks.filter {
-        localMusicFilter.isBlank() || it.title.contains(localMusicFilter, true) ||
-            it.artist.contains(localMusicFilter, true) || it.album.contains(localMusicFilter, true)
-    }
+    val filteredLocalMusicTracks = sortLocalMusicItems(
+        items = localMusicTracks.filter {
+            localMusicFilter.isBlank() || it.title.contains(localMusicFilter, true) ||
+                it.artist.contains(localMusicFilter, true) || it.album.contains(localMusicFilter, true)
+        },
+        mode = localMusicSortMode,
+        modifiedAtMs = { it.modifiedAtMs },
+        title = { it.title },
+    )
     val pageItemCount = if (inputMode == "local") filteredLocalMusicTracks.size
         else if (filterText.isBlank()) playlist?.totalTrackCount ?: 0 else filteredKnownTracks.size
     val pageCount = maxOf(1, (pageItemCount + pageSize - 1) / pageSize)
@@ -2880,6 +2885,24 @@ private fun MusicMetaApp() {
                         OutlinedButton(onClick = scanLocalMusic, enabled = !isRestoringCaches && !isScanningLocalMusic) {
                             Text(if (isRestoringCaches) "恢复中" else if (isScanningLocalMusic) "扫描中" else "扫描")
                         }
+                        OutlinedButton(
+                            onClick = {
+                                val nextMode = localMusicSortMode.next()
+                                localMusicSortMode = nextMode
+                                folderPreferences.edit().putString("local_music_sort_mode", nextMode.name).apply()
+                                setCurrentPage(1)
+                                jumpPageInput = "1"
+                                status = "本地音乐排序：" + nextMode.description
+                            },
+                            enabled = !isRestoringCaches && !isScanningLocalMusic,
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                            modifier = Modifier.semantics {
+                                contentDescription = "本地音乐排序：${localMusicSortMode.description}，点击切换"
+                            },
+                        ) {
+                            Text(localMusicSortMode.buttonLabel, fontSize = 12.sp, maxLines = 1)
+                        }
                     }
                 }
                 val localVisible = filteredLocalMusicTracks
@@ -3409,24 +3432,17 @@ private fun MusicMetaApp() {
                         },
                 ) {
                     if (showPreviewDetails) {
-                        val originalTimedLyrics = remember(previewLyrics) { parseTimedPreviewLyrics(previewLyrics) }
-                        val translatedTimedLyrics = remember(previewTranslatedLyrics) { parseTimedPreviewLyrics(previewTranslatedLyrics) }
-                        val originalFallbackLyrics = remember(previewLyrics) {
-                            formatPreviewLyrics(previewLyrics).lineSequence().filter { it.isNotBlank() }.toList()
-                        }
-                        val translatedFallbackLyrics = remember(previewTranslatedLyrics) {
-                            formatPreviewLyrics(previewTranslatedLyrics).lineSequence().filter { it.isNotBlank() }.toList()
-                        }
                         val useTranslatedLyrics = showTranslatedPreviewLyric && previewTranslatedLyrics.isNotBlank()
-                        val activeTrackLyrics = if (useTranslatedLyrics) translatedTimedLyrics else originalTimedLyrics
-                        val activeFallbackLyrics = if (useTranslatedLyrics) translatedFallbackLyrics else originalFallbackLyrics
+                        val activeTrackLyrics = if (useTranslatedLyrics) previewTranslatedLyrics else previewLyrics
                         val activeLyric = when {
                             isPreviewLyricsLoading -> "正在找歌词…"
-                            previewLyrics.isBlank() -> "暂未找到歌词"
-                            activeTrackLyrics.isNotEmpty() -> activeTrackLyrics.lastOrNull { it.first <= previewPositionMs + 180 }?.second
-                                ?: activeTrackLyrics.first().second
-                            activeFallbackLyrics.isNotEmpty() -> activeFallbackLyrics.first()
-                            else -> "♪"
+                            activeTrackLyrics.isBlank() -> "暂未找到歌词"
+                            else -> currentLyricLine(
+                                activeLyrics = activeTrackLyrics,
+                                originalLyrics = previewLyrics,
+                                positionMs = previewPositionMs + 180,
+                                isTranslation = useTranslatedLyrics,
+                            ).ifBlank { "♪" }
                         }
                         Card(
                             modifier = Modifier.align(Alignment.CenterStart).width(panelWidth).height(64.dp)
