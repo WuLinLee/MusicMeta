@@ -21,11 +21,14 @@ class LyricsTimelineTest {
     }
 
     @Test
-    fun explainsUntimedTranslationsThatCannotBePairedWithoutDeletingTheirSourceText() {
-        val original = "[00:01.00]作曲：张三\n[00:05.00]Second"
-        val translated = "译文第一行\n译文第二行\n译文第三行"
-        assertEquals(UNTITLED_TRANSLATION_SYNC_HINT, currentLyricLine(translated, original, 6_000, isTranslation = true))
+    fun mapsUntimedTranslationAcrossOriginalTimelineEvenWhenRowCountsDiffer() {
+        val original = "[00:01.00]作曲：张三\n[00:05.00]原文第二行\n[00:09.00]原文第三行\n[00:13.00]编曲：李四"
+        val translated = "译文第一行\n译文第二行"
+        assertEquals("译文第一行", currentLyricLine(translated, original, 6_000, isTranslation = true))
+        assertEquals("译文第二行", currentLyricLine(translated, original, 10_000, isTranslation = true))
         assertEquals("作曲：张三", currentLyricLine(original, original, 2_000))
+        assertEquals("编曲：李四", currentLyricLine(original, original, 14_000))
+        assertEquals(UNTITLED_TRANSLATION_SYNC_HINT, currentLyricLine("译文一\n译文二", "无时间戳原文\n第二行", 6_000, isTranslation = true))
         assertEquals("第二行", currentLyricLine("[00:01.00]第一行\n[00:05.00]第二行", "", 6_000))
     }
 
