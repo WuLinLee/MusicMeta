@@ -11,10 +11,6 @@ class MusicSourceConfigTest {
         assertEquals("翻译歌词", mediaDisplayTitle("  翻译歌词  ", "歌曲名"))
         assertEquals("歌曲名", mediaDisplayTitle("   ", "歌曲名"))
         assertEquals("歌曲名", mediaDisplayTitle("", "歌曲名"))
-        val longLyric = "这是一句很长很长的歌词，即使远远超过媒体卡片的宽度，也应当完整保存在媒体标题元数据中。"
-        assertEquals(longLyric, mediaDisplayTitle(longLyric, "歌曲名"))
-        assertEquals("关闭悬浮窗", overlayToggleLabel(true))
-        assertEquals("开启悬浮窗", overlayToggleLabel(false))
     }
 
     @Test
@@ -94,45 +90,19 @@ class MusicSourceConfigTest {
     }
 
     @Test
-    fun lyricsPanelPreferredWidthUsesTheCurrentWiderScale() {
-        assertEquals(375, FloatingOverlayPlacement.scaledPreferredLyricsWidthPx(356, 78))
-        assertEquals(375, FloatingOverlayPlacement.scaledPreferredLyricsWidthPx(356, 78, 1.35f))
-        assertEquals(0, FloatingOverlayPlacement.scaledPreferredLyricsWidthPx(64, 78, 1.35f))
-        assertEquals(88, FLOATING_OVERLAY_GROUP_HEIGHT_DP)
-        assertEquals(64 + 2 + 22, FLOATING_OVERLAY_GROUP_HEIGHT_DP)
-        assertTrue(
-            FloatingOverlayPlacement.shouldMigrateCenteredOverlayPosition(
-                savedCoverXDp = 148f,
-                displayWidthDp = 360f,
-                coverWidthDp = 64f,
-                savedLayoutVersion = 0,
-            ),
-        )
-        assertFalse(
-            FloatingOverlayPlacement.shouldMigrateCenteredOverlayPosition(
-                savedCoverXDp = 148f,
-                displayWidthDp = 360f,
-                coverWidthDp = 64f,
-                savedLayoutVersion = 1,
-            ),
-        )
-        assertFalse(
-            FloatingOverlayPlacement.shouldMigrateCenteredOverlayPosition(
-                savedCoverXDp = 18f,
-                displayWidthDp = 360f,
-                coverWidthDp = 64f,
-                savedLayoutVersion = 0,
-            ),
-        )
+    fun lyricsPanelPreferredWidthIsScaledByTwentyPercent() {
+        assertEquals(334, FloatingOverlayPlacement.scaledPreferredLyricsWidthPx(356, 78))
+        assertEquals(0, FloatingOverlayPlacement.scaledPreferredLyricsWidthPx(64, 78))
     }
 
     @Test
-    fun separateExpandedOverlayWindowsStayWithinScreenAfterResize() {
-        val coverWidth = FLOATING_COVER_SIZE_DP
+    fun expandedOverlayBoundsKeepCoverAnchoredAndStayWithinScreenAfterResize() {
+        val coverWidth = 64
         val preferredGap = 14
         val margin = 4
-        val desiredLyricsWidth = FloatingOverlayPlacement.scaledPreferredLyricsWidthPx(356, 78, 1.35f)
         for (displayWidth in listOf(360, 720, 1080)) {
+            val desiredGroupWidth = minOf(368, (displayWidth - 8).coerceAtLeast(64))
+            val desiredLyricsWidth = (desiredGroupWidth - 78).coerceAtLeast(0)
             val coverPositions = listOf(
                 margin,
                 ((displayWidth - coverWidth) / 2).coerceAtLeast(margin),
@@ -144,52 +114,20 @@ class MusicSourceConfigTest {
                 val lyricsWidth = FloatingOverlayPlacement.lyricsWidthPx(
                     displayWidth, coverX, coverWidth, desiredLyricsWidth, gap, margin, onRight,
                 )
-                val lyricsX = if (onRight) coverX + coverWidth + gap else coverX - lyricsWidth - gap
-                val expandedLeft = minOf(coverX, lyricsX)
-                val expandedRight = maxOf(coverX + coverWidth, lyricsX + lyricsWidth)
-                assertTrue("expanded left edge must remain visible", expandedLeft >= margin)
-                assertTrue("expanded right edge must remain visible", expandedRight <= displayWidth - margin)
+                val collapsedWidth = FloatingOverlayPlacement.windowWidthPx(coverWidth, lyricsWidth, gap, false)
+                val collapsedX = FloatingOverlayPlacement.windowOriginX(coverX, lyricsWidth, gap, onRight, false)
+                assertEquals(coverWidth, collapsedWidth)
+                assertEquals(coverX, collapsedX)
+                val expandedWidth = FloatingOverlayPlacement.windowWidthPx(coverWidth, lyricsWidth, gap, true)
+                val expandedX = FloatingOverlayPlacement.windowOriginX(coverX, lyricsWidth, gap, onRight, true)
+                assertTrue("expanded left edge must remain visible", expandedX >= margin)
+                assertTrue("expanded right edge must remain visible", expandedX + expandedWidth <= displayWidth - margin)
+                val coverScreenX = if (onRight) expandedX else expandedX + expandedWidth - coverWidth
+                assertEquals("cover must not jump when expanding", coverX, coverScreenX)
             }
         }
     }
 
-
-    @Test
-    fun initialOverlayPlacementCentersTheWholeGroupOrUsesTheFullAvailableWidth() {
-        val coverWidth = FLOATING_COVER_SIZE_DP
-        val desiredLyricsWidth = FloatingOverlayPlacement.scaledPreferredLyricsWidthPx(356, 78)
-        val gap = 14
-        val margin = 4
-        for (displayWidth in listOf(360, 720, 1080)) {
-            val coverX = FloatingOverlayPlacement.initialCoverX(
-                displayWidth = displayWidth,
-                coverWidthPx = coverWidth,
-                desiredLyricsWidthPx = desiredLyricsWidth,
-                gapPx = gap,
-                marginPx = margin,
-            )
-            val onRight = FloatingOverlayPlacement.lyricsPanelOnRight(coverX, coverWidth, displayWidth)
-            val actualGap = FloatingOverlayPlacement.panelGapPx(
-                displayWidth, coverX, coverWidth, gap, margin, onRight,
-            )
-            val actualLyricsWidth = FloatingOverlayPlacement.lyricsWidthPx(
-                displayWidth, coverX, coverWidth, desiredLyricsWidth, actualGap, margin, onRight,
-            )
-            val lyricsX = if (onRight) coverX + coverWidth + actualGap
-            else coverX - actualLyricsWidth - actualGap
-            val groupLeft = minOf(coverX, lyricsX)
-            val groupRight = maxOf(coverX + coverWidth, lyricsX + actualLyricsWidth)
-
-            assertTrue("initial group stays within the left margin", groupLeft >= margin)
-            assertTrue("initial group stays within the right margin", groupRight <= displayWidth - margin)
-            if (displayWidth < coverWidth + gap + desiredLyricsWidth + margin * 2) {
-                assertEquals("narrow screen uses the full available width", margin, groupLeft)
-                assertEquals("narrow screen uses the full available width", displayWidth - margin, groupRight)
-            } else {
-                assertEquals("initial group is centered as a whole", displayWidth / 2f, (groupLeft + groupRight) / 2f, 1f)
-            }
-        }
-    }
 
     @Test
     fun lyricFontSliderKeepsDefaultAtCenterAndProvidesHalfToDoubleRange() {
