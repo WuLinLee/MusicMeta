@@ -28,8 +28,7 @@ import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
-internal fun mediaDisplayTitle(currentLyric: String, trackTitle: String): String =
-    currentLyric.trim().ifBlank { trackTitle }
+internal fun mediaDescriptionLyrics(currentLyric: String): String = currentLyric.trim()
 
 internal fun overlayToggleLabel(overlayEnabled: Boolean): String =
     if (overlayEnabled) "关闭悬浮窗" else "开启悬浮窗"
@@ -233,14 +232,15 @@ class MediaPlaybackService : Service() {
     }
 
     private fun publishMetadata() {
-        val lyricTitle = mediaDisplayTitle(currentLyric, trackTitle)
+        val title = trackTitle.ifBlank { "未知歌曲" }
+        val artist = trackArtist.ifBlank { "未知艺人" }
         val metadata = MediaMetadataCompat.Builder()
-            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, lyricTitle)
-            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, trackArtist)
+            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
+            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist)
             .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, "音笺")
-            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE, lyricTitle)
-            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_SUBTITLE, trackTitle.ifBlank { trackArtist })
-            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_DESCRIPTION, trackArtist)
+            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE, title)
+            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_SUBTITLE, artist)
+            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_DESCRIPTION, mediaDescriptionLyrics(currentLyric))
             .putString(MediaMetadataCompat.METADATA_KEY_ART_URI, coverUri)
             .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, durationMs.toLong())
         if (albumArt != null) {
@@ -294,8 +294,8 @@ class MediaPlaybackService : Service() {
         val contentIntent = mediaSession.controller.sessionActivity
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_media_play)
-            .setContentTitle(mediaDisplayTitle(currentLyric, trackTitle).ifBlank { "音笺" })
-            .setContentText(listOf(trackTitle, trackArtist).filter { it.isNotBlank() }.joinToString(" · "))
+            .setContentTitle(trackTitle.ifBlank { "未知歌曲" })
+            .setContentText(trackArtist.ifBlank { "未知艺人" })
             .setLargeIcon(albumArt)
             .setContentIntent(contentIntent)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
