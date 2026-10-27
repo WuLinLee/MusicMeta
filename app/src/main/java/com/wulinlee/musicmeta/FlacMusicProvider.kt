@@ -90,35 +90,33 @@ class FlacMusicProvider {
         MusicSourceSearchCache.get(cacheKey)?.let { return@withContext it }
 
         val songs = if (selectedBackend == MusicSourceConfig.BACKEND_GD_STUDIO) {
-            var candidates: List<FlacSiteSong> = emptyList()
-            for (searchKeyword in gdStudioSearchKeywords(keyword, fallbackKeyword)) {
-                candidates = searchGdStudio(searchKeyword, source)
-                if (candidates.isNotEmpty()) break
+            try {
+                var candidates: List<FlacSiteSong> = emptyList()
+                for (searchKeyword in gdStudioSearchKeywords(keyword, fallbackKeyword)) {
+                    candidates = searchGdStudio(searchKeyword, source)
+                    if (candidates.isNotEmpty()) break
+                }
+                if (candidates.isEmpty()) throw IOException(formatGdStudioNoCandidatesMessage())
+                candidates
+            } catch (error: Exception) {
+                // When the NetEase endpoint is temporarily returning 5xx, keep playback moving
+                // by trying the implemented flac.music.hi.cn adapter. Never silently switch
+                // JOOX/Bilibili requests onto a different music catalog.
+                if (source != "netease" || !isGdStudioTransientServiceError(error)) throw error
+                val fallbackPlatform = MusicSourceConfig.toFlacSitePlatform(source)
+                var candidates = searchFlacSite(keyword, source, cookie, userAgent)
+                if (candidates.isEmpty() && !fallbackKeyword.isNullOrBlank()) {
+                    candidates = searchFlacSite(fallbackKeyword, source, cookie, userAgent)
+                }
+                if (candidates.isEmpty()) {
+                    throw IOException("GD Studio 暂时返回 HTTP 5xx，已尝试切换下载站搜索但没有找到候选；请稍后重试。", error)
+                }
+                candidates
             }
-            if (candidates.isEmpty()) throw IOException(formatGdStudioNoCandidatesMessage())
-            candidates
         } else {
-            val sitePlatform = MusicSourceConfig.toFlacSitePlatform(source)
-            val request = baseRequest(apiUrl("search"), cookie, userAgent)
-                .post(
-                    FormBody.Builder()
-                        .add("platform", sitePlatform)
-                        .add("keyword", keyword.trim())
-                        .add("page", "1")
-                        .add("size", "20")
-                        .build()
-                )
-                .build()
-            val root = JSONObject(executeJson(request))
-            checkApiCode(root, "搜索")
-            val data = root.optJSONObject("data")
-                ?: throw IOException("下载站搜索响应中没有 data 字段。")
-            val list = data.optJSONArray("list") ?: JSONArray()
-            val parsed = (0 until list.length()).mapNotNull { index ->
-                parseSong(list.optJSONObject(index), sitePlatform)
-            }
-            if (parsed.isEmpty()) throw IOException("flac.music.hi.cn 没有搜索到歌曲。")
-            parsed
+            val candidates = searchFlacSite(keyword, source, cookie, userAgent)
+            if (candidates.isEmpty()) throw IOException("flac.music.hi.cn 没有搜索到歌曲。")
+            candidates
         }
         if (songs.isEmpty()) throw IOException("没有搜索到歌曲。")
         MusicSourceSearchCache.put(cacheKey, songs)
@@ -339,6 +337,33 @@ class FlacMusicProvider {
         )
         return PreviewLyrics(original = original, translated = translated)
     }
+    private fun searchFlacSite(
+        keyword: String,
+        normalizedPlatform: String,
+        cookie: String?,
+        userAgent: String,
+    ): List<FlacSiteSong> {
+        val sitePlatform = MusicSourceConfig.toFlacSitePlatform(normalizedPlatform)
+        val request = baseRequest(apiUrl("search"), cookie, userAgent)
+            .post(
+                FormBody.Builder()
+                    .add("platform", sitePlatform)
+                    .add("keyword", keyword.trim())
+                    .add("page", "1")
+                    .add("size", "20")
+                    .build()
+            )
+            .build()
+        val root = JSONObject(executeJson(request))
+        checkApiCode(root, "搜索")
+        val data = root.optJSONObject("data")
+            ?: throw IOException("下载站搜索响应中没有 data 字段。")
+        val list = data.optJSONArray("list") ?: JSONArray()
+        return (0 until list.length()).mapNotNull { index ->
+            parseSong(list.optJSONObject(index), sitePlatform)
+        }
+    }
+
     private fun searchGdStudio(keyword: String, normalizedPlatform: String): List<FlacSiteSong> {
         val source = if (normalizedPlatform == "wyy") "netease" else normalizedPlatform
         val url = HttpUrl.Builder()
