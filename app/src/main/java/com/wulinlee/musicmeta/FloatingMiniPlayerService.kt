@@ -214,19 +214,19 @@ internal object FloatingOverlayPlacement {
         coverWidthPx: Int,
         lyricsWidthPx: Int,
         gapPx: Int,
-        expansionProgress: Float,
-    ): Int = coverWidthPx + ((lyricsWidthPx + gapPx) * expansionProgress.coerceIn(0f, 1f)).roundToInt()
+        expandedBounds: Boolean,
+    ): Int = coverWidthPx + if (expandedBounds) lyricsWidthPx + gapPx else 0
 
     fun windowOriginX(
         coverX: Int,
         lyricsWidthPx: Int,
         gapPx: Int,
         lyricsOnRight: Boolean,
-        expansionProgress: Float,
-    ): Int = if (lyricsOnRight) {
-        coverX
+        expandedBounds: Boolean,
+    ): Int = if (expandedBounds && !lyricsOnRight) {
+        coverX - lyricsWidthPx - gapPx
     } else {
-        coverX - ((lyricsWidthPx + gapPx) * expansionProgress.coerceIn(0f, 1f)).roundToInt()
+        coverX
     }
 }
 
@@ -277,6 +277,7 @@ class FloatingMiniPlayerService : LifecycleService() {
         const val EXTRA_IS_LOADING = "is_loading"
         const val EXTRA_EXPANDED = "expanded"
         const val EXTRA_SHOW_TRANSLATION = "show_translation"
+        const val EXTRA_LYRICS_FONT_SIZE_SP = "lyrics_font_size_sp"
         const val EXTRA_PLAYBACK_MODE = "playback_mode"
         const val EXTRA_OPEN_APP_AND_LOCATE = "open_app_and_locate"
         const val EXTRA_OPEN_MODE = "open_mode"
@@ -314,6 +315,7 @@ class FloatingMiniPlayerService : LifecycleService() {
             openMode: String,
             openTrackId: String,
             openPlaylistId: Long,
+            lyricsFontSizeSp: Float = DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP,
         ) {
             if (!Settings.canDrawOverlays(context)) return
             val intent = Intent(context, FloatingMiniPlayerService::class.java)
@@ -329,6 +331,10 @@ class FloatingMiniPlayerService : LifecycleService() {
                 .putExtra(EXTRA_IS_LOADING, isLoading)
                 .putExtra(EXTRA_EXPANDED, expanded)
                 .putExtra(EXTRA_SHOW_TRANSLATION, showTranslation)
+                .putExtra(EXTRA_LYRICS_FONT_SIZE_SP, lyricsFontSizeSp.coerceIn(
+                    MIN_FLOATING_LYRICS_FONT_SIZE_SP,
+                    MAX_FLOATING_LYRICS_FONT_SIZE_SP,
+                ))
                 .putExtra(EXTRA_PLAYBACK_MODE, playbackMode.coerceIn(0, 2))
                 .putExtra(EXTRA_OPEN_MODE, openMode)
                 .putExtra(EXTRA_OPEN_TRACK_ID, openTrackId)
@@ -381,7 +387,8 @@ class FloatingMiniPlayerService : LifecycleService() {
     private var lyricsPanelOnRight by mutableStateOf(false)
     private var lyricsPanelWidthPx by mutableIntStateOf(0)
     private var lyricsPanelGapPx by mutableIntStateOf(0)
-    private var expansionProgress = 0f
+    private var windowBoundsExpanded by mutableStateOf(false)
+    private var lyricsFontSizeSp by mutableStateOf(DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP)
     private var showTranslation by mutableStateOf(false)
     private var playbackMode by mutableIntStateOf(0)
     private var openMode by mutableStateOf("search")
@@ -450,9 +457,27 @@ class FloatingMiniPlayerService : LifecycleService() {
             }
             return START_NOT_STICKY
         }
+        val overlayWasMissing = overlayView == null
+        val wasExpanded = expanded
+        val requestedExpanded = if (intent?.action == ACTION_UPDATE && intent.hasExtra(EXTRA_EXPANDED)) {
+            intent.getBooleanExtra(EXTRA_EXPANDED, expanded)
+        } else expanded
+        if (!overlayWasMissing && !wasExpanded && requestedExpanded) {
+            // Commit both Compose states before its SideEffect synchronizes WindowManager bounds.
+            windowBoundsExpanded = true
+        }
         if (intent?.action == ACTION_UPDATE) applyUpdate(intent)
         startAsForegroundService()
-        ensureOverlayWindow()
+        if (overlayWasMissing) {
+            windowBoundsExpanded = expanded
+            ensureOverlayWindow()
+        } else {
+            ensureOverlayWindow()
+            if (expanded && !wasExpanded) {
+                windowBoundsExpanded = true
+                updateWindowPositions()
+            }
+        }
         return START_NOT_STICKY
     }
 
@@ -498,6 +523,10 @@ class FloatingMiniPlayerService : LifecycleService() {
         if (intent.hasExtra(EXTRA_EXPANDED)) expanded = intent.getBooleanExtra(EXTRA_EXPANDED, expanded)
         if (intent.hasExtra(EXTRA_SHOW_TRANSLATION)) {
             showTranslation = intent.getBooleanExtra(EXTRA_SHOW_TRANSLATION, showTranslation)
+        }
+        if (intent.hasExtra(EXTRA_LYRICS_FONT_SIZE_SP)) {
+            lyricsFontSizeSp = intent.getFloatExtra(EXTRA_LYRICS_FONT_SIZE_SP, lyricsFontSizeSp)
+                .coerceIn(MIN_FLOATING_LYRICS_FONT_SIZE_SP, MAX_FLOATING_LYRICS_FONT_SIZE_SP)
         }
         if (intent.hasExtra(EXTRA_PLAYBACK_MODE)) {
             playbackMode = intent.getIntExtra(EXTRA_PLAYBACK_MODE, playbackMode).coerceIn(0, 2)
@@ -679,42 +708,46 @@ class FloatingMiniPlayerService : LifecycleService() {
         lyricsWidthPx = lyricsWidthPx(),
         gapPx = lyricsPanelGapPx,
         lyricsOnRight = lyricsPanelOnRight,
-        expansionProgress = expansionProgress,
+        expandedBounds = windowBoundsExpanded,
     )
 
     private fun overlayWindowWidth(): Int = FloatingOverlayPlacement.windowWidthPx(
         coverWidthPx = dp(64),
         lyricsWidthPx = lyricsWidthPx(),
         gapPx = lyricsPanelGapPx,
-        expansionProgress = expansionProgress,
+        expandedBounds = windowBoundsExpanded,
     )
 
-    private fun onExpansionProgress(progress: Float) {
-        expansionProgress = progress.coerceIn(0f, 1f)
-        updateWindowPositions()
+    private fun onExpansionAnimationFinished(isExpanded: Boolean) {
+        // Defer WindowManager resizing until Compose has applied the matching root width.
+        windowBoundsExpanded = isExpanded
+        mainHandler.post { savePosition() }
     }
-
-    private fun onExpansionAnimationFinished() {
-        savePosition()
+    
+    private fun onWindowBoundsCompositionReady() {
+        updateWindowPositions()
     }
 
     
     private fun ensureOverlayWindow() {
         if (overlayView != null) return
         val wm = windowManager ?: return
-        // Set the panel direction before first composition so an expanded overlay never flashes on the wrong side.
+        // Resolve direction and final bounds before first composition.
         clampPosition()
+        windowBoundsExpanded = expanded
         val view = ComposeView(this).apply {
             setViewTreeLifecycleOwner(overlayViewTreeOwner)
             setViewTreeSavedStateRegistryOwner(overlayViewTreeOwner)
             setContent {
                 OverlayPlayerUi(
                     expanded = expanded,
+                    windowBoundsExpanded = windowBoundsExpanded,
                     lyricsOnRight = lyricsPanelOnRight,
                     lyricsWidthDp = lyricsWidthPx() / density,
                     lyricsGapDp = lyricsPanelGapPx / density,
-                    onExpansionProgress = { onExpansionProgress(it) },
-                    onExpansionAnimationFinished = { onExpansionAnimationFinished() },
+                    lyricsFontSizeSp = lyricsFontSizeSp,
+                    onExpansionAnimationFinished = { onExpansionAnimationFinished(it) },
+                    onWindowBoundsCompositionReady = { onWindowBoundsCompositionReady() },
                     coverUrl = coverUrl,
                     isPlaying = isPlaying,
                     isLoading = isLoading,
@@ -757,18 +790,29 @@ class FloatingMiniPlayerService : LifecycleService() {
             overlayWindowX(),
             coverY,
         )
-        wm.addView(view, params)
         overlayView = view
         overlayParams = params
+        try {
+            wm.addView(view, params)
+        } catch (error: Exception) {
+            overlayView = null
+            overlayParams = null
+            throw error
+        }
     }
 
     private fun updateWindowPositions() {
         val wm = windowManager ?: return
         val params = overlayParams ?: return
-        params.x = overlayWindowX()
-        params.y = coverY
-        params.width = overlayWindowWidth()
-        params.height = dp(88)
+        val nextX = overlayWindowX()
+        val nextY = coverY
+        val nextWidth = overlayWindowWidth()
+        val nextHeight = dp(88)
+        if (params.x == nextX && params.y == nextY && params.width == nextWidth && params.height == nextHeight) return
+        params.x = nextX
+        params.y = nextY
+        params.width = nextWidth
+        params.height = nextHeight
         overlayView?.let { view -> runCatching { wm.updateViewLayout(view, params) } }
     }
 
@@ -809,11 +853,13 @@ class FloatingMiniPlayerService : LifecycleService() {
 @Composable
 private fun OverlayPlayerUi(
     expanded: Boolean,
+    windowBoundsExpanded: Boolean,
     lyricsOnRight: Boolean,
     lyricsWidthDp: Float,
     lyricsGapDp: Float,
-    onExpansionProgress: (Float) -> Unit,
-    onExpansionAnimationFinished: () -> Unit,
+    lyricsFontSizeSp: Float,
+    onExpansionAnimationFinished: (Boolean) -> Unit,
+    onWindowBoundsCompositionReady: () -> Unit,
     coverUrl: String,
     isPlaying: Boolean,
     isLoading: Boolean,
@@ -844,20 +890,16 @@ private fun OverlayPlayerUi(
     val expansionProgress by animateFloatAsState(
         targetValue = if (expanded) 1f else 0f,
         animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
-        finishedListener = { onExpansionAnimationFinished() },
+        finishedListener = { onExpansionAnimationFinished(expanded) },
         label = "lyricsPanelExpansion",
     )
-    SideEffect { onExpansionProgress(expansionProgress) }
 
-    val animatedGroupWidthDp = 64f + (lyricsWidthDp + lyricsGapDp) * expansionProgress
+    // WindowManager bounds are fixed through animation: only lyrics alpha/scale changes,
+    // so the cover's absolute X coordinate remains stable on both sides of the screen.
+    val groupWidthDp = if (windowBoundsExpanded) 64f + lyricsWidthDp + lyricsGapDp else 64f
+    SideEffect { onWindowBoundsCompositionReady() }
     val lyricsModifier = Modifier
-        .offset(
-            x = if (lyricsOnRight) {
-                (64f + lyricsGapDp * expansionProgress).dp
-            } else {
-                (-lyricsWidthDp * (1f - expansionProgress)).dp
-            },
-        )
+        .offset(x = if (lyricsOnRight) (64f + lyricsGapDp).dp else 0.dp)
         .width(lyricsWidthDp.dp)
         .height(64.dp)
         .graphicsLayer {
@@ -872,11 +914,11 @@ private fun OverlayPlayerUi(
 
     Box(
         modifier = Modifier
-            .width(animatedGroupWidthDp.dp)
+            .width(groupWidthDp.dp)
             .height(88.dp)
             .clipToBounds(),
     ) {
-        if (expansionProgress > 0.001f) {
+        if (windowBoundsExpanded && expansionProgress > 0.001f) {
             OverlayLyricsUi(
                 originalLyrics = originalLyrics,
                 translatedLyrics = translatedLyrics,
@@ -891,6 +933,7 @@ private fun OverlayPlayerUi(
                 onCircularDrag = onCircularDrag,
                 onLongPress = handleLongPress,
                 onDragEnd = onDragEnd,
+                lyricsFontSizeSp = lyricsFontSizeSp,
                 modifier = lyricsModifier,
             )
         }
@@ -1022,6 +1065,7 @@ private fun OverlayCoverUi(
 
 @Composable
 private fun OverlayLyricsUi(
+    lyricsFontSizeSp: Float,
     originalLyrics: String,
     translatedLyrics: String,
     showTranslation: Boolean,
@@ -1093,8 +1137,8 @@ private fun OverlayLyricsUi(
                         currentLyric,
                         color = Color(0xFF9FF0C9),
                         fontWeight = FontWeight.Bold,
-                        fontSize = 14.4.sp,
-                        lineHeight = 18.sp,
+                        fontSize = lyricsFontSizeSp.sp,
+                        lineHeight = (lyricsFontSizeSp * 1.25f).sp,
                         textAlign = TextAlign.Center,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,

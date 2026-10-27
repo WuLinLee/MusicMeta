@@ -69,7 +69,7 @@ class MusicSourceConfigTest {
     }
 
     @Test
-    fun animatedExpandedOverlayBoundsStayWithinScreenAfterDisplayResize() {
+    fun expandedOverlayBoundsKeepCoverAnchoredAndStayWithinScreenAfterResize() {
         val coverWidth = 64
         val preferredGap = 14
         val margin = 4
@@ -87,17 +87,30 @@ class MusicSourceConfigTest {
                 val lyricsWidth = FloatingOverlayPlacement.lyricsWidthPx(
                     displayWidth, coverX, coverWidth, desiredLyricsWidth, gap, margin, onRight,
                 )
-                for (progress in listOf(0f, 0.5f, 1f)) {
-                    val width = FloatingOverlayPlacement.windowWidthPx(coverWidth, lyricsWidth, gap, progress)
-                    val origin = FloatingOverlayPlacement.windowOriginX(coverX, lyricsWidth, gap, onRight, progress)
-                    assertTrue("left edge must remain visible", origin >= margin)
-                    assertTrue("right edge must remain visible", origin + width <= displayWidth - margin)
-                    assertTrue("window never narrower than cover", width >= coverWidth)
-                }
+                val collapsedWidth = FloatingOverlayPlacement.windowWidthPx(coverWidth, lyricsWidth, gap, false)
+                val collapsedX = FloatingOverlayPlacement.windowOriginX(coverX, lyricsWidth, gap, onRight, false)
+                assertEquals(coverWidth, collapsedWidth)
+                assertEquals(coverX, collapsedX)
+                val expandedWidth = FloatingOverlayPlacement.windowWidthPx(coverWidth, lyricsWidth, gap, true)
+                val expandedX = FloatingOverlayPlacement.windowOriginX(coverX, lyricsWidth, gap, onRight, true)
+                assertTrue("expanded left edge must remain visible", expandedX >= margin)
+                assertTrue("expanded right edge must remain visible", expandedX + expandedWidth <= displayWidth - margin)
+                val coverScreenX = if (onRight) expandedX else expandedX + expandedWidth - coverWidth
+                assertEquals("cover must not jump when expanding", coverX, coverScreenX)
             }
         }
     }
 
+
+    @Test
+    fun lyricFontSliderKeepsDefaultAtCenterAndProvidesHalfToDoubleRange() {
+        assertEquals(0.5f, floatingLyricsFontSliderPosition(DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP), 0.001f)
+        assertEquals(MIN_FLOATING_LYRICS_FONT_SIZE_SP, floatingLyricsFontSizeFromSlider(0f), 0.01f)
+        assertEquals(DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP, floatingLyricsFontSizeFromSlider(0.5f), 0.01f)
+        assertEquals(MAX_FLOATING_LYRICS_FONT_SIZE_SP, floatingLyricsFontSizeFromSlider(1f), 0.01f)
+        assertEquals(0f, floatingLyricsFontSliderPosition(MIN_FLOATING_LYRICS_FONT_SIZE_SP), 0.001f)
+        assertEquals(1f, floatingLyricsFontSliderPosition(MAX_FLOATING_LYRICS_FONT_SIZE_SP), 0.001f)
+    }
 
     @Test
     fun flacAdapterOnlyOffersImplementedPlatforms() {

@@ -28,6 +28,7 @@ import androidx.core.content.ContextCompat
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -134,7 +135,23 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.io.IOException
+import kotlin.math.pow
+import kotlin.math.ln
 import kotlin.math.roundToInt
+
+internal const val DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP = 17.28f
+internal const val MIN_FLOATING_LYRICS_FONT_SIZE_SP = DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP / 2f
+internal const val MAX_FLOATING_LYRICS_FONT_SIZE_SP = DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP * 2f
+
+internal fun floatingLyricsFontSizeFromSlider(progress: Float): Float =
+    (DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP * 4.0.pow(progress.coerceIn(0f, 1f).toDouble() - 0.5)).toFloat()
+        .coerceIn(MIN_FLOATING_LYRICS_FONT_SIZE_SP, MAX_FLOATING_LYRICS_FONT_SIZE_SP)
+
+internal fun floatingLyricsFontSliderPosition(sizeSp: Float): Float =
+    (0.5 + ln(
+        sizeSp.coerceIn(MIN_FLOATING_LYRICS_FONT_SIZE_SP, MAX_FLOATING_LYRICS_FONT_SIZE_SP).toDouble() /
+            DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP.toDouble(),
+    ) / ln(4.0)).toFloat().coerceIn(0f, 1f)
 
 private const val FLAC_SITE_HOME = "https://flac.music.hi.cn/"
 private val PageBackground = Color(0xFF0D1210)
@@ -463,6 +480,11 @@ private fun MusicMetaApp() {
     var floatingLyricsTranslatedByDefault by remember {
         mutableStateOf(folderPreferences.getBoolean("floating_lyrics_translated_by_default", true))
     }
+    var floatingLyricsFontSizeSp by remember {
+        mutableStateOf(folderPreferences.getFloat("floating_lyrics_font_size_sp", DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP)
+            .coerceIn(MIN_FLOATING_LYRICS_FONT_SIZE_SP, MAX_FLOATING_LYRICS_FONT_SIZE_SP))
+    }
+    var showInteractionHelp by remember { mutableStateOf(false) }
     var playbackMode by remember { mutableStateOf(folderPreferences.getInt("playback_mode", 0).coerceIn(0, 2)) }
     val cyclePlaybackMode: () -> Unit = {
         playbackMode = (playbackMode + 1) % 3
@@ -471,6 +493,7 @@ private fun MusicMetaApp() {
     }
     var localMusicTracks by remember { mutableStateOf<List<LocalAudioTrack>>(emptyList()) }
     var isRestoringCaches by remember { mutableStateOf(true) }
+    var didCheckLocalArtworkMigration by remember { mutableStateOf(false) }
     var highlightedPlaylistMode by remember { mutableStateOf("") }
     var highlightedPlaylistTrackId by remember { mutableStateOf<Long?>(null) }
     var highlightedLocalTrackUri by remember { mutableStateOf("") }
@@ -484,6 +507,10 @@ private fun MusicMetaApp() {
     var previewCurrentPlaylistId by remember { mutableStateOf<Long?>(null) }
     var previewNavigationHandler by remember { mutableStateOf<((Int) -> Unit)?>(null) }
     var previewQueue by remember { mutableStateOf<List<FlacSiteSong>>(emptyList()) }
+    var queuedNextPreview by remember { mutableStateOf<FlacSiteSong?>(null) }
+    var queuedNextTrack by remember { mutableStateOf<MusicTrack?>(null) }
+    var queuedNextPlaylistId by remember { mutableStateOf<Long?>(null) }
+    var queuedNextMode by remember { mutableStateOf<String?>(null) }
     var previewCoverUrl by remember { mutableStateOf("") }
     var previewLyrics by remember { mutableStateOf("") }
     var previewTranslatedLyrics by remember { mutableStateOf("") }
@@ -535,6 +562,7 @@ private fun MusicMetaApp() {
                     withContext(Dispatchers.IO) {
                         MusicMetaPersistence.saveLocalTracks(context, scannedTracks)
                     }
+                    folderPreferences.edit().putInt("local_artwork_migration_version", 1).apply()
                     localCurrentPage = 1
                     folderPreferences.edit().putInt("local_current_page", 1).apply()
                     jumpPageInput = "1"
@@ -566,6 +594,31 @@ private fun MusicMetaApp() {
             localAudioPermissionLauncher.launch(audioPermission)
         }
     }
+    LaunchedEffect(isRestoringCaches) {
+        if (!isRestoringCaches && !didCheckLocalArtworkMigration) {
+            didCheckLocalArtworkMigration = true
+            val migrationVersion = folderPreferences.getInt("local_artwork_migration_version", 0)
+            val audioPermission = if (Build.VERSION.SDK_INT >= 33) {
+                android.Manifest.permission.READ_MEDIA_AUDIO
+            } else {
+                android.Manifest.permission.READ_EXTERNAL_STORAGE
+            }
+            val hasTreePermission = localMusicFolderUri != null &&
+                context.contentResolver.persistedUriPermissions.any {
+                    it.uri == localMusicFolderUri && it.isReadPermission
+                }
+            val hasMediaPermission = ContextCompat.checkSelfPermission(
+                context,
+                audioPermission,
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            if (migrationVersion < 1 && localMusicTracks.isNotEmpty() && (hasTreePermission || hasMediaPermission)) {
+                // Upgrade existing cached local tracks so coverUri points at embedded art
+                // instead of a stale album-art URI from the previous scanner.
+                scanLocalMusic()
+            }
+        }
+    }
+
     val overlayPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
     ) {
@@ -717,6 +770,77 @@ private fun MusicMetaApp() {
                     isSearchingFlac = false
                 }
             }
+        }
+    }
+
+    val queueTrackForNext: (MusicTrack) -> Unit = { track ->
+        if (isSearchingFlac || isResolvingUrl || isDownloading || isPreviewLoading) {
+            status = "当前歌曲或音源正在准备，请稍候再排队。"
+        } else {
+            isSearchingFlac = true
+            val requestedMode = inputMode
+            val requestedPlaylistId = playlist?.id.takeIf { requestedMode == "playlist" || requestedMode == "liked" }
+            scope.launch {
+                try {
+                    val cookie = if (sourceProvider == MusicSourceConfig.BACKEND_FLAC_SITE) CookieManager.getInstance().getCookie(FLAC_SITE_HOME) else null
+                    val matches = withTimeout(28_000L) {
+                        withContext(Dispatchers.IO) {
+                            flacProvider.search(
+                                keyword = listOf(track.title, track.artists).filter { it.isNotBlank() }.joinToString(" "),
+                                platform = flacPlatform,
+                                backend = sourceProvider,
+                                cookie = cookie,
+                                userAgent = fallbackUserAgent,
+                                fallbackKeyword = track.title,
+                            )
+                        }
+                    }.take(8)
+                    if (matches.isEmpty()) {
+                        status = "没有找到《${track.title}》的可用音源，未加入下一首。"
+                    } else {
+                        flacResults = matches
+                        manualSourceSearchActive = false
+                        if (previewSong == null || previewPlayer.value == null) {
+                            selectedTrack = track
+                            previewCurrentTrack = track
+                            previewCurrentPlaylistId = requestedPlaylistId
+                            status = "当前没有正在播放的歌曲，立即开始播放《${track.title}》。"
+                            playPreviewRef.value(matches.first())
+                        } else {
+                            queuedNextPreview = matches.first()
+                            queuedNextTrack = track
+                            queuedNextPlaylistId = requestedPlaylistId
+                            queuedNextMode = requestedMode
+                            status = "已将《${track.title}》设为下一首；当前歌曲播放结束后自动切换。"
+                        }
+                    }
+                } catch (error: Exception) {
+                    status = "为《${track.title}》排入下一首失败：" + (error.message?.takeIf { it.isNotBlank() } ?: "请稍后重试")
+                    captureError("下一首排队", error)
+                } finally {
+                    isSearchingFlac = false
+                }
+            }
+        }
+    }
+
+    val queueLocalTrackForNext: (LocalAudioTrack, List<LocalAudioTrack>) -> Unit = { track, tracks ->
+        val nextItem = FlacSiteSong(track.uri.toString(), "local", track.title, track.artist, track.album, "", track.durationMs.toString(), track.coverUri)
+        previewQueue = tracks.map { FlacSiteSong(it.uri.toString(), "local", it.title, it.artist, it.album, "", it.durationMs.toString(), it.coverUri) }
+        if (isPreviewLoading || isSearchingFlac || isResolvingUrl || isDownloading) {
+            status = "当前歌曲或音源正在准备，请稍候再排队。"
+        } else if (previewSong == null || previewPlayer.value == null) {
+            selectedTrack = null
+            previewCurrentTrack = null
+            previewCurrentPlaylistId = null
+            status = "当前没有正在播放的歌曲，立即开始播放本地歌曲《${track.title}》。"
+            playPreviewRef.value(nextItem)
+        } else {
+            queuedNextPreview = nextItem
+            queuedNextTrack = null
+            queuedNextPlaylistId = null
+            queuedNextMode = "local"
+            status = "已将本地歌曲《${track.title}》设为下一首；当前歌曲结束后播放。"
         }
     }
 
@@ -1011,6 +1135,10 @@ private fun MusicMetaApp() {
         previewCurrentTrack = null
         previewCurrentPlaylistId = null
         previewQueue = emptyList()
+        queuedNextPreview = null
+        queuedNextTrack = null
+        queuedNextPlaylistId = null
+        queuedNextMode = null
         previewCoverUrl = ""
         previewLyrics = ""
         previewTranslatedLyrics = ""
@@ -1052,6 +1180,10 @@ private fun MusicMetaApp() {
                 }
             }
         } else if (!isPreviewLoading) {
+            queuedNextPreview = null
+            queuedNextTrack = null
+            queuedNextPlaylistId = null
+            queuedNextMode = null
             previewPlaybackGeneration += 1L
             val playbackGeneration = previewPlaybackGeneration
             val oldPlayer = previewPlayer.value
@@ -1187,6 +1319,28 @@ private fun MusicMetaApp() {
                         }
                         runCatching { completed.release() }
                         if (previewPlayer.value === completed) previewPlayer.value = null
+                        val pendingNext = queuedNextPreview
+                        if (pendingNext != null) {
+                            val pendingTrack = queuedNextTrack
+                            val pendingPlaylistId = queuedNextPlaylistId
+                            val pendingMode = queuedNextMode
+                            queuedNextPreview = null
+                            queuedNextTrack = null
+                            queuedNextPlaylistId = null
+                            queuedNextMode = null
+                            if (pendingMode == "local") {
+                                selectedTrack = null
+                                previewCurrentTrack = null
+                                previewCurrentPlaylistId = null
+                            } else {
+                                selectedTrack = pendingTrack
+                                previewCurrentTrack = pendingTrack
+                                previewCurrentPlaylistId = pendingPlaylistId
+                            }
+                            status = "正在播放已排队的下一首：《${pendingNext.title}》。"
+                            playPreviewRef.value(pendingNext)
+                            return@setOnCompletionListener
+                        }
                         if (song.platform == "local" || (previewCurrentTrack != null && previewCurrentPlaylistId != null) || previewQueue.size > 1) {
                             status = if (song.platform == "local") {
                                 "本地歌曲播放结束，正在切换下一首。"
@@ -1222,7 +1376,7 @@ private fun MusicMetaApp() {
                     previewPlayer.value = player
                     player.prepareAsync()
 
-                    if (song.platform != "local" || song.coverUrl.isBlank()) scope.launch {
+                    if (song.platform != "local") scope.launch {
                         val cover = withContext(Dispatchers.IO) { resolveSourceCoverUrl(song) }
                         if (playbackGeneration == previewPlaybackGeneration &&
                             previewSong?.let(sourceSongKey) == songKey && cover.isNotBlank()
@@ -1235,15 +1389,24 @@ private fun MusicMetaApp() {
                             val nativeNetEaseId = if (song.platform == "wyy") {
                                 song.id.toLongOrNull()?.takeIf { it > 0L } ?: 0L
                             } else 0L
-                            var tracks = runCatching {
-                                metadataProvider.resolveNetEaseLyrics(
-                                    title = song.title,
-                                    artist = song.artist,
-                                    album = song.album,
-                                    durationMs = if (song.platform == "local") song.time.toLongOrNull() ?: 0L else 0L,
-                                    neteaseId = nativeNetEaseId,
-                                )
-                            }.getOrDefault(PreviewLyrics())
+                            val embeddedLocalLyrics = if (song.platform == "local") {
+                                runCatching {
+                                    LocalMusicScanner.readEmbeddedLyrics(context, Uri.parse(song.id))
+                                }.getOrDefault("").trim()
+                            } else ""
+                            var tracks = if (song.platform == "local") {
+                                PreviewLyrics(original = embeddedLocalLyrics)
+                            } else {
+                                runCatching {
+                                    metadataProvider.resolveNetEaseLyrics(
+                                        title = song.title,
+                                        artist = song.artist,
+                                        album = song.album,
+                                        durationMs = 0L,
+                                        neteaseId = nativeNetEaseId,
+                                    )
+                                }.getOrDefault(PreviewLyrics())
+                            }
 
                             // Prefer NetEase lyrics for both local and streamed tracks, filling gaps
                             // from the selected audio source only when NetEase lyrics are incomplete.
@@ -1258,7 +1421,7 @@ private fun MusicMetaApp() {
                                     translated = tracks.translated.ifBlank { sourceLyrics.translated },
                                 )
                             }
-                            if (tracks.original.isBlank()) {
+                            if (song.platform != "local" && tracks.original.isBlank()) {
                                 tracks = tracks.copy(
                                     original = runCatching { metadataProvider.resolveSourceLyrics(song) }
                                         .getOrDefault("").trim(),
@@ -1342,6 +1505,7 @@ private fun MusicMetaApp() {
         isPreviewLoading,
         showPreviewDetails,
         showTranslatedPreviewLyric,
+        floatingLyricsFontSizeSp,
     ) {
         val song = previewSong
         if (floatingOverlayEnabled && song != null && Settings.canDrawOverlays(context)) {
@@ -1358,6 +1522,7 @@ private fun MusicMetaApp() {
                 isLoading = isPreviewLoading,
                 expanded = showPreviewDetails,
                 showTranslation = showTranslatedPreviewLyric,
+                lyricsFontSizeSp = floatingLyricsFontSizeSp,
                 playbackMode = playbackMode,
                 openMode = when {
                     song.platform == "local" -> "local"
@@ -2357,13 +2522,26 @@ private fun MusicMetaApp() {
         ) {
             item(key = "intro") {
                 Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Text(
-                        if (inputMode == "local") "LOCAL MUSIC" else "PLAYLIST",
-                        color = Accent,
-                        fontSize = 11.sp,
-                        letterSpacing = 2.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text(
+                            if (inputMode == "local") "LOCAL MUSIC" else "PLAYLIST",
+                            color = Accent,
+                            fontSize = 11.sp,
+                            letterSpacing = 2.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        IconButton(
+                            onClick = { showInteractionHelp = true },
+                            modifier = Modifier.size(22.dp).semantics { contentDescription = "交互教程" },
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.lucide_circle_help),
+                                contentDescription = null,
+                                tint = Accent,
+                                modifier = Modifier.size(17.dp),
+                            )
+                        }
+                    }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -2568,25 +2746,32 @@ private fun MusicMetaApp() {
                     Card(
                         Modifier.fillMaxWidth()
                             .then(if (isLocalHighlight) Modifier.border(1.5.dp, Accent, rowShape) else Modifier)
-                            .pointerInput(track.uri) {
-                                detectTapGestures(
-                                    onTap = {
-                                        val song = FlacSiteSong(track.uri.toString(), "local", track.title, track.artist, track.album, "", track.durationMs.toString(), track.coverUri)
-                                        highlightedLocalTrackUri = track.uri.toString()
-                                        previewQueue = localVisible.map { FlacSiteSong(it.uri.toString(), "local", it.title, it.artist, it.album, "", it.durationMs.toString(), it.coverUri) }
-                                        previewCurrentTrack = null
-                                        previewCurrentPlaylistId = null
-                                        selectedTrack = null
-                                        playPreview(song)
-                                    },
-                                    onLongPress = { copySongAndArtist(track.title, track.artist) },
-                                )
-                            },
+                            .combinedClickable(
+                                onClick = {
+                                    val song = FlacSiteSong(track.uri.toString(), "local", track.title, track.artist, track.album, "", track.durationMs.toString(), track.coverUri)
+                                    highlightedLocalTrackUri = track.uri.toString()
+                                    previewQueue = localVisible.map { FlacSiteSong(it.uri.toString(), "local", it.title, it.artist, it.album, "", it.durationMs.toString(), it.coverUri) }
+                                    previewCurrentTrack = null
+                                    previewCurrentPlaylistId = null
+                                    selectedTrack = null
+                                    playPreview(song)
+                                },
+                                onLongClick = { copySongAndArtist(track.title, track.artist) },
+                            ),
                         shape = rowShape,
                         colors = CardDefaults.cardColors(containerColor = if (isLocalHighlight) SoftAccent else SurfaceColor),
                     ) {
                         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            AsyncImage(model = track.coverUri.takeIf { it.isNotBlank() }, contentDescription = null, modifier = Modifier.size(46.dp).clip(RoundedCornerShape(10.dp)))
+                            AsyncImage(
+                                model = track.coverUri.takeIf { it.isNotBlank() },
+                                contentDescription = "本地歌曲封面；点击加入下一首",
+                                placeholder = painterResource(R.drawable.musicmeta_cover),
+                                error = painterResource(R.drawable.musicmeta_cover),
+                                modifier = Modifier
+                                    .size(46.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable { queueLocalTrackForNext(track, localVisible) },
+                            )
                             Column(Modifier.weight(1f)) {
                                 Text(track.title, color = Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(track.artist, color = SubInk, fontSize = 12.sp, maxLines = 1)
@@ -2764,6 +2949,7 @@ private fun MusicMetaApp() {
                             busy = busy,
                             onFindSource = { searchTrackSource(track, false) },
                             onFindAndPlay = { searchTrackSource(track, true) },
+                            onQueueNext = { queueTrackForNext(track) },
                             onCopy = { copySongAndArtist(track.title, track.artists) },
                             highlightLabel = rowHighlightLabel,
                         )
@@ -3366,6 +3552,25 @@ private fun MusicMetaApp() {
                                 .apply()
                         },
                     )
+                    Text("悬浮窗歌词字体大小", fontWeight = FontWeight.SemiBold, color = Ink)
+                    Text(String.format("%.2f sp", floatingLyricsFontSizeSp), color = Accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Slider(
+                        value = floatingLyricsFontSliderPosition(floatingLyricsFontSizeSp),
+                        onValueChange = { progress ->
+                            val size = floatingLyricsFontSizeFromSlider(progress)
+                            floatingLyricsFontSizeSp = size
+                            folderPreferences.edit().putFloat("floating_lyrics_font_size_sp", size).apply()
+                        },
+                        valueRange = 0f..1f,
+                        steps = 9,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("较小 · 0.5×", color = SubInk, fontSize = 10.sp)
+                        Text("默认 · 1×", color = SubInk, fontSize = 10.sp)
+                        Text("较大 · 2×", color = SubInk, fontSize = 10.sp)
+                    }
+                    Text("滑块正中间是默认字号，左右两端分别为默认值的一半和两倍。设置会立即应用并自动保存。", color = SubInk, fontSize = 11.sp, lineHeight = 16.sp)
                     Text("本地音乐文件夹", fontWeight = FontWeight.SemiBold, color = Ink)
                     Text(localMusicFolderUri?.let { runCatching { DocumentFile.fromTreeUri(context, it)?.name }.getOrNull() } ?: "默认：下载/-07-MusicMeta 与 Music", color = SubInk, fontSize = 12.sp)
                     OutlinedButton(onClick = { localFolderPicker.launch(localMusicFolderUri) }, modifier = Modifier.fillMaxWidth()) { Text("选择本地音乐文件夹") }
@@ -3483,6 +3688,28 @@ private fun MusicMetaApp() {
                     Text("完成", color = Accent)
                 }
             },
+            containerColor = SurfaceColor,
+        )
+    }
+
+    if (showInteractionHelp) {
+        AlertDialog(
+            onDismissRequest = { showInteractionHelp = false },
+            title = { Text("交互小教程", fontWeight = FontWeight.SemiBold) },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(9.dp),
+                ) {
+                    Text("歌曲封面：加入下一首；当前歌曲播放结束后才会播放排队歌曲。若当前没有播放中的歌曲，将直接开始播放。")
+                    Text("本地歌曲封面以外的区域：立即播放该本地歌曲；长按歌曲卡片可复制歌曲名和歌手。")
+                    Text("公开歌单 / 红心歌单：封面排入下一首。右侧「找音源」查看候选，「▶」立即查找并播放第一个匹配音源。")
+                    Text("悬浮封面长按：展开或收起歌词栏；封面播放图标用于暂停 / 继续。")
+                    Text("悬浮歌词栏：使用上一首 / 下一首按钮切歌；点击译文切换原文 / 译文，拖动可移动窗口。")
+                    Text("设置与维护中可调整悬浮歌词字体大小；滑块正中为默认值，左右两端分别是一半和两倍。")
+                }
+            },
+            confirmButton = { TextButton(onClick = { showInteractionHelp = false }) { Text("知道了", color = Accent) } },
             containerColor = SurfaceColor,
         )
     }
@@ -3955,6 +4182,7 @@ private fun TrackRow(
     busy: Boolean,
     onFindSource: () -> Unit,
     onFindAndPlay: () -> Unit,
+    onQueueNext: () -> Unit,
     onCopy: () -> Unit,
     highlightLabel: String? = null,
 ) {
@@ -3975,8 +4203,12 @@ private fun TrackRow(
         ) {
             AsyncImage(
                 model = track.coverUrl.takeIf { it.isNotBlank() },
-                contentDescription = "歌曲封面",
-                modifier = Modifier.size(54.dp).clip(RoundedCornerShape(12.dp)).background(SoftAccent),
+                contentDescription = "歌曲封面；点击加入下一首",
+                modifier = Modifier
+                    .size(54.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(SoftAccent)
+                    .clickable(enabled = !busy, onClick = onQueueNext),
             )
             Column(
                 modifier = Modifier.weight(1f),
