@@ -1087,7 +1087,12 @@ private fun OverlayLyricsUi(
     val activeText = if (showTranslation && translatedLyrics.isNotBlank()) translatedLyrics else originalLyrics
     val currentLyric = when {
         activeText.isBlank() -> "正在等待歌词…"
-        else -> findMiniLyric(activeText, positionMs + 180)
+        else -> currentLyricLine(
+            activeLyrics = activeText,
+            originalLyrics = originalLyrics,
+            positionMs = positionMs + 180,
+            isTranslation = showTranslation && translatedLyrics.isNotBlank(),
+        )
     }
     val progress = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
     Card(
@@ -1220,37 +1225,6 @@ private fun OverlayPlayGlyph(isPlaying: Boolean, isLoading: Boolean) {
     }
 }
 
-
-private fun findMiniLyric(raw: String, positionMs: Int): String {
-    val tagPattern = Regex("""\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?]""")
-    val rows = raw.lineSequence().flatMap { line ->
-        val tags = tagPattern.findAll(line).toList()
-        if (tags.isEmpty()) {
-            emptyList()
-        } else {
-            val text = tagPattern.replace(line, "").trim()
-            if (text.isBlank()) {
-                emptyList()
-            } else {
-                tags.map { tag ->
-                    val minute = tag.groupValues[1].toIntOrNull() ?: 0
-                    val second = tag.groupValues[2].toIntOrNull() ?: 0
-                    val rawFraction = tag.groupValues.getOrNull(3).orEmpty()
-                    val fractionMs = when (rawFraction.length) {
-                        1 -> (rawFraction.toIntOrNull() ?: 0) * 100
-                        2 -> (rawFraction.toIntOrNull() ?: 0) * 10
-                        3 -> rawFraction.toIntOrNull() ?: 0
-                        else -> 0
-                    }
-                    (minute * 60_000 + second * 1_000 + fractionMs) to text
-                }
-            }
-        }
-    }.sortedBy { it.first }.toList()
-    return rows.lastOrNull { it.first <= positionMs }?.second
-        ?: rows.firstOrNull()?.second
-        ?: raw.lineSequence().firstOrNull { it.isNotBlank() && !it.startsWith("[ti:", true) }?.trim().orEmpty()
-}
 
 private fun formatMiniTime(milliseconds: Int): String {
     val seconds = milliseconds.coerceAtLeast(0) / 1000
