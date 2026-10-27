@@ -515,6 +515,7 @@ private fun MusicMetaApp() {
     var previewTranslatedLyrics by remember { mutableStateOf("") }
     var isPreviewLoading by remember { mutableStateOf(false) }
     var isPreviewPlaying by remember { mutableStateOf(false) }
+    var previewMuted by remember { mutableStateOf(folderPreferences.getBoolean("preview_muted", false)) }
     var isPreviewLyricsLoading by remember { mutableStateOf(false) }
     var showPreviewDetails by remember { mutableStateOf(floatingLyricsExpandedByDefault) }
     var showTranslatedPreviewLyric by remember { mutableStateOf(floatingLyricsTranslatedByDefault) }
@@ -1257,6 +1258,7 @@ private fun MusicMetaApp() {
                         ) {
                             previewDurationMs = runCatching { prepared.duration }.getOrDefault(0).coerceAtLeast(0)
                             previewPositionMs = runCatching { prepared.currentPosition }.getOrDefault(0).coerceAtLeast(0)
+                            runCatching { prepared.setVolume(if (previewMuted) 0f else 1f, if (previewMuted) 0f else 1f) }
                             runCatching { prepared.start() }
                                 .onSuccess {
                                     isPreviewPlaying = true
@@ -1465,6 +1467,39 @@ private fun MusicMetaApp() {
         FloatingMiniPlayerBridge.onCommand = { command, seekPosition ->
             when (command) {
                 FloatingMiniPlayerService.COMMAND_TOGGLE_PLAY -> previewSong?.let { playPreview(it) }
+                FloatingMiniPlayerService.COMMAND_MEDIA_PLAY -> {
+                    val player = previewPlayer.value
+                    when {
+                        isPreviewLoading -> Unit
+                        player != null && previewSong != null -> runCatching {
+                            if (!player.isPlaying) {
+                                player.setVolume(if (previewMuted) 0f else 1f, if (previewMuted) 0f else 1f)
+                                player.start()
+                                isPreviewPlaying = true
+                                previewPositionMs = player.currentPosition.coerceAtLeast(0)
+                                status = "正在播放《" + previewSong?.title.orEmpty() + "》。"
+                            }
+                        }.onFailure { status = "继续播放失败：" + (it.message ?: "请重试") }
+                        previewSong != null -> playPreviewRef.value(previewSong!!)
+                    }
+                }
+                FloatingMiniPlayerService.COMMAND_MEDIA_PAUSE -> {
+                    val player = previewPlayer.value
+                    if (player != null) runCatching {
+                        if (player.isPlaying) {
+                            player.pause()
+                            isPreviewPlaying = false
+                            previewPositionMs = player.currentPosition.coerceAtLeast(0)
+                            status = "播放已暂停。"
+                        }
+                    }.onFailure { status = "暂停播放失败：" + (it.message ?: "请重试") }
+                }
+                FloatingMiniPlayerService.COMMAND_MEDIA_TOGGLE_MUTE -> {
+                    previewMuted = !previewMuted
+                    folderPreferences.edit().putBoolean("preview_muted", previewMuted).apply()
+                    runCatching { previewPlayer.value?.setVolume(if (previewMuted) 0f else 1f, if (previewMuted) 0f else 1f) }
+                    status = if (previewMuted) "已静音。" else "已取消静音。"
+                }
                 FloatingMiniPlayerService.COMMAND_PREVIOUS -> previewNavigationHandler?.invoke(-1)
                 FloatingMiniPlayerService.COMMAND_NEXT -> previewNavigationHandler?.invoke(1)
                 FloatingMiniPlayerService.COMMAND_TOGGLE_DETAILS -> showPreviewDetails = !showPreviewDetails
@@ -1522,6 +1557,7 @@ private fun MusicMetaApp() {
                 expanded = showPreviewDetails,
                 showTranslation = showTranslatedPreviewLyric,
                 lyricsFontSizeSp = floatingLyricsFontSizeSp,
+                isMuted = previewMuted,
                 playbackMode = playbackMode,
                 openMode = when {
                     song.platform == "local" -> "local"
