@@ -2885,7 +2885,7 @@ private fun MusicMetaApp() {
                         OutlinedButton(onClick = scanLocalMusic, enabled = !isRestoringCaches && !isScanningLocalMusic) {
                             Text(if (isRestoringCaches) "恢复中" else if (isScanningLocalMusic) "扫描中" else "扫描")
                         }
-                        OutlinedButton(
+                        IconButton(
                             onClick = {
                                 val nextMode = localMusicSortMode.next()
                                 localMusicSortMode = nextMode
@@ -2895,13 +2895,16 @@ private fun MusicMetaApp() {
                                 status = "本地音乐排序：" + nextMode.description
                             },
                             enabled = !isRestoringCaches && !isScanningLocalMusic,
-                            shape = RoundedCornerShape(12.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
                             modifier = Modifier.semantics {
                                 contentDescription = "本地音乐排序：${localMusicSortMode.description}，点击切换"
                             },
                         ) {
-                            Text(localMusicSortMode.buttonLabel, fontSize = 12.sp, maxLines = 1)
+                            Icon(
+                                painter = painterResource(R.drawable.lucide_arrow_up_down),
+                                contentDescription = null,
+                                tint = if (isRestoringCaches || isScanningLocalMusic) SubInk else Accent,
+                                modifier = Modifier.size(22.dp),
+                            )
                         }
                     }
                 }
