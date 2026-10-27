@@ -28,9 +28,6 @@ import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
-internal fun mediaDisplayTitle(currentLyric: String, trackTitle: String): String =
-    currentLyric.trim().ifBlank { trackTitle }
-
 internal fun overlayToggleLabel(overlayEnabled: Boolean): String =
     if (overlayEnabled) "关闭悬浮窗" else "开启悬浮窗"
 
@@ -50,7 +47,6 @@ class MediaPlaybackService : Service() {
         const val EXTRA_TITLE = "media_title"
         const val EXTRA_ARTIST = "media_artist"
         const val EXTRA_COVER_URI = "media_cover_uri"
-        const val EXTRA_LYRIC = "media_current_lyric"
         const val EXTRA_DURATION = "media_duration"
         const val EXTRA_POSITION = "media_position"
         const val EXTRA_IS_PLAYING = "media_is_playing"
@@ -76,7 +72,6 @@ class MediaPlaybackService : Service() {
             title: String,
             artist: String,
             coverUri: String,
-            currentLyric: String,
             durationMs: Int,
             positionMs: Int,
             isPlaying: Boolean,
@@ -89,7 +84,6 @@ class MediaPlaybackService : Service() {
                 .putExtra(EXTRA_TITLE, title)
                 .putExtra(EXTRA_ARTIST, artist)
                 .putExtra(EXTRA_COVER_URI, coverUri)
-                .putExtra(EXTRA_LYRIC, currentLyric)
                 .putExtra(EXTRA_DURATION, durationMs.coerceAtLeast(0))
                 .putExtra(EXTRA_POSITION, positionMs.coerceAtLeast(0))
                 .putExtra(EXTRA_IS_PLAYING, isPlaying)
@@ -122,7 +116,6 @@ class MediaPlaybackService : Service() {
     private var trackTitle = ""
     private var trackArtist = ""
     private var coverUri = ""
-    private var currentLyric = ""
     private var durationMs = 0
     private var positionMs = 0
     private var isPlaying = false
@@ -223,7 +216,6 @@ class MediaPlaybackService : Service() {
             coverUri = nextCoverUri
             albumArt = null
         }
-        currentLyric = intent.getStringExtra(EXTRA_LYRIC).orEmpty()
         durationMs = intent.getIntExtra(EXTRA_DURATION, durationMs).coerceAtLeast(0)
         positionMs = intent.getIntExtra(EXTRA_POSITION, positionMs).coerceAtLeast(0)
         isPlaying = intent.getBooleanExtra(EXTRA_IS_PLAYING, isPlaying)
@@ -233,14 +225,14 @@ class MediaPlaybackService : Service() {
     }
 
     private fun publishMetadata() {
-        val lyricTitle = mediaDisplayTitle(currentLyric, trackTitle)
+        val title = trackTitle.ifBlank { "未知歌曲" }
+        val artist = trackArtist.ifBlank { "未知艺人" }
         val metadata = MediaMetadataCompat.Builder()
-            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, lyricTitle)
-            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, trackArtist)
+            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
+            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist)
             .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, "音笺")
-            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE, lyricTitle)
-            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_SUBTITLE, trackTitle.ifBlank { trackArtist })
-            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_DESCRIPTION, trackArtist)
+            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE, title)
+            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_SUBTITLE, artist)
             .putString(MediaMetadataCompat.METADATA_KEY_ART_URI, coverUri)
             .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, durationMs.toLong())
         if (albumArt != null) {
@@ -294,8 +286,8 @@ class MediaPlaybackService : Service() {
         val contentIntent = mediaSession.controller.sessionActivity
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_media_play)
-            .setContentTitle(mediaDisplayTitle(currentLyric, trackTitle).ifBlank { "音笺" })
-            .setContentText(listOf(trackTitle, trackArtist).filter { it.isNotBlank() }.joinToString(" · "))
+            .setContentTitle(trackTitle.ifBlank { "音笺" })
+            .setContentText(trackArtist)
             .setLargeIcon(albumArt)
             .setContentIntent(contentIntent)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)

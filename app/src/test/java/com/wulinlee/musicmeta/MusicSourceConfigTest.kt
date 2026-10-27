@@ -7,12 +7,7 @@ import org.junit.Test
 
 class MusicSourceConfigTest {
     @Test
-    fun mediaCardPrefersCurrentLyricForTitleAndFallsBackToSongTitle() {
-        assertEquals("翻译歌词", mediaDisplayTitle("  翻译歌词  ", "歌曲名"))
-        assertEquals("歌曲名", mediaDisplayTitle("   ", "歌曲名"))
-        assertEquals("歌曲名", mediaDisplayTitle("", "歌曲名"))
-        val longLyric = "这是一句很长很长的歌词，即使远远超过媒体卡片的宽度，也应当完整保存在媒体标题元数据中。"
-        assertEquals(longLyric, mediaDisplayTitle(longLyric, "歌曲名"))
+    fun overlayToggleLabelReflectsGlobalSetting() {
         assertEquals("关闭悬浮窗", overlayToggleLabel(true))
         assertEquals("开启悬浮窗", overlayToggleLabel(false))
     }

@@ -1650,14 +1650,13 @@ private fun MusicMetaApp() {
         }
     }
 
-    // The notification and lock-screen session mirrors the same in-app player state.
-    // Only metadata / lyric changes rebuild the notification; the position ticker is lightweight.
+    // The notification and lock-screen session mirror the same in-app player state.
+    // Lyric changes stay in the in-app / floating lyrics UI and do not rebuild the system card.
     LaunchedEffect(
         previewSong?.id,
         previewSong?.title,
         previewSong?.artist,
         previewCoverUrl,
-        mediaCurrentLyric,
         previewDurationMs,
         isPreviewPlaying,
         isPreviewLoading,
@@ -1673,7 +1672,6 @@ private fun MusicMetaApp() {
                 title = song.title,
                 artist = song.artist,
                 coverUri = previewCoverUrl.ifBlank { song.coverUrl },
-                currentLyric = mediaCurrentLyric,
                 durationMs = previewDurationMs,
                 positionMs = previewPositionMs,
                 isPlaying = isPreviewPlaying,
