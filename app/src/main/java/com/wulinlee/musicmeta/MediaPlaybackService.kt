@@ -31,6 +31,9 @@ import java.net.URL
 internal fun mediaDisplayTitle(currentLyric: String, trackTitle: String): String =
     currentLyric.trim().ifBlank { trackTitle }
 
+internal fun overlayToggleLabel(overlayEnabled: Boolean): String =
+    if (overlayEnabled) "关闭悬浮窗" else "开启悬浮窗"
+
 /**
  * Publishes the current MusicMeta preview as a system media session.
  *
@@ -53,6 +56,7 @@ class MediaPlaybackService : Service() {
         const val EXTRA_IS_PLAYING = "media_is_playing"
         const val EXTRA_IS_LOADING = "media_is_loading"
         const val EXTRA_PLAYBACK_MODE = "media_playback_mode"
+        const val EXTRA_OVERLAY_ENABLED = "media_overlay_enabled"
         const val EXTRA_COMMAND = "media_command"
 
         private const val CHANNEL_ID = "musicmeta_media_controls"
@@ -61,8 +65,8 @@ class MediaPlaybackService : Service() {
         private const val REQUEST_PREVIOUS = 1203
         private const val REQUEST_PLAY_PAUSE = 1204
         private const val REQUEST_NEXT = 1205
-        private const val REQUEST_CLOSE_OVERLAY = 1206
-        private const val CUSTOM_ACTION_CLOSE_OVERLAY = "com.wulinlee.musicmeta.media.CLOSE_OVERLAY"
+        private const val REQUEST_TOGGLE_OVERLAY = 1206
+        private const val CUSTOM_ACTION_TOGGLE_OVERLAY = "com.wulinlee.musicmeta.media.TOGGLE_OVERLAY"
 
         @Volatile
         private var serviceAlive = false
@@ -77,6 +81,7 @@ class MediaPlaybackService : Service() {
             positionMs: Int,
             isPlaying: Boolean,
             isLoading: Boolean,
+            overlayEnabled: Boolean,
             playbackMode: Int,
         ) {
             val intent = Intent(context, MediaPlaybackService::class.java)
@@ -89,6 +94,7 @@ class MediaPlaybackService : Service() {
                 .putExtra(EXTRA_POSITION, positionMs.coerceAtLeast(0))
                 .putExtra(EXTRA_IS_PLAYING, isPlaying)
                 .putExtra(EXTRA_IS_LOADING, isLoading)
+                .putExtra(EXTRA_OVERLAY_ENABLED, overlayEnabled)
                 .putExtra(EXTRA_PLAYBACK_MODE, playbackMode.coerceIn(0, 2))
             if (serviceAlive) context.startService(intent)
             else ContextCompat.startForegroundService(context, intent)
@@ -121,6 +127,7 @@ class MediaPlaybackService : Service() {
     private var positionMs = 0
     private var isPlaying = false
     private var isLoading = false
+    private var overlayEnabled = true
     private var playbackMode = 0
     private var albumArt: Bitmap? = null
     private var artworkLoadInProgressFor = ""
@@ -156,8 +163,8 @@ class MediaPlaybackService : Service() {
                 }
                 override fun onStop() = dispatch(FloatingMiniPlayerService.COMMAND_MEDIA_PAUSE)
                 override fun onCustomAction(action: String, extras: android.os.Bundle?) {
-                    if (action == CUSTOM_ACTION_CLOSE_OVERLAY) {
-                        dispatch(FloatingMiniPlayerService.COMMAND_CLOSE_OVERLAY)
+                    if (action == CUSTOM_ACTION_TOGGLE_OVERLAY) {
+                        dispatch(FloatingMiniPlayerService.COMMAND_TOGGLE_OVERLAY)
                     }
                 }
             })
@@ -221,6 +228,7 @@ class MediaPlaybackService : Service() {
         positionMs = intent.getIntExtra(EXTRA_POSITION, positionMs).coerceAtLeast(0)
         isPlaying = intent.getBooleanExtra(EXTRA_IS_PLAYING, isPlaying)
         isLoading = intent.getBooleanExtra(EXTRA_IS_LOADING, isLoading)
+        overlayEnabled = intent.getBooleanExtra(EXTRA_OVERLAY_ENABLED, overlayEnabled)
         playbackMode = intent.getIntExtra(EXTRA_PLAYBACK_MODE, playbackMode).coerceIn(0, 2)
     }
 
@@ -266,9 +274,9 @@ class MediaPlaybackService : Service() {
             )
         builder.addCustomAction(
             PlaybackStateCompat.CustomAction.Builder(
-                CUSTOM_ACTION_CLOSE_OVERLAY,
-                "关闭悬浮窗",
-                android.R.drawable.ic_menu_close_clear_cancel,
+                CUSTOM_ACTION_TOGGLE_OVERLAY,
+                overlayToggleLabel(overlayEnabled),
+                if (overlayEnabled) R.drawable.lucide_toggle_right else R.drawable.lucide_toggle_left,
             ).build(),
         )
         mediaSession.setPlaybackState(builder.build())
@@ -323,9 +331,9 @@ class MediaPlaybackService : Service() {
             )
             .addAction(
                 NotificationCompat.Action(
-                    android.R.drawable.ic_menu_close_clear_cancel,
-                    "关闭悬浮窗",
-                    commandPendingIntent(REQUEST_CLOSE_OVERLAY, FloatingMiniPlayerService.COMMAND_CLOSE_OVERLAY),
+                    if (overlayEnabled) R.drawable.lucide_toggle_right else R.drawable.lucide_toggle_left,
+                    overlayToggleLabel(overlayEnabled),
+                    commandPendingIntent(REQUEST_TOGGLE_OVERLAY, FloatingMiniPlayerService.COMMAND_TOGGLE_OVERLAY),
                 ),
             )
             .setStyle(
