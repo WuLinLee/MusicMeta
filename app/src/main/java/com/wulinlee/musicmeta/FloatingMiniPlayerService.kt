@@ -1,13 +1,8 @@
 package com.wulinlee.musicmeta
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
 import android.content.res.Configuration
 import android.content.Intent
-import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
@@ -79,8 +74,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -290,17 +283,15 @@ class FloatingMiniPlayerService : LifecycleService() {
         const val COMMAND_TOGGLE_PLAY = "toggle_play"
         const val COMMAND_MEDIA_PLAY = "media_play"
         const val COMMAND_MEDIA_PAUSE = "media_pause"
-        const val COMMAND_MEDIA_TOGGLE_MUTE = "media_toggle_mute"
         const val COMMAND_PREVIOUS = "previous_track"
         const val COMMAND_NEXT = "next_track"
+        const val COMMAND_CLOSE_OVERLAY = "close_overlay"
         const val COMMAND_TOGGLE_DETAILS = "toggle_details"
         const val COMMAND_TOGGLE_TRANSLATION = "toggle_translation"
         const val COMMAND_TOGGLE_PLAYBACK_MODE = "toggle_playback_mode"
         const val COMMAND_SEEK = "seek"
         const val COMMAND_CLOSE = "close"
 
-        private const val CHANNEL_ID = "musicmeta_floating_player"
-        private const val NOTIFICATION_ID = 1101
         @Volatile private var serviceAlive = false
 
         fun showOrUpdate(
@@ -344,11 +335,7 @@ class FloatingMiniPlayerService : LifecycleService() {
                 .putExtra(EXTRA_OPEN_MODE, openMode)
                 .putExtra(EXTRA_OPEN_TRACK_ID, openTrackId)
                 .putExtra(EXTRA_OPEN_PLAYLIST_ID, openPlaylistId)
-            if (serviceAlive) {
-                context.startService(intent)
-            } else {
-                ContextCompat.startForegroundService(context, intent)
-            }
+            context.startService(intent)
         }
 
         fun updatePosition(context: Context, positionMs: Int) {
@@ -425,7 +412,6 @@ class FloatingMiniPlayerService : LifecycleService() {
             if (!Settings.canDrawOverlays(this@FloatingMiniPlayerService)) {
                 sendCommand(this@FloatingMiniPlayerService, COMMAND_CLOSE)
                 removeOverlayViews()
-                stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
                 return
             }
@@ -441,7 +427,6 @@ class FloatingMiniPlayerService : LifecycleService() {
         serviceAlive = true
         overlayViewTreeOwner.start()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-        ensureNotificationChannel()
         updateDisplaySize()
         restoreOrInitializePosition()
         mainHandler.postDelayed(progressTicker, 300L)
@@ -450,9 +435,8 @@ class FloatingMiniPlayerService : LifecycleService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
         if (intent?.action == ACTION_STOP || !Settings.canDrawOverlays(this)) {
-            sendCommand(this, COMMAND_CLOSE)
+            sendCommand(this, COMMAND_CLOSE_OVERLAY)
             removeOverlayViews()
-            stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
         }
@@ -464,7 +448,6 @@ class FloatingMiniPlayerService : LifecycleService() {
             return START_NOT_STICKY
         }
         if (intent?.action == ACTION_UPDATE) applyUpdate(intent)
-        startAsForegroundService()
         ensureOverlayWindow()
         if (expanded) ensureLyricsOverlayWindow()
         updateWindowPositions()
@@ -490,7 +473,6 @@ class FloatingMiniPlayerService : LifecycleService() {
             positionUpdateScheduled = false
         }
         removeOverlayViews()
-        stopForeground(STOP_FOREGROUND_REMOVE)
         overlayViewTreeOwner.destroy()
         serviceAlive = false
         super.onDestroy()
@@ -524,61 +506,6 @@ class FloatingMiniPlayerService : LifecycleService() {
         if (intent.hasExtra(EXTRA_OPEN_MODE)) openMode = intent.getStringExtra(EXTRA_OPEN_MODE).orEmpty()
         if (intent.hasExtra(EXTRA_OPEN_TRACK_ID)) openTrackId = intent.getStringExtra(EXTRA_OPEN_TRACK_ID).orEmpty()
         if (intent.hasExtra(EXTRA_OPEN_PLAYLIST_ID)) openPlaylistId = intent.getLongExtra(EXTRA_OPEN_PLAYLIST_ID, 0L)
-    }
-
-    private fun startAsForegroundService() {
-        val notification = buildNotification()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
-    }
-
-    private fun ensureNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val manager = getSystemService(NotificationManager::class.java)
-            if (manager.getNotificationChannel(CHANNEL_ID) == null) {
-                manager.createNotificationChannel(
-                    NotificationChannel(
-                        CHANNEL_ID,
-                        "音笺跨应用悬浮播放器",
-                        NotificationManager.IMPORTANCE_LOW,
-                    ).apply {
-                        description = "在其他应用上方显示已启用的迷你播放器"
-                        setShowBadge(false)
-                    },
-                )
-            }
-        }
-    }
-
-    private fun buildNotification(): Notification {
-        val openApp = PendingIntent.getActivity(
-            this,
-            1102,
-            Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        val stopIntent = PendingIntent.getService(
-            this,
-            1103,
-            Intent(this, FloatingMiniPlayerService::class.java).setAction(ACTION_STOP),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_media_play)
-            .setContentTitle(title.ifBlank { "音笺悬浮播放器" })
-            .setContentText(if (isPlaying) "正在播放试听" else "悬浮播放器已开启")
-            .setContentIntent(openApp)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "关闭悬浮窗", stopIntent)
-            .build()
     }
 
     private fun updateDisplaySize() {
@@ -861,7 +788,6 @@ class FloatingMiniPlayerService : LifecycleService() {
     private fun closePlayer() {
         sendCommand(this, COMMAND_CLOSE)
         removeOverlayViews()
-        stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
