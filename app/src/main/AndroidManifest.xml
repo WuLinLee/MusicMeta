@@ -10,7 +10,7 @@
         android:allowBackup="false"
         android:icon="@mipmap/musicmeta_icon"
         android:roundIcon="@mipmap/musicmeta_icon"
-        android:label="音笺"
+        android:label="音笺歌词预览版"
         android:supportsRtl="true"
         android:usesCleartextTraffic="false"
         android:theme="@android:style/Theme.Material.NoActionBar">
