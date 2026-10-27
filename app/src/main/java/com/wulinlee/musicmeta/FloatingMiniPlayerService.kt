@@ -989,14 +989,16 @@ private fun OverlayLyricsUi(
     }
     val progress = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
     Card(
-        modifier = modifier.fillMaxSize().overlayDragGesture(
-            onDrag = onDrag,
-            onCircularDrag = onCircularDrag,
-            onDragEnd = onDragEnd,
-        ),
+        modifier = modifier.fillMaxSize()
+            .border(1.dp, Color(0x779FF0C9), RoundedCornerShape(16.dp))
+            .overlayDragGesture(
+                onDrag = onDrag,
+                onCircularDrag = onCircularDrag,
+                onDragEnd = onDragEnd,
+            ),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF17211F)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xD91A2521)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 10.dp),
     ) {
         Column(
             modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp, vertical = 2.dp),
@@ -1009,7 +1011,8 @@ private fun OverlayLyricsUi(
                 horizontalArrangement = Arrangement.spacedBy(3.dp),
             ) {
                 Box(
-                    modifier = Modifier.width(20.dp).height(28.dp).clip(CircleShape)
+                    modifier = Modifier.width(24.dp).height(40.dp).clip(CircleShape)
+                        .background(Color(0x50384F47))
                         .clickable { onPrevious() }
                         .semantics { contentDescription = "按当前播放队列播放上一首" },
                     contentAlignment = Alignment.Center,
@@ -1017,7 +1020,8 @@ private fun OverlayLyricsUi(
                 Box(
                     modifier = Modifier.weight(1f).fillMaxSize()
                         .clip(RoundedCornerShape(9.dp))
-                        .background(Color(0xFF243631))
+                        .background(Color(0xC0243631))
+                        .border(1.dp, Color(0x559FF0C9), RoundedCornerShape(9.dp))
                         .pointerInput(Unit) {
                             detectTapGestures(
                                 onTap = { onToggleTranslation() },
@@ -1041,14 +1045,20 @@ private fun OverlayLyricsUi(
                         fontSize = lyricsFontSizeSp.sp,
                         lineHeight = (lyricsFontSizeSp * 1.12f).sp,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.basicMarquee(),
+                        modifier = Modifier.basicMarquee(
+                            iterations = Int.MAX_VALUE,
+                            initialDelayMillis = 700,
+                            repeatDelayMillis = 900,
+                            velocity = 24.dp,
+                        ),
                         maxLines = 1,
                         softWrap = false,
                         overflow = TextOverflow.Clip,
                     )
                 }
                 Box(
-                    modifier = Modifier.width(20.dp).height(28.dp).clip(CircleShape)
+                    modifier = Modifier.width(24.dp).height(40.dp).clip(CircleShape)
+                        .background(Color(0x50384F47))
                         .clickable { onNext() }
                         .semantics { contentDescription = "按当前播放队列播放下一首" },
                     contentAlignment = Alignment.Center,
