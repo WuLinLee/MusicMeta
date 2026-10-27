@@ -38,7 +38,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Card
@@ -58,6 +57,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.StrokeCap
@@ -198,6 +198,32 @@ internal object FloatingOverlayPlacement {
     fun scaledPreferredLyricsWidthPx(baseGroupWidthPx: Int, nonLyricsWidthPx: Int, scale: Float = 1.2f): Int =
         ((baseGroupWidthPx - nonLyricsWidthPx).coerceAtLeast(0) * scale.coerceAtLeast(0f)).roundToInt()
 
+    fun centeredCoverXForExpandedGroup(
+        displayWidth: Int,
+        coverWidthPx: Int,
+        desiredLyricsWidthPx: Int,
+        preferredGapPx: Int,
+        marginPx: Int,
+        sideControlsWidthPx: Int,
+    ): Int {
+        val safeDisplayWidth = displayWidth.coerceAtLeast(0)
+        val safeCoverWidth = coverWidthPx.coerceAtLeast(0)
+        val safeMargin = marginPx.coerceAtLeast(0)
+        val safeGap = preferredGapPx.coerceAtLeast(0)
+        val safeControlsWidth = sideControlsWidthPx.coerceAtLeast(0)
+        val availableLyricsWidth = (
+            safeDisplayWidth - 2 * safeMargin - safeCoverWidth - safeGap - safeControlsWidth
+        ).coerceAtLeast(0)
+        val lyricsWidth = minOf(desiredLyricsWidthPx.coerceAtLeast(0), availableLyricsWidth)
+        val gap = minOf(
+            safeGap,
+            (safeDisplayWidth - 2 * safeMargin - safeCoverWidth - safeControlsWidth - lyricsWidth).coerceAtLeast(0),
+        )
+        val groupWidth = safeCoverWidth + safeControlsWidth + gap + lyricsWidth
+        return ((safeDisplayWidth + groupWidth) / 2 - safeCoverWidth)
+            .coerceIn(safeMargin, (safeDisplayWidth - safeMargin - safeCoverWidth).coerceAtLeast(safeMargin))
+    }
+
     fun lyricsWidthPx(
         displayWidth: Int,
         coverX: Int,
@@ -218,7 +244,8 @@ internal object FloatingOverlayPlacement {
         lyricsWidthPx: Int,
         gapPx: Int,
         expandedBounds: Boolean,
-    ): Int = coverWidthPx + if (expandedBounds) lyricsWidthPx + gapPx else 0
+        sideControlsWidthPx: Int = 0,
+    ): Int = coverWidthPx + if (expandedBounds) lyricsWidthPx + gapPx + sideControlsWidthPx.coerceAtLeast(0) else 0
 
     fun windowOriginX(
         coverX: Int,
@@ -226,8 +253,9 @@ internal object FloatingOverlayPlacement {
         gapPx: Int,
         lyricsOnRight: Boolean,
         expandedBounds: Boolean,
+        sideControlsWidthPx: Int = 0,
     ): Int = if (expandedBounds && !lyricsOnRight) {
-        coverX - lyricsWidthPx - gapPx
+        coverX - lyricsWidthPx - gapPx - sideControlsWidthPx.coerceAtLeast(0)
     } else {
         coverX
     }
@@ -537,21 +565,39 @@ class FloatingMiniPlayerService : LifecycleService() {
             scale = 1.2f,
         )
 
-    private fun groupWidthPx(): Int = dp(64) + lyricsPanelGapPx + lyricsPanelWidthPx
+    private fun defaultCenteredOverlayCoverX(): Int =
+        FloatingOverlayPlacement.centeredCoverXForExpandedGroup(
+            displayWidth = displayWidth,
+            coverWidthPx = dp(64),
+            desiredLyricsWidthPx = desiredLyricsWidthPx(),
+            preferredGapPx = dp(14),
+            marginPx = dp(4),
+            sideControlsWidthPx = dp(sideControlsWidthDp),
+        )
 
-    private fun lyricsWidthPx(): Int = lyricsPanelWidthPx
     private fun restoreOrInitializePosition() {
         if (initializedPosition) return
         val preferences = getSharedPreferences("music_meta_settings", Context.MODE_PRIVATE)
         val storedX = preferences.getFloat("overlay_cover_x_dp", -1f)
         val storedY = preferences.getFloat("overlay_cover_y_dp", -1f)
+        val layoutMigrated = preferences.getBoolean("overlay_side_controls_layout_v2", false)
         if (storedX >= 0f && storedY >= 0f) {
             coverX = (storedX * density).roundToInt()
             coverY = (storedY * density).roundToInt()
+            if (!layoutMigrated) {
+                // Older releases centered only the cover. If that legacy default is still in
+                // use, recenter the whole group once so the new side controls do not steal
+                // space from the lyrics panel. Preserve clearly user-positioned overlays.
+                val legacyCenteredX = ((displayWidth - dp(64)) / 2).coerceAtLeast(dp(4))
+                if (abs(coverX - legacyCenteredX) <= dp(24)) {
+                    coverX = defaultCenteredOverlayCoverX()
+                }
+            }
+            preferences.edit().putBoolean("overlay_side_controls_layout_v2", true).apply()
         } else {
-            val groupWidth = groupWidthPx()
-            coverX = (displayWidth - groupWidth) / 2 + groupWidth - dp(64)
+            coverX = defaultCenteredOverlayCoverX()
             coverY = (displayHeight - dp(106)).coerceAtLeast(dp(24))
+            preferences.edit().putBoolean("overlay_side_controls_layout_v2", true).apply()
         }
         initializedPosition = true
         clampPosition()
@@ -845,7 +891,9 @@ private fun OverlayLyricsWindowUi(
     }
     Box(Modifier.fillMaxSize()) {
         val sideWidth = sideControlsWidthDp.dp
-        val lyricsOffset = if (lyricsOnRight) 0.dp else sideWidth
+        // Keep the controls on the cover-facing edge of the lyrics panel. On the right,
+        // controls precede the lyrics; on the left, they follow the lyrics.
+        val lyricsOffset = if (lyricsOnRight) sideWidth else 0.dp
         if (progress.value > 0.001f) {
             OverlayLyricsUi(
                 lyricsFontSizeSp = lyricsFontSizeSp,
@@ -872,7 +920,7 @@ private fun OverlayLyricsWindowUi(
             onPrevious = onPrevious,
             onNext = onNext,
             modifier = Modifier.width(sideWidth).height(64.dp)
-                .align(if (lyricsOnRight) Alignment.TopEnd else Alignment.TopStart),
+                .align(if (lyricsOnRight) Alignment.TopStart else Alignment.TopEnd),
         )
     }
 }
@@ -1219,36 +1267,36 @@ private fun OverlaySideTrackControls(
         verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
     ) {
         Box(
-            modifier = Modifier.size(30.dp)
-                .clip(CircleShape)
-                .background(Color(0xFF17211F))
-                .border(1.dp, Color(0xFF2B3730), CircleShape)
+            modifier = Modifier.size(width = 34.dp, height = 30.dp)
                 .clickable { onPrevious() }
                 .semantics { contentDescription = "上一首" },
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                painter = painterResource(R.drawable.lucide_play),
-                contentDescription = null,
-                tint = Color(0xFF9FF0C9),
-                modifier = Modifier.size(16.dp).rotate(-90f),
-            )
+            Canvas(Modifier.size(width = 13.dp, height = 9.dp)) {
+                val triangle = Path().apply {
+                    moveTo(size.width / 2f, 0f)
+                    lineTo(size.width, size.height)
+                    lineTo(0f, size.height)
+                    close()
+                }
+                drawPath(triangle, Color(0xFF9FF0C9))
+            }
         }
         Box(
-            modifier = Modifier.size(30.dp)
-                .clip(CircleShape)
-                .background(Color(0xFF17211F))
-                .border(1.dp, Color(0xFF2B3730), CircleShape)
+            modifier = Modifier.size(width = 34.dp, height = 30.dp)
                 .clickable { onNext() }
                 .semantics { contentDescription = "下一首" },
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                painter = painterResource(R.drawable.lucide_play),
-                contentDescription = null,
-                tint = Color(0xFF9FF0C9),
-                modifier = Modifier.size(16.dp).rotate(90f),
-            )
+            Canvas(Modifier.size(width = 13.dp, height = 9.dp)) {
+                val triangle = Path().apply {
+                    moveTo(0f, 0f)
+                    lineTo(size.width, 0f)
+                    lineTo(size.width / 2f, size.height)
+                    close()
+                }
+                drawPath(triangle, Color(0xFF9FF0C9))
+            }
         }
     }
 }

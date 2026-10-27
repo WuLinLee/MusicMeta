@@ -2,17 +2,17 @@
 
 MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 Android 应用：读取可公开访问的网易云歌单，搜索并核对音源，下载音频，并尽可能补齐封面、歌词和音频标签。
 
-> **当前版本：1.34** · `versionCode = 38`  
+> **当前版本：1.35** · `versionCode = 39`  
 > 应用 ID：`com.wulinlee.musicmeta` · 最低 Android：10（API 29）· 目标 SDK：35  
 > 技术栈：Kotlin、Jetpack Compose、Material 3、Coroutines、OkHttp、Coil、jaudiotagger。
 
 - **正式版发布页：** [GitHub Releases](https://github.com/WuLinLee/MusicMeta/releases)
-- **v1.34 APK 直链：** [MusicMeta-v1.34.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.34/MusicMeta-v1.34.apk)
+- **v1.35 APK 直链：** [MusicMeta-v1.35.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.35/MusicMeta-v1.35.apk)
 - **悬浮窗实现基线 v1.29：** [MusicMeta-v1.29.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.29/MusicMeta-v1.29.apk)
 - **v1.30 历史版（系统媒体卡片参考）：** [MusicMeta-v1.30.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.30/MusicMeta-v1.30.apk)
 - **构建记录：** [GitHub Actions](https://github.com/WuLinLee/MusicMeta/actions)
 
-v1.34 改进了悬浮歌词侧边常驻切歌控制（位置与歌词栏同侧，收起时仍显示）、可拖动进度条与歌词翻译行映射；本地排序改为 Material 3 图标按钮，保留“新→旧”“旧→新”“A–Z”循环。无时间戳译文会根据原文时间轴映射到相应译文行，避免卡在第一行；带时间戳的歌词中未标注时间的“作曲”“编曲”等行也会保留并显示。下载链接只有在对应 Release 资产创建成功后才可用。版本号、Git 标签、Actions 构建结果和 Release 附件是不同的事实；请以对应提交的成功构建结果和实际资产为准，不要仅凭本文件中的版本号判断已发布。
+v1.35 修正悬浮歌词组合布局：歌词栏按整个组合的可用宽度计算，旧版默认居中的悬浮窗会迁移到全组合居中位置；上一首 / 下一首改为无底色的上下三角，固定在封面与歌词栏之间，不再挤窄歌词或跑到外侧。无时间戳译文会根据原文时间轴映射到相应译文行，避免卡在第一行；带时间戳的歌词中未标注时间的“作曲”“编曲”等行也会保留并显示。下载链接只有在对应 Release 资产创建成功后才可用。版本号、Git 标签、Actions 构建结果和 Release 附件是不同的事实；请以对应提交的成功构建结果和实际资产为准，不要仅凭本文件中的版本号判断已发布。
 
 ## 目录
 
@@ -50,6 +50,16 @@ v1.34 改进了悬浮歌词侧边常驻切歌控制（位置与歌词栏同侧�
 5. 在设置中选择 API 服务（GD Studio 或 flac.music.hi.cn）、次级音乐源、音质、保存目录及悬浮歌词偏好。
 
 首次使用跨应用悬浮播放器时，需要在 Android 系统设置中授予“显示在其他应用上层”权限。撤销权限后，跨应用浮层不可用。
+
+## v1.35 本次修复
+
+- **恢复歌词栏宽度：** 位置按封面、侧边切歌区和歌词栏的整体组合居中，歌词宽度尽可能利用屏幕可用空间；升级后只迁移仍处于旧版默认居中的位置，明显手动摆放的位置保留。
+- **调整侧边切歌键：** 使用无圆圈、无底色的上下三角。侧边控制区固定在封面与歌词栏之间，歌词栏在左右两侧时分别把控制区放在靠封面的一边。
+- **版本号：** 1.35，`versionCode = 39`。
+
+## v1.34 历史改动
+
+- 保留常驻侧边切歌控制、可拖动进度条、翻译行同步和本地排序图标等改进。此次修复针对侧栏位置、圆形按钮样式以及侧栏挤占歌词栏宽度的问题。
 
 ## v1.33 本次改动
 

@@ -99,6 +99,7 @@ class MusicSourceConfigTest {
         val coverWidth = 64
         val preferredGap = 14
         val margin = 4
+        val sideControlsWidth = 34
         for (displayWidth in listOf(360, 720, 1080)) {
             val desiredGroupWidth = minOf(368, (displayWidth - 8).coerceAtLeast(64))
             val desiredLyricsWidth = (desiredGroupWidth - 78).coerceAtLeast(0)
@@ -112,13 +113,18 @@ class MusicSourceConfigTest {
                 val gap = FloatingOverlayPlacement.panelGapPx(displayWidth, coverX, coverWidth, preferredGap, margin, onRight)
                 val lyricsWidth = FloatingOverlayPlacement.lyricsWidthPx(
                     displayWidth, coverX, coverWidth, desiredLyricsWidth, gap, margin, onRight,
+                    reservedSideControlsPx = sideControlsWidth,
                 )
                 val collapsedWidth = FloatingOverlayPlacement.windowWidthPx(coverWidth, lyricsWidth, gap, false)
                 val collapsedX = FloatingOverlayPlacement.windowOriginX(coverX, lyricsWidth, gap, onRight, false)
                 assertEquals(coverWidth, collapsedWidth)
                 assertEquals(coverX, collapsedX)
-                val expandedWidth = FloatingOverlayPlacement.windowWidthPx(coverWidth, lyricsWidth, gap, true)
-                val expandedX = FloatingOverlayPlacement.windowOriginX(coverX, lyricsWidth, gap, onRight, true)
+                val expandedWidth = FloatingOverlayPlacement.windowWidthPx(
+                    coverWidth, lyricsWidth, gap, true, sideControlsWidth,
+                )
+                val expandedX = FloatingOverlayPlacement.windowOriginX(
+                    coverX, lyricsWidth, gap, onRight, true, sideControlsWidth,
+                )
                 assertTrue("expanded left edge must remain visible", expandedX >= margin)
                 assertTrue("expanded right edge must remain visible", expandedX + expandedWidth <= displayWidth - margin)
                 val coverScreenX = if (onRight) expandedX else expandedX + expandedWidth - coverWidth
@@ -127,6 +133,43 @@ class MusicSourceConfigTest {
         }
     }
 
+
+    @Test
+    fun defaultOverlayCentersTheWholeGroupAndMaximizesLyricsWidth() {
+        val coverWidth = 64
+        val desiredLyricsWidth = 334
+        val gap = 14
+        val margin = 4
+        val controlsWidth = 34
+        for (displayWidth in listOf(360, 390, 720, 1080)) {
+            val coverX = FloatingOverlayPlacement.centeredCoverXForExpandedGroup(
+                displayWidth = displayWidth,
+                coverWidthPx = coverWidth,
+                desiredLyricsWidthPx = desiredLyricsWidth,
+                preferredGapPx = gap,
+                marginPx = margin,
+                sideControlsWidthPx = controlsWidth,
+            )
+            val onRight = FloatingOverlayPlacement.lyricsPanelOnRight(coverX, coverWidth, displayWidth)
+            assertFalse("The centered group should place the cover to the right of the lyrics", onRight)
+            val actualGap = FloatingOverlayPlacement.panelGapPx(
+                displayWidth, coverX, coverWidth, gap, margin, false,
+            )
+            val lyricsWidth = FloatingOverlayPlacement.lyricsWidthPx(
+                displayWidth, coverX, coverWidth, desiredLyricsWidth,
+                actualGap, margin, false, reservedSideControlsPx = controlsWidth,
+            )
+            assertEquals(
+                minOf(desiredLyricsWidth, (displayWidth - 2 * margin - coverWidth - gap - controlsWidth).coerceAtLeast(0)),
+                lyricsWidth,
+            )
+            val left = coverX - lyricsWidth - actualGap - controlsWidth
+            val right = coverX + coverWidth
+            assertTrue("expanded group must fit the left margin", left >= margin)
+            assertTrue("expanded group must fit the right margin", right <= displayWidth - margin)
+            assertEquals("whole group should be centered", displayWidth, left + right, 1)
+        }
+    }
 
     @Test
     fun lyricFontSliderKeepsDefaultAtCenterAndProvidesHalfToDoubleRange() {
