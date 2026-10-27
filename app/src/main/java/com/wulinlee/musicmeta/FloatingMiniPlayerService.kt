@@ -946,8 +946,6 @@ private fun OverlayPlayerUi(
                 durationMs = durationMs,
                 onToggleTranslation = onToggleTranslation,
                 onSeek = onSeek,
-                onPrevious = onPrevious,
-                onNext = onNext,
                 onDrag = onDrag,
                 onCircularDrag = onCircularDrag,
                 onLongPress = handleLongPress,
