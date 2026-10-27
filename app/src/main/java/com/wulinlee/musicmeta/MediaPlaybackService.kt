@@ -1,7 +1,5 @@
 package com.wulinlee.musicmeta
 
-internal fun mediaDisplayTitle(currentLyric: String, trackTitle: String): String =
-    currentLyric.trim().ifBlank { trackTitle }
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -30,6 +28,9 @@ import java.io.FilterInputStream
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
+
+internal fun mediaDisplayTitle(currentLyric: String, trackTitle: String): String =
+    currentLyric.trim().ifBlank { trackTitle }
 
 /**
  * Publishes the current MusicMeta preview as a system media session.
