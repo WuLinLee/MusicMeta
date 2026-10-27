@@ -2,17 +2,17 @@
 
 MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 Android 应用：读取可公开访问的网易云歌单，搜索并核对音源，下载音频，并尽可能补齐封面、歌词和音频标签。
 
-> **当前版本：1.33** · `versionCode = 37`  
+> **当前版本：1.34** · `versionCode = 38`  
 > 应用 ID：`com.wulinlee.musicmeta` · 最低 Android：10（API 29）· 目标 SDK：35  
 > 技术栈：Kotlin、Jetpack Compose、Material 3、Coroutines、OkHttp、Coil、jaudiotagger。
 
 - **正式版发布页：** [GitHub Releases](https://github.com/WuLinLee/MusicMeta/releases)
-- **v1.33 APK 直链：** [MusicMeta-v1.33.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.33/MusicMeta-v1.33.apk)
+- **v1.34 APK 直链：** [MusicMeta-v1.33.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.34/MusicMeta-v1.34.apk)
 - **悬浮窗实现基线 v1.29：** [MusicMeta-v1.29.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.29/MusicMeta-v1.29.apk)
 - **v1.30 历史版（系统媒体卡片参考）：** [MusicMeta-v1.30.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.30/MusicMeta-v1.30.apk)
 - **构建记录：** [GitHub Actions](https://github.com/WuLinLee/MusicMeta/actions)
 
-v1.33 增加了本地曲库文件新旧排序与统一歌词同步处理：本地分页可循环切换“新→旧”“旧→新”和“A–Z”；译文有自身时间戳时按译文时间轴显示，缺少时间戳时只在行数能与原文严格对应时借用时间轴，否则提示无法准确同步，不删除“作曲”“编曲”等原始歌词行。系统媒体卡片仍保持正常歌曲标题与艺人。下载链接只有在对应 Release 资产创建成功后才可用。版本号、Git 标签、Actions 构建结果和 Release 附件是不同的事实；请以对应提交的成功构建结果和实际资产为准，不要仅凭本文件中的版本号判断已发布。
+v1.34 改进了悬浮歌词侧边常驻切歌控制、可拖动进度条与歌词翻译行映射；本地排序改为 Material 3 图标按钮，保留“新→旧”“旧→新”“A–Z”循环。无时间戳译文会根据原文时间轴映射到相应译文行，避免卡在第一行，并保留“作曲”“编曲”等原始歌词内容。下载链接只有在对应 Release 资产创建成功后才可用。版本号、Git 标签、Actions 构建结果和 Release 附件是不同的事实；请以对应提交的成功构建结果和实际资产为准，不要仅凭本文件中的版本号判断已发布。
 
 ## 目录
 
