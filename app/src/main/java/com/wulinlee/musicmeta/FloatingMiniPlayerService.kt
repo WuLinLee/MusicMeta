@@ -202,6 +202,14 @@ internal object FloatingOverlayPlacement {
         return (groupLeft + desiredLyricsWidthPx.coerceAtLeast(0) + gapPx).coerceAtMost(maximumCoverX)
     }
 
+    fun shouldMigrateCenteredOverlayPosition(
+        savedCoverXDp: Float,
+        displayWidthDp: Float,
+        coverWidthDp: Float,
+        savedLayoutVersion: Int,
+    ): Boolean =
+        savedLayoutVersion < 1 && abs(savedCoverXDp - (displayWidthDp - coverWidthDp) / 2f) <= 12f
+
     fun scaledPreferredLyricsWidthPx(baseGroupWidthPx: Int, nonLyricsWidthPx: Int, scale: Float = 1.35f): Int =
         ((baseGroupWidthPx - nonLyricsWidthPx).coerceAtLeast(0) * scale.coerceAtLeast(0f)).roundToInt()
 
@@ -526,7 +534,24 @@ class FloatingMiniPlayerService : LifecycleService() {
         val storedX = preferences.getFloat("overlay_cover_x_dp", -1f)
         val storedY = preferences.getFloat("overlay_cover_y_dp", -1f)
         if (storedX >= 0f && storedY >= 0f) {
-            coverX = (storedX * density).roundToInt()
+            val displayWidthDp = displayWidth / density
+            val shouldMigrateLegacyCenteredPosition = FloatingOverlayPlacement.shouldMigrateCenteredOverlayPosition(
+                savedCoverXDp = storedX,
+                displayWidthDp = displayWidthDp,
+                coverWidthDp = FLOATING_COVER_SIZE_DP.toFloat(),
+                savedLayoutVersion = preferences.getInt("floating_overlay_layout_version", 0),
+            )
+            coverX = if (shouldMigrateLegacyCenteredPosition) {
+                FloatingOverlayPlacement.initialCoverX(
+                    displayWidth = displayWidth,
+                    coverWidthPx = dp(FLOATING_COVER_SIZE_DP),
+                    desiredLyricsWidthPx = desiredLyricsWidthPx(),
+                    gapPx = dp(FLOATING_LYRICS_GAP_DP),
+                    marginPx = dp(4),
+                )
+            } else {
+                (storedX * density).roundToInt()
+            }
             coverY = (storedY * density).roundToInt()
         } else {
             coverX = FloatingOverlayPlacement.initialCoverX(
@@ -538,6 +563,7 @@ class FloatingMiniPlayerService : LifecycleService() {
             )
             coverY = (displayHeight - dp(FLOATING_OVERLAY_GROUP_HEIGHT_DP + FLOATING_BOTTOM_SAFE_MARGIN_DP)).coerceAtLeast(dp(24))
         }
+        preferences.edit().putInt("floating_overlay_layout_version", 1).apply()
         initializedPosition = true
         clampPosition()
     }
