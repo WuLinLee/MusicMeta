@@ -720,7 +720,7 @@ private fun MusicMetaApp() {
             status = "正在为《" + track.title + "》查找音源……"
             scope.launch {
                 try {
-                    val cookie = if (sourceProvider == MusicSourceConfig.BACKEND_FLAC_SITE) CookieManager.getInstance().getCookie(FLAC_SITE_HOME) else null
+                    val cookie = CookieManager.getInstance().getCookie(FLAC_SITE_HOME)
                     val results = withTimeout(28_000L) {
                         withContext(Dispatchers.IO) {
                             flacProvider.search(
@@ -783,7 +783,7 @@ private fun MusicMetaApp() {
             val requestedPlaylistId = playlist?.id.takeIf { requestedMode == "playlist" || requestedMode == "liked" }
             scope.launch {
                 try {
-                    val cookie = if (sourceProvider == MusicSourceConfig.BACKEND_FLAC_SITE) CookieManager.getInstance().getCookie(FLAC_SITE_HOME) else null
+                    val cookie = CookieManager.getInstance().getCookie(FLAC_SITE_HOME)
                     val matches = withTimeout(28_000L) {
                         withContext(Dispatchers.IO) {
                             flacProvider.search(
@@ -860,7 +860,7 @@ private fun MusicMetaApp() {
             status = "正在搜索音源《" + keyword + "》……"
             scope.launch {
                 try {
-                    val cookie = if (sourceProvider == MusicSourceConfig.BACKEND_FLAC_SITE) CookieManager.getInstance().getCookie(FLAC_SITE_HOME) else null
+                    val cookie = CookieManager.getInstance().getCookie(FLAC_SITE_HOME)
                     val results = withTimeout(28_000L) {
                         withContext(Dispatchers.IO) {
                             flacProvider.search(
@@ -1873,7 +1873,7 @@ private fun MusicMetaApp() {
                             status = "正在为《${targetTrack.title}》查找第一个匹配音源……"
                             scope.launch {
                                 try {
-                                    val cookie = if (sourceProvider == MusicSourceConfig.BACKEND_FLAC_SITE) CookieManager.getInstance().getCookie(FLAC_SITE_HOME) else null
+                                    val cookie = CookieManager.getInstance().getCookie(FLAC_SITE_HOME)
                                     val matches = withTimeout(28_000L) {
                                         withContext(Dispatchers.IO) {
                                             flacProvider.search(
