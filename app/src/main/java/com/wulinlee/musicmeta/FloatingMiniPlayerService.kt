@@ -915,6 +915,7 @@ private fun OverlayLyricsWindowUi(
                 onCircularDrag = onCircularDrag,
                 onLongPress = onLongPress,
                 onDragEnd = onDragEnd,
+                controlsOnLeft = lyricsOnRight,
                 modifier = Modifier.offset(x = lyricsOffset, y = 4.dp).width(lyricsWidthDp.dp).height(64.dp)
                     .graphicsLayer {
                         alpha = progress.value
@@ -1158,6 +1159,7 @@ private fun OverlayLyricsUi(
     onCircularDrag: () -> Unit,
     onLongPress: () -> Unit,
     onDragEnd: () -> Unit,
+    controlsOnLeft: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val activeText = if (showTranslation && translatedLyrics.isNotBlank()) translatedLyrics else originalLyrics
@@ -1178,7 +1180,11 @@ private fun OverlayLyricsUi(
             onDragEnd = onDragEnd,
             ignoreDragBelowFraction = 0.68f,
         ),
-        shape = RoundedCornerShape(16.dp),
+        shape = if (controlsOnLeft) {
+            RoundedCornerShape(topStart = 0.dp, topEnd = 16.dp, bottomEnd = 16.dp, bottomStart = 0.dp)
+        } else {
+            RoundedCornerShape(topStart = 16.dp, topEnd = 0.dp, bottomEnd = 0.dp, bottomStart = 16.dp)
+        },
         colors = CardDefaults.cardColors(containerColor = Color(0xFF17211F)),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
     ) {

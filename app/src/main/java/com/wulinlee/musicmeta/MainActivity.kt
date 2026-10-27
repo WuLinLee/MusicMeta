@@ -3496,7 +3496,9 @@ private fun MusicMetaApp() {
                                     onCircularDrag = {},
                                     ignoreDragBelowFraction = 0.68f,
                                 ),
-                            shape = RoundedCornerShape(16.dp),
+                            shape = RoundedCornerShape(
+                                topStart = 16.dp, topEnd = 0.dp, bottomEnd = 0.dp, bottomStart = 16.dp,
+                            ),
                             colors = CardDefaults.cardColors(containerColor = Color(0xFF17211F)),
                             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
                         ) {
@@ -3509,7 +3511,12 @@ private fun MusicMetaApp() {
                                     modifier = Modifier.fillMaxWidth().weight(1f)
                                         .clip(RoundedCornerShape(9.dp))
                                         .background(Color(0xFF243631))
-                                        .clickable { showTranslatedPreviewLyric = !showTranslatedPreviewLyric }
+                                        .pointerInput(activePreviewSong, showTranslatedPreviewLyric, showPreviewDetails) {
+                                            detectTapGestures(
+                                                onTap = { showTranslatedPreviewLyric = !showTranslatedPreviewLyric },
+                                                onLongPress = { toggleLyricsPanel() },
+                                            )
+                                        }
                                         .padding(horizontal = 5.dp, vertical = 0.dp)
                                         .semantics {
                                             contentDescription = if (previewTranslatedLyrics.isBlank()) "歌词，点击查看是否存在译文"
