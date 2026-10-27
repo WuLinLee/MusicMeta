@@ -33,6 +33,13 @@ class LyricsTimelineTest {
     }
 
     @Test
+    fun retainsUntimedComposerAndArrangerRowsInsideTimestampedLyrics() {
+        val lyrics = "[00:01.00]歌曲第一句\n作曲：张三\n[00:05.00]歌曲第二句\n编曲：李四"
+        assertEquals("作曲：张三", currentLyricLine(lyrics, lyrics, 3_000))
+        assertEquals("编曲：李四", currentLyricLine(lyrics, lyrics, 7_000))
+    }
+
+    @Test
     fun retainsCreditLinesAsNormalTimedLyrics() {
         val parsed = parseTimedLyricLines("[00:01.00]作曲：张三\n[00:05.00]编曲：李四")
         assertEquals(listOf("作曲：张三", "编曲：李四"), parsed.map { it.text })
