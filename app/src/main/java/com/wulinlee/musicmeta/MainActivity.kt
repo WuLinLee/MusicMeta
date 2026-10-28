@@ -1605,9 +1605,20 @@ private fun MusicMetaApp() {
                     runCatching { previewPlayer.value?.seekTo(target) }
                 }
                 FloatingMiniPlayerService.COMMAND_CLOSE -> {
-                    // Closing this floating session must not forget the user's overlay preference.
+                    // Stop playback without changing the user's overlay preference.
                     stopPreview()
                     FloatingMiniPlayerService.stop(context)
+                    MediaPlaybackService.stop(context)
+                }
+                FloatingMiniPlayerService.COMMAND_CLOSE_APP -> {
+                    // A five-second hold is an explicit full exit: stop playback, remove both
+                    // services (including the media notification/session), and remove the task.
+                    floatingOverlayDismissedForSession = true
+                    fallbackMiniPlayerDismissedForSession = true
+                    stopPreview()
+                    FloatingMiniPlayerService.stop(context)
+                    MediaPlaybackService.stop(context)
+                    (context as? MainActivity)?.finishAndRemoveTask()
                 }
             }
         }
@@ -3503,7 +3514,14 @@ private fun MusicMetaApp() {
                         status = "正在定位当前播放歌曲：" + song.title
                     }
                 }
-                val dismissFallbackMiniPlayer = { fallbackMiniPlayerDismissedForSession = true }
+                val closePlayerCompletely = {
+                    floatingOverlayDismissedForSession = true
+                    fallbackMiniPlayerDismissedForSession = true
+                    stopPreview()
+                    FloatingMiniPlayerService.stop(context)
+                    MediaPlaybackService.stop(context)
+                    activity.finishAndRemoveTask()
+                }
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -3541,7 +3559,7 @@ private fun MusicMetaApp() {
                                             (miniPlayerOffset.y + dy).coerceIn(-maxDragY, 0f),
                                         )
                                     },
-                                    onCircularDrag = dismissFallbackMiniPlayer,
+                                    onCircularDrag = locateCurrentPreviewSong,
                                     ignoreDragBelowFraction = 0.68f,
                                 ),
                             shape = RoundedCornerShape(16.dp),
@@ -3557,12 +3575,11 @@ private fun MusicMetaApp() {
                                     modifier = Modifier.fillMaxWidth().weight(1f)
                                         .clip(RoundedCornerShape(9.dp))
                                         .background(Color(0xFF243631))
-                                        .pointerInput(activePreviewSong, showTranslatedPreviewLyric, showPreviewDetails) {
-                                            detectTapGestures(
-                                                onTap = { showTranslatedPreviewLyric = !showTranslatedPreviewLyric },
-                                                onLongPress = { locateCurrentPreviewSong() },
-                                            )
-                                        }
+                                        .tapAndHoldToClose(
+                                            key = listOf(activePreviewSong, showTranslatedPreviewLyric, showPreviewDetails),
+                                            onTap = { showTranslatedPreviewLyric = !showTranslatedPreviewLyric },
+                                            onLongHold = { closePlayerCompletely() },
+                                        )
                                         .padding(horizontal = 5.dp, vertical = 0.dp)
                                         .semantics {
                                             contentDescription = if (previewTranslatedLyrics.isBlank()) "歌词，点击查看是否存在译文"
@@ -3648,19 +3665,18 @@ private fun MusicMetaApp() {
                                             (miniPlayerOffset.y + dy).coerceIn(-maxDragY, 0f),
                                         )
                                     },
-                                    onCircularDrag = dismissFallbackMiniPlayer,
+                                    onCircularDrag = locateCurrentPreviewSong,
                                 )
-                                .pointerInput(activePreviewSong) {
-                                    detectTapGestures(
-                                        onTap = { playPreview(activePreviewSong) },
-                                        onDoubleTap = { toggleLyricsPanel() },
-                                        onLongPress = { locateCurrentPreviewSong() },
-                                    )
-                                },
+                                .tapAndHoldToClose(
+                                    key = activePreviewSong,
+                                    onTap = { playPreview(activePreviewSong) },
+                                    onDoubleTap = { toggleLyricsPanel() },
+                                    onLongHold = { closePlayerCompletely() },
+                                ),
                         ) {
                             AsyncImage(
                                 model = previewCoverUrl.ifBlank { activePreviewSong.coverUrl }.takeIf { it.isNotBlank() },
-                                contentDescription = "单击播放 / 暂停，双击展开 / 收起歌词栏，长按定位当前歌曲，拖动移动，画圈关闭播放器浮层且继续播放",
+                                contentDescription = "单击播放 / 暂停，双击展开 / 收起歌词栏，长按 5 秒彻底关闭并停止播放，拖动移动，画圈定位当前歌曲",
                                 placeholder = painterResource(id = R.drawable.musicmeta_cover),
                                 error = painterResource(id = R.drawable.musicmeta_cover),
                                 modifier = Modifier.fillMaxSize(),
@@ -3967,8 +3983,9 @@ private fun MusicMetaApp() {
                     Text("直接搜歌与音源", fontWeight = FontWeight.SemiBold)
                     Text("直接搜歌可按歌曲名查询候选版本。点「找音源」查看并核对候选；点播放图标会尝试播放第一个匹配结果。下载前请检查歌曲名、艺人和版本，避免选到翻唱或现场版。")
                     Text("悬浮播放器手势", fontWeight = FontWeight.SemiBold)
-                    Text("单击封面：播放 / 暂停。双击封面：展开 / 收起歌词栏。长按封面：打开音笺并尝试滚动定位到当前播放曲目。拖动封面或歌词卡片：移动悬浮播放器。")
-                    Text("画圈关闭：在可拖动区域连续画圈（至少约三整圈，并累计足够移动距离）会关闭悬浮窗，但不会停止当前播放；需要重新显示时，可使用系统媒体卡片的悬浮窗开关或在设置中重新开启。")
+                    Text("单击封面：播放 / 暂停。双击封面：展开 / 收起歌词栏。长按封面或歌词正文满 5 秒：彻底关闭音笺、停止播放并退出最近任务。拖动封面或歌词卡片：移动悬浮播放器。")
+                    Text("画圈定位：在可拖动区域连续画圈（至少约三整圈，并累计足够移动距离）会打开音笺并尝试定位当前播放曲目。")
+                    Text("彻底关闭只清理音笺自身：释放播放器、关闭系统媒体服务与通知并移除音笺任务，不会结束其他应用。")
                     Text("侧边上 / 下箭头：切换上一首 / 下一首。点击歌词正文：在已加载的原文 / 译文间切换；拖动进度条可跳转播放位置。收起歌词后，歌词窗口会让出后方应用的触摸区域。")
                     Text("本地内嵌歌词：能识别重复时间戳时分开显示原文与译文；时间轴歌词显示当前带时间戳的行，无时间轴的作曲、编曲等夹杂行不会抢占当前歌词。无法可靠拆分时保留原样，不会为了配对而丢弃原文。")
                     Text("设置与维护中可调整悬浮歌词字号、是否优先显示已识别的译文，以及下载目录、音质和歌词保存方式。悬浮歌词默认字号为 15.04sp。")

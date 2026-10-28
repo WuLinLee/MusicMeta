@@ -86,10 +86,40 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
+
+internal const val FLOATING_PLAYER_CLOSE_HOLD_DURATION_MS = 5_000L
+
+/**
+ * Keeps normal tap / double-tap behavior, but a continuous five-second press closes the player.
+ * A canceled press (for example, after dragging) never triggers the close action.
+ */
+internal fun Modifier.tapAndHoldToClose(
+    key: Any? = Unit,
+    onTap: (() -> Unit)? = null,
+    onDoubleTap: (() -> Unit)? = null,
+    onLongHold: () -> Unit,
+): Modifier = pointerInput(key) {
+    var closeTriggered = false
+    detectTapGestures(
+        onPress = {
+            closeTriggered = false
+            val releasedBeforeTimeout = withTimeoutOrNull(FLOATING_PLAYER_CLOSE_HOLD_DURATION_MS) {
+                tryAwaitRelease()
+            }
+            if (releasedBeforeTimeout == null) {
+                closeTriggered = true
+                onLongHold()
+            }
+        },
+        onTap = { if (!closeTriggered) onTap?.invoke() },
+        onDoubleTap = { if (!closeTriggered) onDoubleTap?.invoke() },
+    )
+}
 
 internal fun Modifier.overlayDragGesture(
     key: Any? = Unit,
@@ -374,6 +404,7 @@ class FloatingMiniPlayerService : LifecycleService() {
         const val COMMAND_TOGGLE_PLAYBACK_MODE = "toggle_playback_mode"
         const val COMMAND_SEEK = "seek"
         const val COMMAND_CLOSE = "close"
+        const val COMMAND_CLOSE_APP = "close_app"
 
         @Volatile private var serviceAlive = false
 
@@ -779,8 +810,8 @@ class FloatingMiniPlayerService : LifecycleService() {
                     durationMs = durationMs,
                     onTogglePlay = { sendCommand(this@FloatingMiniPlayerService, COMMAND_TOGGLE_PLAY) },
                     onToggleLyrics = { toggleExpanded() },
+                    onLongHoldToClose = { closeCompletely() },
                     onLocateCurrentTrack = { openAppAndLocateSong() },
-                    onCloseOverlay = { closeOverlay() },
                     onTogglePlaybackMode = { sendCommand(this@FloatingMiniPlayerService, COMMAND_TOGGLE_PLAYBACK_MODE) },
                     playbackMode = playbackMode,
                     onDrag = { dx, dy -> moveBy(dx, dy) },
@@ -863,8 +894,8 @@ class FloatingMiniPlayerService : LifecycleService() {
                         sendCommand(this@FloatingMiniPlayerService, COMMAND_SEEK, positionMs)
                     },
                     onDrag = { dx, dy -> moveBy(dx, dy) },
-                    onCircularDrag = { closeOverlay() },
-                    onLongPress = { openAppAndLocateSong() },
+                    onCircularDrag = { openAppAndLocateSong() },
+                    onLongHoldToClose = { closeCompletely() },
                     onDragEnd = {
                         dragRemainderX = 0f
                         dragRemainderY = 0f
@@ -972,9 +1003,10 @@ class FloatingMiniPlayerService : LifecycleService() {
         runCatching { startActivity(intent) }
     }
 
-    private fun closeOverlay() {
-        // Gesture dismissal closes only the floating window; playback and the global setting remain unchanged.
-        sendCommand(this, COMMAND_CLOSE_OVERLAY)
+    private fun closeCompletely() {
+        // Ask the activity to release playback and exit; stop the media notification service directly too.
+        sendCommand(this, COMMAND_CLOSE_APP)
+        MediaPlaybackService.stop(this)
         removeOverlayViews()
         stopSelf()
     }
@@ -1004,7 +1036,7 @@ private fun OverlayLyricsPanelWindowUi(
     onSeek: (Int) -> Unit,
     onDrag: (Float, Float) -> Unit,
     onCircularDrag: () -> Unit,
-    onLongPress: () -> Unit,
+    onLongHoldToClose: () -> Unit,
     onDragEnd: () -> Unit,
 ) {
     val progress = remember { Animatable(0f) }
@@ -1027,7 +1059,7 @@ private fun OverlayLyricsPanelWindowUi(
         onSeek = onSeek,
         onDrag = onDrag,
         onCircularDrag = onCircularDrag,
-        onLongPress = onLongPress,
+        onLongHoldToClose = onLongHoldToClose,
         onDragEnd = onDragEnd,
         modifier = Modifier
             .fillMaxSize()
@@ -1052,8 +1084,8 @@ private fun OverlayCoverUi(
     durationMs: Int,
     onTogglePlay: () -> Unit,
     onToggleLyrics: () -> Unit,
+    onLongHoldToClose: () -> Unit,
     onLocateCurrentTrack: () -> Unit,
-    onCloseOverlay: () -> Unit,
     onTogglePlaybackMode: () -> Unit,
     playbackMode: Int,
     onDrag: (Float, Float) -> Unit,
@@ -1074,20 +1106,19 @@ private fun OverlayCoverUi(
                 .border(1.dp, Color(0xFF2B3730), coverShape)
                 .overlayDragGesture(
                     onDrag = onDrag,
-                    onCircularDrag = onCloseOverlay,
+                    onCircularDrag = onLocateCurrentTrack,
                     onDragEnd = onDragEnd,
                 )
-                .pointerInput(Unit) {
-                    detectTapGestures(
-                        onTap = { onTogglePlay() },
-                        onDoubleTap = { onToggleLyrics() },
-                        onLongPress = { onLocateCurrentTrack() },
-                    )
-                }
+                .tapAndHoldToClose(
+                    key = Unit,
+                    onTap = onTogglePlay,
+                    onDoubleTap = onToggleLyrics,
+                    onLongHold = onLongHoldToClose,
+                )
         ) {
             AsyncImage(
                 model = coverUrl.takeIf { it.isNotBlank() },
-                contentDescription = "单击播放 / 暂停，双击展开 / 收起歌词栏，长按打开应用并定位当前歌曲，拖动移动，画圈关闭悬浮窗且继续播放",
+                contentDescription = "单击播放 / 暂停，双击展开 / 收起歌词栏，长按 5 秒彻底关闭并停止播放，拖动移动，画圈定位当前歌曲",
                 placeholder = painterResource(id = R.drawable.musicmeta_cover),
                 error = painterResource(id = R.drawable.musicmeta_cover),
                 modifier = Modifier.fillMaxSize(),
@@ -1162,7 +1193,7 @@ private fun OverlayLyricsUi(
     onSeek: (Int) -> Unit,
     onDrag: (Float, Float) -> Unit,
     onCircularDrag: () -> Unit,
-    onLongPress: () -> Unit,
+    onLongHoldToClose: () -> Unit,
     onDragEnd: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1197,12 +1228,11 @@ private fun OverlayLyricsUi(
                 modifier = Modifier.fillMaxWidth().weight(1f)
                     .clip(RoundedCornerShape(9.dp))
                     .background(Color(0xFF243631))
-                    .pointerInput(Unit) {
-                        detectTapGestures(
-                            onTap = { onToggleTranslation() },
-                            onLongPress = { onLongPress() },
-                        )
-                    }
+                    .tapAndHoldToClose(
+                        key = Unit,
+                        onTap = onToggleTranslation,
+                        onLongHold = onLongHoldToClose,
+                    )
                     .padding(horizontal = 5.dp, vertical = 0.dp)
                     .semantics {
                         contentDescription = if (translatedLyrics.isBlank()) {
