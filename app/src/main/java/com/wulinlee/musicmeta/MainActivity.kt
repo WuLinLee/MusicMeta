@@ -3684,7 +3684,7 @@ private fun MusicMetaApp() {
                             ).ifBlank { "♪" }
                         }
                         Card(
-                            modifier = Modifier.align(Alignment.CenterStart).offset(x = panelOffset, y = 22.dp)
+                            modifier = Modifier.align(Alignment.TopStart).offset(x = panelOffset, y = 22.dp)
                                 .width(panelWidth).height(floatingLyricsPanelHeightDp(floatingLyricsFontSizeSp).dp)
                                 .overlayDragGesture(
                                     key = listOf(activePreviewSong, minDragX, maxDragX, maxDragY, showPreviewDetails),
@@ -3709,7 +3709,7 @@ private fun MusicMetaApp() {
                                 Box(
                                     modifier = Modifier.fillMaxWidth().weight(1f)
                                         .clip(RoundedCornerShape(9.dp))
-                                        .background(Color.Black.copy(alpha = 0.33f), RoundedCornerShape(9.dp))
+                                        .background(Color.Black.copy(alpha = 0.50f), RoundedCornerShape(9.dp))
                                         .tapAndHoldToClose(
                                             key = listOf(activePreviewSong, showTranslatedPreviewLyric, showPreviewDetails),
                                             onTap = { showTranslatedPreviewLyric = !showTranslatedPreviewLyric },
