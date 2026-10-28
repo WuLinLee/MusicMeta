@@ -3536,7 +3536,7 @@ private fun MusicMetaApp() {
                 val desiredLyricsWidthPx = FloatingOverlayPlacement.scaledPreferredLyricsWidthPx(
                     baseGroupWidthPx = with(density) { 356.dp.roundToPx() },
                     nonLyricsWidthPx = with(density) { 78.dp.roundToPx() },
-                    scale = 1.38f,
+                    scale = 1.587f,
                 )
                 // Match the system overlay: drag the cover across the screen and mirror the lyric panel around it.
                 val coverBaseLeftPx = FloatingOverlayPlacement.centeredCoverXForExpandedGroup(

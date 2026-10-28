@@ -7,8 +7,8 @@ import org.junit.Test
 
 class FloatingOverlayPlacementTest {
     @Test
-    fun preferredLyricsWidthIsScaledToOnePointFifteenOfPreviousWidth() {
-        assertEquals(384, FloatingOverlayPlacement.scaledPreferredLyricsWidthPx(356, 78, 1.38f))
+    fun preferredLyricsWidthIsScaledByAnotherFactorOfOnePointFifteen() {
+        assertEquals(441, FloatingOverlayPlacement.scaledPreferredLyricsWidthPx(356, 78, 1.587f))
     }
 
     @Test

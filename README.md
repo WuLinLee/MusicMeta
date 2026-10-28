@@ -7,7 +7,8 @@ MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 A
 > 技术栈：Kotlin、Jetpack Compose、Material 3、Coroutines、OkHttp、Coil、jaudiotagger。
 
 - **正式版发布页：** [GitHub Releases](https://github.com/WuLinLee/MusicMeta/releases)
-- **v1.48 APK 直链：** [MusicMeta-v1.48.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.48/MusicMeta-v1.48.apk)
+- **v1.49 APK 直链：** [MusicMeta-v1.49.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.49/MusicMeta-v1.49.apk)
+- **上一版本 APK：** [MusicMeta-v1.48.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.48/MusicMeta-v1.48.apk)
 - **v1.47 APK 直链：** [MusicMeta-v1.47.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.47/MusicMeta-v1.47.apk)
 - **上一版本 APK：** [MusicMeta-v1.46.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.46/MusicMeta-v1.46.apk)
 - **历史版本 APK：** [MusicMeta-v1.44.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.44/MusicMeta-v1.44.apk)
@@ -201,7 +202,7 @@ v1.47 在保留原有薄荷绿歌词颜色（#9FF0C9）的前提下，提高歌�
 
 ## 悬浮迷你播放器
 
-### 当前行为（v1.47）
+### 当前行为（v1.49）
 
 封面、上下侧键和歌词卡片分开管理：封面位置不随歌词展开/收起改变；侧键窗口固定为 28×64dp；展开时单独显示 70dp 高的歌词卡片，收起动画结束后移除卡片窗口，避免透明区域挡住其他应用的触摸。歌词文字默认 17.28sp，文字区域约 48dp，可容纳两行并为进度线保留独立区域。封面位于屏幕左侧时歌词在右侧，封面位于右侧时歌词在左侧，卡片与侧键保留 4dp 间距。歌词文字区域使用约 28% 不透明度的暗底和轻微阴影，保持原有薄荷绿色。
 

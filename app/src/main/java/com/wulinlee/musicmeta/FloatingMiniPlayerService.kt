@@ -661,7 +661,7 @@ class FloatingMiniPlayerService : LifecycleService() {
         FloatingOverlayPlacement.scaledPreferredLyricsWidthPx(
             baseGroupWidthPx = dp(356),
             nonLyricsWidthPx = dp(78),
-            scale = 1.38f,
+            scale = 1.587f,
         )
 
     private fun defaultCenteredOverlayCoverX(): Int =
