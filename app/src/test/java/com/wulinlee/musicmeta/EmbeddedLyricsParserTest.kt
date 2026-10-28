@@ -28,4 +28,12 @@ class EmbeddedLyricsParserTest {
         assertEquals(raw, result.original)
         assertEquals("", result.translated)
     }
+
+    @Test
+    fun keepsMixedTimedLyricsUnchangedWhenTranslationPairsAreUnclear() {
+        val raw = "[00:01.00]Hello\n[00:02.10]你好\n[00:03.00]World\n[00:04.10]世界"
+        val result = EmbeddedLyricsParser.split(raw)
+        assertEquals(raw, result.original)
+        assertEquals("", result.translated)
+    }
 }

@@ -3,28 +3,14 @@ package com.wulinlee.musicmeta
 private val lyricTimestampRegex = Regex("""\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?\]""")
 
 internal data class TimedLyricLine(val timeMs: Int, val text: String)
-internal const val UNTITLED_TRANSLATION_SYNC_HINT = "译文没有时间戳，无法准确同步"
 
-/** Parse every timestamped lyric row without filtering composer/arranger or other credit text. */
-internal fun parseTimedLyricLines(
-    raw: String,
-    includeUntimedRows: Boolean = false,
-): List<TimedLyricLine> {
+/** Parse only rows with explicit LRC timestamps for time-synchronized display. */
+internal fun parseTimedLyricLines(raw: String): List<TimedLyricLine> {
     val lines = mutableListOf<TimedLyricLine>()
-    var lastTimestampMs = 0
     for (line in raw.lineSequence()) {
         val matches = lyricTimestampRegex.findAll(line).toList()
         val text = lyricTimestampRegex.replace(line, "").trim()
-        if (text.isBlank()) continue
-        if (matches.isEmpty()) {
-            // When the active LRC contains timestamps, retain untimed credit/lyric rows too.
-            // Place them just after the preceding timed row instead of silently dropping them.
-            if (includeUntimedRows) {
-                lastTimestampMs = (lastTimestampMs + 1_000).coerceAtLeast(0)
-                lines += TimedLyricLine(lastTimestampMs, text)
-            }
-            continue
-        }
+        if (text.isBlank() || matches.isEmpty()) continue
         for (match in matches) {
             val minutes = match.groupValues[1].toIntOrNull() ?: continue
             val seconds = match.groupValues[2].toIntOrNull() ?: continue
@@ -37,7 +23,6 @@ internal fun parseTimedLyricLines(
                 else -> 0
             }
             val timeMs = (minutes * 60 + seconds) * 1_000 + fractionMs
-            lastTimestampMs = timeMs
             lines += TimedLyricLine(timeMs, text)
         }
     }
@@ -59,8 +44,7 @@ internal fun currentLyricLine(
     isTranslation: Boolean = false,
 ): String {
     if (activeLyrics.isBlank()) return ""
-    val activeHasTimestamps = lyricTimestampRegex.containsMatchIn(activeLyrics)
-    val timed = parseTimedLyricLines(activeLyrics, includeUntimedRows = activeHasTimestamps)
+    val timed = parseTimedLyricLines(activeLyrics)
     if (timed.isNotEmpty()) return currentTimedLine(timed, positionMs)
 
     val plain = activeLyrics.lineSequence()
@@ -82,7 +66,7 @@ internal fun currentLyricLine(
                 .toInt().coerceIn(0, plain.lastIndex)
             return plain[translatedIndex]
         }
-        if (plain.size > 1) return UNTITLED_TRANSLATION_SYNC_HINT
+        // No reliable timeline is available: preserve the translation and show its first line.
     }
     return plain.first()
 }

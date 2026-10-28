@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.res.Configuration
 import android.content.Intent
 import android.graphics.PixelFormat
-import android.os.Build
 import android.os.IBinder
 import android.os.Handler
 import android.os.Looper
@@ -15,13 +14,11 @@ import android.view.Gravity
 import android.view.WindowManager
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -30,7 +27,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -43,30 +39,23 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Text
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.positionChangeIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -85,7 +74,6 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import coil.compose.AsyncImage
-import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.roundToInt
@@ -778,18 +766,18 @@ class FloatingMiniPlayerService : LifecycleService() {
                     positionMs = positionMs,
                     durationMs = durationMs,
                     onTogglePlay = { sendCommand(this@FloatingMiniPlayerService, COMMAND_TOGGLE_PLAY) },
-                    onLongPress = { toggleExpanded() },
-                    onClose = { closePlayer() },
+                    onToggleLyrics = { toggleExpanded() },
+                    onLocateCurrentTrack = { openAppAndLocateSong() },
+                    onCloseOverlay = { closeOverlay() },
                     onTogglePlaybackMode = { sendCommand(this@FloatingMiniPlayerService, COMMAND_TOGGLE_PLAYBACK_MODE) },
                     playbackMode = playbackMode,
-                    onOpenApp = { openAppAndLocateSong() },
                     onDrag = { dx, dy -> moveBy(dx, dy) },
                     onDragEnd = {
                         dragRemainderX = 0f
                         dragRemainderY = 0f
                         savePosition()
                     },
-                            modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize(),
                 )
             }
         }
@@ -863,8 +851,8 @@ class FloatingMiniPlayerService : LifecycleService() {
                         sendCommand(this@FloatingMiniPlayerService, COMMAND_SEEK, positionMs)
                     },
                     onDrag = { dx, dy -> moveBy(dx, dy) },
-                    onCircularDrag = { openAppAndLocateSong() },
-                    onLongPress = { toggleExpanded() },
+                    onCircularDrag = { closeOverlay() },
+                    onLongPress = { openAppAndLocateSong() },
                     onDragEnd = {
                         dragRemainderX = 0f
                         dragRemainderY = 0f
@@ -972,8 +960,9 @@ class FloatingMiniPlayerService : LifecycleService() {
         runCatching { startActivity(intent) }
     }
 
-    private fun closePlayer() {
-        sendCommand(this, COMMAND_CLOSE)
+    private fun closeOverlay() {
+        // Gesture dismissal closes only the floating window; playback and the global setting remain unchanged.
+        sendCommand(this, COMMAND_CLOSE_OVERLAY)
         removeOverlayViews()
         stopSelf()
     }
@@ -1043,111 +1032,6 @@ private fun OverlayLyricsPanelWindowUi(
 }
 
 @Composable
-private fun OverlayPlayerUi(
-    expanded: Boolean,
-    windowBoundsExpanded: Boolean,
-    lyricsOnRight: Boolean,
-    lyricsWidthDp: Float,
-    lyricsGapDp: Float,
-    lyricsFontSizeSp: Float,
-    onExpansionAnimationFinished: (Boolean) -> Unit,
-    onWindowBoundsCompositionReady: () -> Unit,
-    coverUrl: String,
-    isPlaying: Boolean,
-    isLoading: Boolean,
-    positionMs: Int,
-    durationMs: Int,
-    onTogglePlay: () -> Unit,
-    onLongPress: () -> Unit,
-    onClose: () -> Unit,
-    onTogglePlaybackMode: () -> Unit,
-    playbackMode: Int,
-    onOpenApp: () -> Unit,
-    onDrag: (Float, Float) -> Unit,
-    originalLyrics: String,
-    translatedLyrics: String,
-    showTranslation: Boolean,
-    onToggleTranslation: () -> Unit,
-    onSeek: (Int) -> Unit,
-    onPrevious: () -> Unit,
-    onNext: () -> Unit,
-    onCircularDrag: () -> Unit,
-    onDragEnd: () -> Unit,
-) {
-    val haptics = LocalHapticFeedback.current
-    val handleLongPress = {
-        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-        onLongPress()
-    }
-    val expansionProgress by animateFloatAsState(
-        targetValue = if (expanded) 1f else 0f,
-        animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
-        finishedListener = { onExpansionAnimationFinished(expanded) },
-        label = "lyricsPanelExpansion",
-    )
-
-    // WindowManager bounds are fixed through animation: only lyrics alpha/scale changes,
-    // so the cover's absolute X coordinate remains stable on both sides of the screen.
-    val groupWidthDp = if (windowBoundsExpanded) 64f + lyricsWidthDp + lyricsGapDp else 64f
-    SideEffect { onWindowBoundsCompositionReady() }
-    val lyricsModifier = Modifier
-        .offset(x = if (lyricsOnRight) (64f + lyricsGapDp).dp else 0.dp)
-        .width(lyricsWidthDp.dp)
-        .height(64.dp)
-        .graphicsLayer {
-            scaleX = expansionProgress
-            alpha = expansionProgress
-            transformOrigin = if (lyricsOnRight) {
-                TransformOrigin(0f, 0.5f)
-            } else {
-                TransformOrigin(1f, 0.5f)
-            }
-        }
-
-    Box(
-        modifier = Modifier
-            .width(groupWidthDp.dp)
-            .height(88.dp)
-            .clipToBounds(),
-    ) {
-        if (windowBoundsExpanded && expansionProgress > 0.001f) {
-            OverlayLyricsUi(
-                originalLyrics = originalLyrics,
-                translatedLyrics = translatedLyrics,
-                showTranslation = showTranslation,
-                positionMs = positionMs,
-                durationMs = durationMs,
-                onToggleTranslation = onToggleTranslation,
-                onSeek = onSeek,
-                onDrag = onDrag,
-                onCircularDrag = onCircularDrag,
-                onLongPress = handleLongPress,
-                onDragEnd = onDragEnd,
-                lyricsFontSizeSp = lyricsFontSizeSp,
-                modifier = lyricsModifier,
-            )
-        }
-
-        OverlayCoverUi(
-            coverUrl = coverUrl,
-            isPlaying = isPlaying,
-            isLoading = isLoading,
-            positionMs = positionMs,
-            durationMs = durationMs,
-            onTogglePlay = onTogglePlay,
-            onLongPress = handleLongPress,
-            onClose = onClose,
-            onTogglePlaybackMode = onTogglePlaybackMode,
-            playbackMode = playbackMode,
-            onOpenApp = onOpenApp,
-            onDrag = onDrag,
-            onDragEnd = onDragEnd,
-            modifier = Modifier.align(if (lyricsOnRight) Alignment.TopStart else Alignment.TopEnd),
-        )
-    }
-}
-
-@Composable
 private fun OverlayCoverUi(
     coverUrl: String,
     isPlaying: Boolean,
@@ -1155,11 +1039,11 @@ private fun OverlayCoverUi(
     positionMs: Int,
     durationMs: Int,
     onTogglePlay: () -> Unit,
-    onLongPress: () -> Unit,
-    onClose: () -> Unit,
+    onToggleLyrics: () -> Unit,
+    onLocateCurrentTrack: () -> Unit,
+    onCloseOverlay: () -> Unit,
     onTogglePlaybackMode: () -> Unit,
     playbackMode: Int,
-    onOpenApp: () -> Unit,
     onDrag: (Float, Float) -> Unit,
     onDragEnd: () -> Unit,
     modifier: Modifier = Modifier,
@@ -1178,20 +1062,20 @@ private fun OverlayCoverUi(
                 .border(1.dp, Color(0xFF2B3730), coverShape)
                 .overlayDragGesture(
                     onDrag = onDrag,
-                    onCircularDrag = onOpenApp,
+                    onCircularDrag = onCloseOverlay,
                     onDragEnd = onDragEnd,
                 )
                 .pointerInput(Unit) {
                     detectTapGestures(
                         onTap = { onTogglePlay() },
-                        onDoubleTap = { onClose() },
-                        onLongPress = { onLongPress() },
+                        onDoubleTap = { onToggleLyrics() },
+                        onLongPress = { onLocateCurrentTrack() },
                     )
                 }
         ) {
             AsyncImage(
                 model = coverUrl.takeIf { it.isNotBlank() },
-                contentDescription = "单击播放 / 暂停，双击关闭悬浮窗，长按展开 / 收起歌词，拖动移动；画圈拖动打开应用并定位歌曲",
+                contentDescription = "单击播放 / 暂停，双击展开 / 收起歌词栏，长按打开应用并定位当前歌曲，拖动移动，画圈关闭悬浮窗且继续播放",
                 placeholder = painterResource(id = R.drawable.musicmeta_cover),
                 error = painterResource(id = R.drawable.musicmeta_cover),
                 modifier = Modifier.fillMaxSize(),

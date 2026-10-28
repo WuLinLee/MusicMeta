@@ -11,7 +11,6 @@ import android.net.Uri
 import android.provider.Settings
 import android.media.AudioAttributes
 import android.media.MediaPlayer
-import android.provider.MediaStore
 import android.os.Bundle
 import android.os.Build
 import android.widget.Toast
@@ -85,20 +84,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
@@ -117,7 +112,6 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.semantics.contentDescription
@@ -206,6 +200,23 @@ class MainActivity : ComponentActivity() {
 
     internal fun clearOverlayOpenRequest(requestId: Long) {
         if (pendingOverlayOpenRequest?.requestId == requestId) pendingOverlayOpenRequest = null
+    }
+
+    internal fun requestTrackLocation(
+        mode: String,
+        trackId: String,
+        playlistId: Long,
+        title: String,
+        artist: String,
+    ) {
+        pendingOverlayOpenRequest = OverlayOpenRequest(
+            requestId = ++overlayOpenRequestSequence,
+            mode = mode,
+            trackId = trackId,
+            playlistId = playlistId,
+            title = title,
+            artist = artist,
+        )
     }
 
     private val floatingOverlayReceiver = object : BroadcastReceiver() {
@@ -556,6 +567,7 @@ private fun MusicMetaApp() {
     var previewPositionMs by remember { mutableStateOf(0) }
     var previewDurationMs by remember { mutableStateOf(0) }
     var miniPlayerOffset by remember { mutableStateOf(Offset.Zero) }
+    var fallbackMiniPlayerDismissedForSession by remember { mutableStateOf(false) }
     val previewPlayer = remember { mutableStateOf<MediaPlayer?>(null) }
     val playPreviewRef = remember { mutableStateOf<(FlacSiteSong) -> Unit>({}) }
     var previewPlaybackGeneration by remember { mutableStateOf(0L) }
@@ -1740,6 +1752,10 @@ private fun MusicMetaApp() {
             floatingOverlayEnabled = false
         }
     }
+
+    LaunchedEffect(previewSong?.platform, previewSong?.id, floatingOverlayEnabled) {
+        fallbackMiniPlayerDismissedForSession = false
+    }
     val playAdjacentPreview: (Int) -> Unit = { direction ->
         previewNavigationHandler?.invoke(direction)
     }
@@ -2728,7 +2744,7 @@ private fun MusicMetaApp() {
                         )
                         IconButton(
                             onClick = { showInteractionHelp = true },
-                            modifier = Modifier.size(22.dp).semantics { contentDescription = "交互教程" },
+                            modifier = Modifier.size(22.dp).semantics { contentDescription = "交互与使用指南" },
                         ) {
                             Icon(
                                 painter = painterResource(R.drawable.lucide_circle_help),
@@ -3438,7 +3454,10 @@ private fun MusicMetaApp() {
             }
         }
 
-        if (previewSong != null && !(floatingOverlayEnabled && Settings.canDrawOverlays(context))) {
+        if (previewSong != null &&
+            !fallbackMiniPlayerDismissedForSession &&
+            !(floatingOverlayEnabled && Settings.canDrawOverlays(context))
+        ) {
             val activePreviewSong = previewSong!!
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val density = LocalDensity.current
@@ -3458,6 +3477,27 @@ private fun MusicMetaApp() {
                 }
                 val maxDragY = with(density) { (maxHeight - 120.dp).toPx().coerceAtLeast(0f) }
                 val toggleLyricsPanel = { showPreviewDetails = !showPreviewDetails }
+                val locateCurrentPreviewSong = {
+                    val song = previewSong
+                    if (song != null) {
+                        val mode = when {
+                            song.platform == "local" -> "local"
+                            previewCurrentPlaylistId != null && likedPlaylist?.id == previewCurrentPlaylistId -> "liked"
+                            previewCurrentPlaylistId != null -> "playlist"
+                            else -> "search"
+                        }
+                        val trackId = if (song.platform == "local") song.id else previewCurrentTrack?.id?.toString().orEmpty()
+                        activity.requestTrackLocation(
+                            mode = mode,
+                            trackId = trackId,
+                            playlistId = previewCurrentPlaylistId ?: 0L,
+                            title = song.title,
+                            artist = song.artist,
+                        )
+                        status = "正在定位当前播放歌曲：" + song.title
+                    }
+                }
+                val dismissFallbackMiniPlayer = { fallbackMiniPlayerDismissedForSession = true }
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -3495,7 +3535,7 @@ private fun MusicMetaApp() {
                                             (miniPlayerOffset.y + dy).coerceIn(-maxDragY, 0f),
                                         )
                                     },
-                                    onCircularDrag = {},
+                                    onCircularDrag = dismissFallbackMiniPlayer,
                                     ignoreDragBelowFraction = 0.68f,
                                 ),
                             shape = RoundedCornerShape(16.dp),
@@ -3514,7 +3554,7 @@ private fun MusicMetaApp() {
                                         .pointerInput(activePreviewSong, showTranslatedPreviewLyric, showPreviewDetails) {
                                             detectTapGestures(
                                                 onTap = { showTranslatedPreviewLyric = !showTranslatedPreviewLyric },
-                                                onLongPress = { toggleLyricsPanel() },
+                                                onLongPress = { locateCurrentPreviewSong() },
                                             )
                                         }
                                         .padding(horizontal = 5.dp, vertical = 0.dp)
@@ -3602,19 +3642,19 @@ private fun MusicMetaApp() {
                                             (miniPlayerOffset.y + dy).coerceIn(-maxDragY, 0f),
                                         )
                                     },
-                                    onCircularDrag = {},
+                                    onCircularDrag = dismissFallbackMiniPlayer,
                                 )
                                 .pointerInput(activePreviewSong) {
                                     detectTapGestures(
                                         onTap = { playPreview(activePreviewSong) },
-                                        onDoubleTap = { stopPreview() },
-                                        onLongPress = { toggleLyricsPanel() },
+                                        onDoubleTap = { toggleLyricsPanel() },
+                                        onLongPress = { locateCurrentPreviewSong() },
                                     )
                                 },
                         ) {
                             AsyncImage(
                                 model = previewCoverUrl.ifBlank { activePreviewSong.coverUrl }.takeIf { it.isNotBlank() },
-                                contentDescription = "单击播放或暂停，双击关闭播放器，长按展开或收起歌词，拖动移动播放器",
+                                contentDescription = "单击播放 / 暂停，双击展开 / 收起歌词栏，长按定位当前歌曲，拖动移动，画圈关闭播放器浮层且继续播放",
                                 placeholder = painterResource(id = R.drawable.musicmeta_cover),
                                 error = painterResource(id = R.drawable.musicmeta_cover),
                                 modifier = Modifier.fillMaxSize(),
@@ -3908,18 +3948,24 @@ private fun MusicMetaApp() {
     if (showInteractionHelp) {
         AlertDialog(
             onDismissRequest = { showInteractionHelp = false },
-            title = { Text("交互小教程", fontWeight = FontWeight.SemiBold) },
+            title = { Text("交互与使用指南", fontWeight = FontWeight.SemiBold) },
             text = {
                 Column(
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(9.dp),
                 ) {
-                    Text("歌曲封面：加入下一首；当前歌曲播放结束后才会播放排队歌曲。若当前没有播放中的歌曲，将直接开始播放。")
-                    Text("本地歌曲封面以外的区域：立即播放该本地歌曲；长按歌曲卡片可复制歌曲名和歌手。")
-                    Text("公开歌单 / 红心歌单：封面排入下一首。右侧「找音源」查看候选，「▶」立即查找并播放第一个匹配音源。")
-                    Text("悬浮封面长按：展开或收起歌词栏；封面播放图标用于暂停 / 继续。")
-                    Text("悬浮歌词栏：使用上一首 / 下一首按钮切歌；点击译文切换原文 / 译文，拖动可移动窗口。")
-                    Text("设置与维护中可调整悬浮歌词字体大小；滑块正中为默认值，左右两端分别是一半和两倍。")
+                    Text("LOCAL MUSIC｜本地音乐", fontWeight = FontWeight.SemiBold)
+                    Text("点歌曲行开始播放；长按歌曲行可复制歌曲名和艺人。排序按钮可在修改时间新到旧、旧到新、A–Z 之间循环。首次使用请扫描本地音乐，或在「设置与维护」中选择有权限访问的音乐文件夹。")
+                    Text("PLAYLIST｜公开歌单与红心歌单", fontWeight = FontWeight.SemiBold)
+                    Text("公开歌单粘贴网易云分享链接或歌单 ID；红心歌单需要网易云用户 ID。点歌单中的歌曲封面会把曲目排到下一首；若当前没有歌曲播放，则会直接开始播放。")
+                    Text("直接搜歌与音源", fontWeight = FontWeight.SemiBold)
+                    Text("直接搜歌可按歌曲名查询候选版本。点「找音源」查看并核对候选；点播放图标会尝试播放第一个匹配结果。下载前请检查歌曲名、艺人和版本，避免选到翻唱或现场版。")
+                    Text("悬浮播放器手势", fontWeight = FontWeight.SemiBold)
+                    Text("单击封面：播放 / 暂停。双击封面：展开 / 收起歌词栏。长按封面：打开音笺并尝试滚动定位到当前播放曲目。拖动封面或歌词卡片：移动悬浮播放器。")
+                    Text("画圈关闭：在可拖动区域连续画圈（至少约三整圈，并累计足够移动距离）会关闭悬浮窗，但不会停止当前播放；需要重新显示时，可使用系统媒体卡片的悬浮窗开关或在设置中重新开启。")
+                    Text("侧边上 / 下箭头：切换上一首 / 下一首。点击歌词正文：在已加载的原文 / 译文间切换；拖动进度条可跳转播放位置。收起歌词后，歌词窗口会让出后方应用的触摸区域。")
+                    Text("本地内嵌歌词：能识别重复时间戳时分开显示原文与译文；时间轴歌词显示当前带时间戳的行，无时间轴的作曲、编曲等夹杂行不会抢占当前歌词。无法可靠拆分时保留原样，不会为了配对而丢弃原文。")
+                    Text("设置与维护中可调整悬浮歌词字号、是否优先显示已识别的译文，以及下载目录、音质和歌词保存方式。悬浮歌词默认字号为 15.04sp。")
                 }
             },
             confirmButton = { TextButton(onClick = { showInteractionHelp = false }) { Text("知道了", color = Accent) } },
