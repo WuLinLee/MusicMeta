@@ -3623,7 +3623,11 @@ private fun MusicMetaApp() {
                     coverXpx - if (showPreviewDetails) panelWidthPx + panelGapPx + sideControlsWidthPx else sideControlsWidthPx
                 }
                 val coverShape = RoundedCornerShape(18.dp)
-                val maxDragY = with(density) { (maxHeight - 120.dp).toPx().coerceAtLeast(0f) }
+                val fallbackGroupHeight =
+                    maxOf(108.dp, 22.dp + floatingLyricsPanelHeightDp(floatingLyricsFontSizeSp).dp)
+                val maxDragY = with(density) {
+                    (maxHeight - fallbackGroupHeight - 12.dp).toPx().coerceAtLeast(0f)
+                }
                 val toggleLyricsPanel = { showPreviewDetails = !showPreviewDetails }
                 val locateCurrentPreviewSong = {
                     val song = previewSong
@@ -3658,17 +3662,11 @@ private fun MusicMetaApp() {
                         .align(Alignment.BottomStart)
                         .padding(bottom = 12.dp)
                         .width(groupWidth)
-                        .height(maxOf(108.dp, 22.dp + floatingLyricsPanelHeightDp(floatingLyricsFontSizeSp).dp))
+                        .height(fallbackGroupHeight)
                         .offset {
                             IntOffset(
                                 groupLeftPx,
-                                miniPlayerOffset.y.coerceIn(
-                                    -with(density) {
-                                        (maxHeight - maxOf(108.dp, 22.dp + floatingLyricsPanelHeightDp(floatingLyricsFontSizeSp).dp) - 12.dp)
-                                            .toPx().coerceAtLeast(0f)
-                                    },
-                                    0f,
-                                ).roundToInt(),
+                                miniPlayerOffset.y.coerceIn(-maxDragY, 0f).roundToInt(),
                             )
                         },
                 ) {
