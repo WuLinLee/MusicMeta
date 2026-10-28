@@ -187,7 +187,7 @@ jobs:
                 --target "$GITHUB_SHA"
             fi
           fi
-      - name: Keep only ten milestone releases
+      - name: Keep current and milestone releases
         if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -195,7 +195,8 @@ jobs:
           CURRENT_VERSION="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n 1)"
           CURRENT_TAG="v$CURRENT_VERSION"
           # Keep the current version plus nine milestones that show the project's evolution.
-          KEEP_TAGS=" $CURRENT_TAG v1.32 v1.31 v1.30 v1.29 v1.28 v1.27 v1.26 v1.25 v1.23 "
+          # Keep the current release, its previous stable release, and curated milestones.
+          KEEP_TAGS=" $CURRENT_TAG v1.50 v1.32 v1.31 v1.30 v1.29 v1.28 v1.27 v1.26 v1.25 v1.23 "
           while IFS= read -r TAG; do
             [[ -z "$TAG" ]] && continue
             if [[ "$KEEP_TAGS" == *" $TAG "* ]]; then
