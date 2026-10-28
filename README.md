@@ -2,12 +2,12 @@
 
 MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 Android 应用：读取可公开访问的网易云歌单，搜索并核对音源，下载音频，并尽可能补齐封面、歌词和音频标签。
 
-> **当前版本：1.54** · `versionCode = 58`  
+> **当前版本：1.55** · `versionCode = 59`  
 > 应用 ID：`com.wulinlee.musicmeta` · 最低 Android：10（API 29）· 目标 SDK：35  
 > 技术栈：Kotlin、Jetpack Compose、Material 3、Coroutines、OkHttp、Coil、jaudiotagger。
 
 - **正式版发布页：** [GitHub Releases](https://github.com/WuLinLee/MusicMeta/releases)
-- **v1.54 APK 直链：** [MusicMeta-v1.54.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.54/MusicMeta-v1.54.apk)
+- **v1.55 APK 直链：** [MusicMeta-v1.55.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.55/MusicMeta-v1.55.apk)
 - **上一版本 APK：** [MusicMeta-v1.52.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.52/MusicMeta-v1.52.apk)
 - **上一版本 APK：** [MusicMeta-v1.51.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.51/MusicMeta-v1.51.apk)
 - **上一版本 APK：** [MusicMeta-v1.50.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.50/MusicMeta-v1.50.apk)
@@ -27,7 +27,7 @@ MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 A
 - **v1.30 历史版（系统媒体卡片参考）：** [MusicMeta-v1.30.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.30/MusicMeta-v1.30.apk)
 - **构建记录：** [GitHub Actions](https://github.com/WuLinLee/MusicMeta/actions)
 
-v1.54 将系统悬浮歌词与应用内备用播放器的歌词栏黑色背景不透明度统一调整为 70%，保留半透明效果。v1.52 修复应用内备用播放器歌词栏垂直偏移：歌词卡片改为相对播放器组顶部定位，保持与封面顶部对齐；v1.47 在保留原有薄荷绿歌词颜色（#9FF0C9）的前提下，提高歌词在复杂背景上的可读性：仅在歌词文字区域增加约 28% 不透明度的黑色半透明底和轻微文字阴影；外层歌词卡片继续透明，未播放进度轨道继续不绘制。默认歌词字号从 15.04sp 调整到 17.28sp，并将歌词栏高度调整为 70dp；按默认行高计算，文字区域可容纳两行歌词并为已播放进度线保留独立区域。系统悬浮窗与应用内备用播放器的样式同步，自定义字号通常会保留。v1.46 的无权限备用播放器拖动、歌单归属上一首/下一首导航，以及 v1.45 的五秒彻底关闭与画圈定位行为继续保留；v1.44 的时间轴歌词与本地内嵌双语歌词保守解析策略继续保留。v1.43 将侧键固定在独立窗口，歌词卡片使用独立窗口并修复右侧布局展开/收起时闪烁；v1.42 修复收起歌词后透明窗口遮挡后方触摸的问题。默认歌词字号为 17.28sp。下载链接仅在对应 Release 资产创建成功后可用；请以对应 Actions 构建和 Release 附件为准。
+v1.55 将系统悬浮歌词与应用内备用播放器的歌词栏黑色背景不透明度统一调整为 70%，保留半透明效果。v1.52 修复应用内备用播放器歌词栏垂直偏移：歌词卡片改为相对播放器组顶部定位，保持与封面顶部对齐；v1.47 在保留原有薄荷绿歌词颜色（#9FF0C9）的前提下，提高歌词在复杂背景上的可读性：仅在歌词文字区域增加约 28% 不透明度的黑色半透明底和轻微文字阴影；外层歌词卡片继续透明，未播放进度轨道继续不绘制。默认歌词字号从 15.04sp 调整到 17.28sp，并将歌词栏高度调整为 70dp；按默认行高计算，文字区域可容纳两行歌词并为已播放进度线保留独立区域。系统悬浮窗与应用内备用播放器的样式同步，自定义字号通常会保留。v1.46 的无权限备用播放器拖动、歌单归属上一首/下一首导航，以及 v1.45 的五秒彻底关闭与画圈定位行为继续保留；v1.44 的时间轴歌词与本地内嵌双语歌词保守解析策略继续保留。v1.43 将侧键固定在独立窗口，歌词卡片使用独立窗口并修复右侧布局展开/收起时闪烁；v1.42 修复收起歌词后透明窗口遮挡后方触摸的问题。默认歌词字号为 17.28sp。下载链接仅在对应 Release 资产创建成功后可用；请以对应 Actions 构建和 Release 附件为准。
 
 ## 目录
 
