@@ -3709,7 +3709,7 @@ private fun MusicMetaApp() {
                                 Box(
                                     modifier = Modifier.fillMaxWidth().weight(1f)
                                         .clip(RoundedCornerShape(9.dp))
-                                        .background(Color.Black.copy(alpha = 0.50f), RoundedCornerShape(9.dp))
+                                        .background(Color.Black.copy(alpha = 0.80f), RoundedCornerShape(9.dp))
                                         .tapAndHoldToClose(
                                             key = listOf(activePreviewSong, showTranslatedPreviewLyric, showPreviewDetails),
                                             onTap = { showTranslatedPreviewLyric = !showTranslatedPreviewLyric },
