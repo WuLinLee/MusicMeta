@@ -1240,7 +1240,7 @@ private fun OverlayLyricsUi(
             Box(
                 modifier = Modifier.fillMaxWidth().weight(1f)
                     .clip(RoundedCornerShape(9.dp))
-                    .background(Color.Black.copy(alpha = 0.33f), RoundedCornerShape(9.dp))
+                    .background(Color.Black.copy(alpha = 0.70f), RoundedCornerShape(9.dp))
                     .tapAndHoldToClose(
                         key = Unit,
                         onTap = onToggleTranslation,
