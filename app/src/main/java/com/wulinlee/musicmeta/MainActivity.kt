@@ -138,17 +138,42 @@ import java.io.IOException
 import kotlin.math.pow
 import kotlin.math.ln
 import kotlin.math.roundToInt
+import kotlin.math.ceil
 
 internal const val PREVIOUS_DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP = 15.04f
 internal const val DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP = 17.28f
 internal const val MIN_FLOATING_LYRICS_FONT_SIZE_SP = DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP / 2f
 internal const val MAX_FLOATING_LYRICS_FONT_SIZE_SP = DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP * 2f
-internal const val FLOATING_LYRICS_PANEL_HEIGHT_DP = 104
+internal const val FLOATING_LYRICS_PANEL_HEIGHT_DP = 70
 internal const val FLOATING_LYRICS_PANEL_VERTICAL_PADDING_DP = 2
 internal const val FLOATING_LYRICS_PROGRESS_HEIGHT_DP = 18
 
-internal fun floatingLyricsTextAreaHeightDp(): Float =
-    FLOATING_LYRICS_PANEL_HEIGHT_DP - 2 * FLOATING_LYRICS_PANEL_VERTICAL_PADDING_DP - FLOATING_LYRICS_PROGRESS_HEIGHT_DP.toFloat()
+/**
+ * Keep the default lyric card compact. Increase its height only when the selected font
+ * needs more room for two lines, while leaving the progress area independent.
+ */
+internal fun floatingLyricsPanelHeightDp(
+    fontSizeSp: Float = DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP,
+): Int {
+    val safeFontSize = fontSizeSp.coerceIn(
+        MIN_FLOATING_LYRICS_FONT_SIZE_SP,
+        MAX_FLOATING_LYRICS_FONT_SIZE_SP,
+    )
+    val requiredTextHeightDp = safeFontSize * 1.12f * 2f
+    val requiredPanelHeightDp = ceil(
+        requiredTextHeightDp +
+            2 * FLOATING_LYRICS_PANEL_VERTICAL_PADDING_DP +
+            FLOATING_LYRICS_PROGRESS_HEIGHT_DP,
+    ).toInt()
+    return maxOf(FLOATING_LYRICS_PANEL_HEIGHT_DP, requiredPanelHeightDp)
+}
+
+internal fun floatingLyricsTextAreaHeightDp(
+    fontSizeSp: Float = DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP,
+): Float =
+    floatingLyricsPanelHeightDp(fontSizeSp) -
+        2 * FLOATING_LYRICS_PANEL_VERTICAL_PADDING_DP -
+        FLOATING_LYRICS_PROGRESS_HEIGHT_DP.toFloat()
 
 internal fun floatingLyricsFontSizeAfterDefaultMigration(
     storedSize: Float?,
@@ -3633,11 +3658,17 @@ private fun MusicMetaApp() {
                         .align(Alignment.BottomStart)
                         .padding(bottom = 12.dp)
                         .width(groupWidth)
-                        .height(108.dp)
+                        .height(maxOf(108.dp, 22.dp + floatingLyricsPanelHeightDp(floatingLyricsFontSizeSp).dp))
                         .offset {
                             IntOffset(
                                 groupLeftPx,
-                                miniPlayerOffset.y.coerceIn(-maxDragY, 0f).roundToInt(),
+                                miniPlayerOffset.y.coerceIn(
+                                    -with(density) {
+                                        (maxHeight - maxOf(108.dp, 22.dp + floatingLyricsPanelHeightDp(floatingLyricsFontSizeSp).dp) - 12.dp)
+                                            .toPx().coerceAtLeast(0f)
+                                    },
+                                    0f,
+                                ).roundToInt(),
                             )
                         },
                 ) {
@@ -3655,8 +3686,8 @@ private fun MusicMetaApp() {
                             ).ifBlank { "♪" }
                         }
                         Card(
-                            modifier = Modifier.align(Alignment.CenterStart).offset(x = panelOffset, y = 4.dp)
-                                .width(panelWidth).height(FLOATING_LYRICS_PANEL_HEIGHT_DP.dp)
+                            modifier = Modifier.align(Alignment.CenterStart).offset(x = panelOffset, y = 22.dp)
+                                .width(panelWidth).height(floatingLyricsPanelHeightDp(floatingLyricsFontSizeSp).dp)
                                 .overlayDragGesture(
                                     key = listOf(activePreviewSong, minDragX, maxDragX, maxDragY, showPreviewDetails),
                                     onDrag = { dx, dy ->
@@ -3799,7 +3830,7 @@ private fun MusicMetaApp() {
                             }
                         }
                         Row(
-                            modifier = Modifier.fillMaxWidth().height(22.dp),
+                            modifier = Modifier.offset(x = coverOffset).fillMaxWidth().height(22.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.Center,
                         ) {

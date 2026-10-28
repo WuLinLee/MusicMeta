@@ -216,11 +216,20 @@ class MusicSourceConfigTest {
     }
 
     @Test
-    fun floatingLyricsPanelFitsTwoLinesAtMaximumFontSizeAndProgressArea() {
-        assertEquals(104, FLOATING_LYRICS_PANEL_HEIGHT_DP)
-        assertEquals(82f, floatingLyricsTextAreaHeightDp(), 0.001f)
+    fun defaultFloatingLyricsPanelFitsTwoDefaultLinesAndProgressArea() {
+        assertEquals(70, FLOATING_LYRICS_PANEL_HEIGHT_DP)
+        assertEquals(48f, floatingLyricsTextAreaHeightDp(), 0.001f)
         assertTrue(
             floatingLyricsTextAreaHeightDp() >=
+                DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP * 1.12f * 2f,
+        )
+    }
+
+    @Test
+    fun largerLyricsFontExpandsPanelOnlyAsMuchAsTwoLinesRequire() {
+        assertEquals(100, floatingLyricsPanelHeightDp(MAX_FLOATING_LYRICS_FONT_SIZE_SP))
+        assertTrue(
+            floatingLyricsTextAreaHeightDp(MAX_FLOATING_LYRICS_FONT_SIZE_SP) >=
                 MAX_FLOATING_LYRICS_FONT_SIZE_SP * 1.12f * 2f,
         )
     }

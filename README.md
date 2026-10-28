@@ -2,12 +2,13 @@
 
 MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 Android 应用：读取可公开访问的网易云歌单，搜索并核对音源，下载音频，并尽可能补齐封面、歌词和音频标签。
 
-> **当前版本：1.50** · `versionCode = 54`  
+> **当前版本：1.51** · `versionCode = 55`  
 > 应用 ID：`com.wulinlee.musicmeta` · 最低 Android：10（API 29）· 目标 SDK：35  
 > 技术栈：Kotlin、Jetpack Compose、Material 3、Coroutines、OkHttp、Coil、jaudiotagger。
 
 - **正式版发布页：** [GitHub Releases](https://github.com/WuLinLee/MusicMeta/releases)
-- **v1.50 APK 直链：** [MusicMeta-v1.50.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.50/MusicMeta-v1.50.apk)
+- **v1.51 APK 直链：** [MusicMeta-v1.51.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.51/MusicMeta-v1.51.apk)
+- **上一版本 APK：** [MusicMeta-v1.50.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.50/MusicMeta-v1.50.apk)
 - **上一版本 APK：** [MusicMeta-v1.49.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.49/MusicMeta-v1.49.apk)
 - **上一版本 APK：** [MusicMeta-v1.48.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.48/MusicMeta-v1.48.apk)
 - **v1.47 APK 直链：** [MusicMeta-v1.47.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.47/MusicMeta-v1.47.apk)
@@ -203,9 +204,9 @@ v1.47 在保留原有薄荷绿歌词颜色（#9FF0C9）的前提下，提高歌�
 
 ## 悬浮迷你播放器
 
-### 当前行为（v1.50）
+### 当前行为（v1.51）
 
-封面、上下侧键和歌词卡片分开管理：封面位置不随歌词展开/收起改变；侧键窗口固定为 28×64dp；展开时单独显示 104dp 高的歌词卡片，收起动画结束后移除卡片窗口，避免透明区域挡住其他应用的触摸。歌词文字默认 17.28sp，文字区域约 82dp，明确启用自动换行并最多显示两行；即使调大字号也为两行文字留出空间，同时保留独立进度线区域。封面位于屏幕左侧时歌词在右侧，封面位于右侧时歌词在左侧，卡片与侧键保留 4dp 间距。歌词文字区域使用约 28% 不透明度的暗底和轻微阴影，保持原有薄荷绿色。
+封面、上下侧键和歌词卡片仍分开管理；系统悬浮窗的窗口位置更新会保留歌词面板的真实高度，不再把它意外压回 64dp。默认歌词面板恢复紧凑的 70dp 高度，正文可用高度约 48dp，正常字号下长句自动折为最多两行，底部 18dp 进度区域独立保留。用户主动增大歌词字号时，面板才按两行所需高度自适应增长。无悬浮窗权限的应用内备用播放器使用相同高度规则，歌词面板顶部与封面顶部对齐，播放模式 / 时间 / 播放按钮跟随封面移动，不再叠到进度线上。原有 1.587 宽度比例、4dp 侧键间距、半透明暗底、薄荷绿文字和轻微阴影保持不变。
 
 ### 手势
 
@@ -316,8 +317,8 @@ CI 会另外执行 APK 对齐、签名、签名证书验证和包名检查。构
 
 ## 版本与签名
 
-- 当前版本名：`1.50`
-- 当前版本号：`versionCode = 54`
+- 当前版本名：`1.51`
+- 当前版本号：`versionCode = 55`
 - Gradle 版本元数据位于 `app/build.gradle.kts`；用户可见变更记录位于 `RELEASE_NOTES.md`。
 
 GitHub Actions 工作流会设置 JDK 17 和 Gradle 8.9，检查资源后运行 JVM 单元测试、构建 Release、对 APK 执行 zipalign / 签名 / 校验，再上传 APK 并创建 Release。常规 `main` push 会创建预览发布；提交信息以 `release:` 开头时走正式发布逻辑。已有同名 Release 默认不会覆盖，只有明确的 `release: refresh v...` 提交才允许刷新现有版本。

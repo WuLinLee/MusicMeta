@@ -919,9 +919,9 @@ class FloatingMiniPlayerService : LifecycleService() {
         }
         val params = createLayoutParams(
             lyricsPanelWidthPx.coerceAtLeast(1),
-            dp(FLOATING_LYRICS_PANEL_HEIGHT_DP),
+            dp(floatingLyricsPanelHeightDp(lyricsFontSizeSp)),
             lyricsPanelWindowX(),
-            coverY + dp(4),
+            coverY,
         )
         lyricsPanelOverlayView = view
         lyricsPanelOverlayParams = params
@@ -982,9 +982,9 @@ class FloatingMiniPlayerService : LifecycleService() {
         }
         lyricsPanelOverlayParams?.let { params ->
             val nextX = lyricsPanelWindowX()
-            val nextY = coverY + dp(4)
+            val nextY = coverY
             val nextWidth = lyricsPanelWidthPx.coerceAtLeast(1)
-            val nextHeight = dp(64)
+            val nextHeight = dp(floatingLyricsPanelHeightDp(lyricsFontSizeSp))
             if (params.x != nextX || params.y != nextY ||
                 params.width != nextWidth || params.height != nextHeight
             ) {
