@@ -85,7 +85,10 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import coil.compose.AsyncImage
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -108,12 +111,20 @@ internal fun Modifier.tapAndHoldToClose(
     detectTapGestures(
         onPress = {
             closeTriggered = false
-            val releasedBeforeTimeout = withTimeoutOrNull(FLOATING_PLAYER_CLOSE_HOLD_DURATION_MS) {
-                tryAwaitRelease()
-            }
-            if (releasedBeforeTimeout == null) {
-                closeTriggered = true
-                onLongHold()
+            coroutineScope {
+                // Suppress tap actions for a deliberate hold, even when it ends before five seconds.
+                val suppressTapJob = launch {
+                    delay(android.view.ViewConfiguration.getLongPressTimeout().toLong())
+                    closeTriggered = true
+                }
+                val releasedBeforeTimeout = withTimeoutOrNull(FLOATING_PLAYER_CLOSE_HOLD_DURATION_MS) {
+                    tryAwaitRelease()
+                }
+                suppressTapJob.cancelAndJoin()
+                if (releasedBeforeTimeout == null) {
+                    closeTriggered = true
+                    onLongHold()
+                }
             }
         },
         onTap = { if (!closeTriggered) onTap?.invoke() },
