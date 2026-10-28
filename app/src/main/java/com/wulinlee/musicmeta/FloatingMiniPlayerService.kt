@@ -57,6 +57,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.StrokeCap
@@ -70,6 +71,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -917,7 +919,7 @@ class FloatingMiniPlayerService : LifecycleService() {
         }
         val params = createLayoutParams(
             lyricsPanelWidthPx.coerceAtLeast(1),
-            dp(64),
+            dp(FLOATING_LYRICS_PANEL_HEIGHT_DP),
             lyricsPanelWindowX(),
             coverY + dp(4),
         )
@@ -1231,13 +1233,14 @@ private fun OverlayLyricsUi(
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp, vertical = 2.dp),
+            modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp, vertical = FLOATING_LYRICS_PANEL_VERTICAL_PADDING_DP.dp),
             verticalArrangement = Arrangement.spacedBy(0.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Box(
                 modifier = Modifier.fillMaxWidth().weight(1f)
                     .clip(RoundedCornerShape(9.dp))
+                    .background(Color.Black.copy(alpha = 0.28f), RoundedCornerShape(9.dp))
                     .tapAndHoldToClose(
                         key = Unit,
                         onTap = onToggleTranslation,
@@ -1255,6 +1258,7 @@ private fun OverlayLyricsUi(
             ) {
                 Text(
                     currentLyric,
+                    style = TextStyle(shadow = Shadow(color = Color.Black.copy(alpha = 0.82f), offset = Offset(0f, 1f), blurRadius = 2f)),
                     color = Color(0xFF9FF0C9),
                     fontWeight = FontWeight.Bold,
                     fontSize = lyricsFontSizeSp.sp,
@@ -1265,7 +1269,7 @@ private fun OverlayLyricsUi(
                 )
             }
             Box(
-                modifier = Modifier.fillMaxWidth(0.94f).height(18.dp).offset(y = 2.dp)
+                modifier = Modifier.fillMaxWidth(0.94f).height(FLOATING_LYRICS_PROGRESS_HEIGHT_DP.dp).offset(y = 2.dp)
                     .pointerInput(durationMs) {
                         detectTapGestures { tap ->
                             if (durationMs > 0 && size.width > 0) {

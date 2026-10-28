@@ -138,18 +138,24 @@ import kotlin.math.pow
 import kotlin.math.ln
 import kotlin.math.roundToInt
 
-internal const val PREVIOUS_DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP = 17.28f
-internal const val DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP = 15.04f
+internal const val PREVIOUS_DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP = 15.04f
+internal const val DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP = 17.28f
 internal const val MIN_FLOATING_LYRICS_FONT_SIZE_SP = DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP / 2f
 internal const val MAX_FLOATING_LYRICS_FONT_SIZE_SP = DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP * 2f
+internal const val FLOATING_LYRICS_PANEL_HEIGHT_DP = 70
+internal const val FLOATING_LYRICS_PANEL_VERTICAL_PADDING_DP = 2
+internal const val FLOATING_LYRICS_PROGRESS_HEIGHT_DP = 18
+
+internal fun floatingLyricsTextAreaHeightDp(): Float =
+    FLOATING_LYRICS_PANEL_HEIGHT_DP - 2 * FLOATING_LYRICS_PANEL_VERTICAL_PADDING_DP - FLOATING_LYRICS_PROGRESS_HEIGHT_DP.toFloat()
 
 internal fun floatingLyricsFontSizeAfterDefaultMigration(
     storedSize: Float?,
     migrationComplete: Boolean,
 ): Float {
-    val shouldUseSmallerDefault = !migrationComplete &&
+    val shouldAdoptLargerDefault = !migrationComplete &&
         (storedSize == null || storedSize == PREVIOUS_DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP)
-    return (if (shouldUseSmallerDefault) DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP
+    return (if (shouldAdoptLargerDefault) DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP
     else storedSize ?: DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP)
         .coerceIn(MIN_FLOATING_LYRICS_FONT_SIZE_SP, MAX_FLOATING_LYRICS_FONT_SIZE_SP)
 }
@@ -516,14 +522,16 @@ private fun MusicMetaApp() {
     }
     var floatingLyricsFontSizeSp by remember(folderPreferences) {
         val preferenceKey = "floating_lyrics_font_size_sp"
-        val migrationKey = "floating_lyrics_font_default_migrated_v137"
+        val migrationKey = "floating_lyrics_font_default_migrated_v147"
         val migrationComplete = folderPreferences.getBoolean(migrationKey, false)
         val storedSize = if (folderPreferences.contains(preferenceKey)) {
             folderPreferences.getFloat(preferenceKey, DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP)
         } else null
         val initialSize = floatingLyricsFontSizeAfterDefaultMigration(storedSize, migrationComplete)
         if (!migrationComplete) {
-            val editor = folderPreferences.edit().putBoolean(migrationKey, true)
+            val editor = folderPreferences.edit()
+                .putBoolean(migrationKey, true)
+                .putBoolean("floating_lyrics_font_default_migrated_v137", true)
             if (storedSize == null || storedSize == PREVIOUS_DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP) {
                 editor.putFloat(preferenceKey, initialSize)
             }
@@ -3647,7 +3655,7 @@ private fun MusicMetaApp() {
                         }
                         Card(
                             modifier = Modifier.align(Alignment.CenterStart).offset(x = panelOffset, y = 4.dp)
-                                .width(panelWidth).height(64.dp)
+                                .width(panelWidth).height(FLOATING_LYRICS_PANEL_HEIGHT_DP.dp)
                                 .overlayDragGesture(
                                     key = listOf(activePreviewSong, minDragX, maxDragX, maxDragY, showPreviewDetails),
                                     onDrag = { dx, dy ->
@@ -3664,13 +3672,14 @@ private fun MusicMetaApp() {
                             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                         ) {
                             Column(
-                                modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp, vertical = 2.dp),
+                                modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp, vertical = FLOATING_LYRICS_PANEL_VERTICAL_PADDING_DP.dp),
                                 verticalArrangement = Arrangement.spacedBy(0.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
                                 Box(
                                     modifier = Modifier.fillMaxWidth().weight(1f)
                                         .clip(RoundedCornerShape(9.dp))
+                                        .background(Color.Black.copy(alpha = 0.28f), RoundedCornerShape(9.dp))
                                         .tapAndHoldToClose(
                                             key = listOf(activePreviewSong, showTranslatedPreviewLyric, showPreviewDetails),
                                             onTap = { showTranslatedPreviewLyric = !showTranslatedPreviewLyric },
@@ -3685,6 +3694,7 @@ private fun MusicMetaApp() {
                                 ) {
                                     Text(
                                         activeLyric,
+                                        style = TextStyle(shadow = Shadow(color = Color.Black.copy(alpha = 0.82f), offset = Offset(0f, 1f), blurRadius = 2f)),
                                         color = Color(0xFF9FF0C9),
                                         fontWeight = FontWeight.Bold,
                                         fontSize = floatingLyricsFontSizeSp.sp,
@@ -3698,7 +3708,7 @@ private fun MusicMetaApp() {
                                     (previewPositionMs.toFloat() / previewDurationMs.toFloat()).coerceIn(0f, 1f)
                                 else 0f
                                 Box(
-                                    modifier = Modifier.fillMaxWidth(0.94f).height(18.dp).offset(y = 2.dp)
+                                    modifier = Modifier.fillMaxWidth(0.94f).height(FLOATING_LYRICS_PROGRESS_HEIGHT_DP.dp).offset(y = 2.dp)
                                         .pointerInput(previewDurationMs, activePreviewSong) {
                                             detectTapGestures { tap ->
                                                 if (previewDurationMs > 0 && size.width > 0) {

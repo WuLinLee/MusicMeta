@@ -184,15 +184,16 @@ class MusicSourceConfigTest {
     }
 
     @Test
-    fun defaultFloatingLyricsFontMigratesTo1504spAndPreservesCustomSizes() {
-        assertEquals(15.04f, DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP, 0.001f)
+    fun defaultFloatingLyricsFontMigratesTo1728spAndPreservesCustomSizes() {
+        assertEquals(17.28f, DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP, 0.001f)
+        assertEquals(15.04f, PREVIOUS_DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP, 0.001f)
         assertEquals(
-            15.04f,
+            17.28f,
             floatingLyricsFontSizeAfterDefaultMigration(null, migrationComplete = false),
             0.001f,
         )
         assertEquals(
-            15.04f,
+            17.28f,
             floatingLyricsFontSizeAfterDefaultMigration(
                 PREVIOUS_DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP,
                 migrationComplete = false,
@@ -212,6 +213,13 @@ class MusicSourceConfigTest {
             ),
             0.001f,
         )
+    }
+
+    @Test
+    fun defaultFloatingLyricsPanelFitsTwoDefaultLinesAndProgressArea() {
+        assertEquals(70, FLOATING_LYRICS_PANEL_HEIGHT_DP)
+        assertEquals(48f, floatingLyricsTextAreaHeightDp(), 0.001f)
+        assertEquals(true, floatingLyricsTextAreaHeightDp() >= DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP * 1.12f * 2f)
     }
 
     @Test
