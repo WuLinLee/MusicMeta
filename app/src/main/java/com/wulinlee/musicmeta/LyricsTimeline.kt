@@ -1,6 +1,12 @@
 package com.wulinlee.musicmeta
 
 private val lyricTimestampRegex = Regex("""\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?\]""")
+private val lyricCreditLineRegex = Regex(
+    """^\s*(?:作词|作詞|作曲|编曲|編曲|词曲|詞曲|演唱|演奏|制作人|製作人|制作|製作|监制|監製|混音|母带|母帶|录音|錄音|翻译|翻譯|译者|譯者|歌词翻译|歌詞翻譯|字幕|composer|arranger|producer|translator|translation(?:\s+by)?|translated\s+by|composed\s+by|arranged\s+by|produced\s+by|lyrics?\s+by|music\s+by|lyricist)\s*(?:[:：/\-]\s*|\s+).+""",
+    RegexOption.IGNORE_CASE,
+)
+
+private fun isLyricCreditLine(text: String): Boolean = lyricCreditLineRegex.containsMatchIn(text.trim())
 
 internal data class TimedLyricLine(val timeMs: Int, val text: String)
 
@@ -45,16 +51,19 @@ internal fun currentLyricLine(
 ): String {
     if (activeLyrics.isBlank()) return ""
     val timed = parseTimedLyricLines(activeLyrics)
-    if (timed.isNotEmpty()) return currentTimedLine(timed, positionMs)
+    if (timed.isNotEmpty()) {
+        // Filter only clearly labeled credits for display; never rewrite the underlying raw lyrics.
+        return currentTimedLine(timed.filterNot { isLyricCreditLine(it.text) }, positionMs)
+    }
 
     val plain = activeLyrics.lineSequence()
         .map { lyricTimestampRegex.replace(it, "").trim() }
-        .filter { it.isNotBlank() }
+        .filter { it.isNotBlank() && !isLyricCreditLine(it) }
         .toList()
     if (plain.isEmpty()) return ""
 
     if (isTranslation) {
-        val originalTimed = parseTimedLyricLines(originalLyrics)
+        val originalTimed = parseTimedLyricLines(originalLyrics).filterNot { isLyricCreditLine(it.text) }
         if (originalTimed.isNotEmpty()) {
             // Translation providers often return plain translated text with a different number
             // of rows than the original LRC (credits, merged verses, etc.). Map the active

@@ -26,8 +26,8 @@ class LyricsTimelineTest {
         val translated = "译文第一行\n译文第二行"
         assertEquals("译文第一行", currentLyricLine(translated, original, 6_000, isTranslation = true))
         assertEquals("译文第二行", currentLyricLine(translated, original, 10_000, isTranslation = true))
-        assertEquals("作曲：张三", currentLyricLine(original, original, 2_000))
-        assertEquals("编曲：李四", currentLyricLine(original, original, 14_000))
+        assertEquals("原文第二行", currentLyricLine(original, original, 2_000))
+        assertEquals("原文第三行", currentLyricLine(original, original, 14_000))
         assertEquals("译文一", currentLyricLine("译文一\n译文二", "无时间戳原文\n第二行", 6_000, isTranslation = true))
         assertEquals("第二行", currentLyricLine("[00:01.00]第一行\n[00:05.00]第二行", "", 6_000))
     }
@@ -43,6 +43,13 @@ class LyricsTimelineTest {
     fun fallsBackToFirstUntimedTranslationLineWhenNoTimelineCanBeUsed() {
         val translated = "译文第一句\n译文第二句"
         assertEquals("译文第一句", currentLyricLine(translated, "没有可用时间轴", 6_000, isTranslation = true))
+    }
+
+    @Test
+    fun skipsClearlyLabeledTimedCreditsAndContinuesShowingTimedLyrics() {
+        val lyrics = "[00:01.00]作曲：张三\n[00:04.00]真正第一句\n[00:05.00]编曲：李四\n[00:08.00]第二句"
+        assertEquals("真正第一句", currentLyricLine(lyrics, lyrics, 2_000))
+        assertEquals("第二句", currentLyricLine(lyrics, lyrics, 9_000))
     }
 
     @Test
