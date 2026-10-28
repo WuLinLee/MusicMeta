@@ -2,12 +2,13 @@
 
 MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 Android 应用：读取可公开访问的网易云歌单，搜索并核对音源，下载音频，并尽可能补齐封面、歌词和音频标签。
 
-> **当前版本：1.47** · `versionCode = 51`  
+> **当前版本：1.50** · `versionCode = 54`  
 > 应用 ID：`com.wulinlee.musicmeta` · 最低 Android：10（API 29）· 目标 SDK：35  
 > 技术栈：Kotlin、Jetpack Compose、Material 3、Coroutines、OkHttp、Coil、jaudiotagger。
 
 - **正式版发布页：** [GitHub Releases](https://github.com/WuLinLee/MusicMeta/releases)
-- **v1.49 APK 直链：** [MusicMeta-v1.49.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.49/MusicMeta-v1.49.apk)
+- **v1.50 APK 直链：** [MusicMeta-v1.50.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.50/MusicMeta-v1.50.apk)
+- **上一版本 APK：** [MusicMeta-v1.49.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.49/MusicMeta-v1.49.apk)
 - **上一版本 APK：** [MusicMeta-v1.48.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.48/MusicMeta-v1.48.apk)
 - **v1.47 APK 直链：** [MusicMeta-v1.47.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.47/MusicMeta-v1.47.apk)
 - **上一版本 APK：** [MusicMeta-v1.46.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.46/MusicMeta-v1.46.apk)
@@ -202,9 +203,9 @@ v1.47 在保留原有薄荷绿歌词颜色（#9FF0C9）的前提下，提高歌�
 
 ## 悬浮迷你播放器
 
-### 当前行为（v1.49）
+### 当前行为（v1.50）
 
-封面、上下侧键和歌词卡片分开管理：封面位置不随歌词展开/收起改变；侧键窗口固定为 28×64dp；展开时单独显示 70dp 高的歌词卡片，收起动画结束后移除卡片窗口，避免透明区域挡住其他应用的触摸。歌词文字默认 17.28sp，文字区域约 48dp，可容纳两行并为进度线保留独立区域。封面位于屏幕左侧时歌词在右侧，封面位于右侧时歌词在左侧，卡片与侧键保留 4dp 间距。歌词文字区域使用约 28% 不透明度的暗底和轻微阴影，保持原有薄荷绿色。
+封面、上下侧键和歌词卡片分开管理：封面位置不随歌词展开/收起改变；侧键窗口固定为 28×64dp；展开时单独显示 104dp 高的歌词卡片，收起动画结束后移除卡片窗口，避免透明区域挡住其他应用的触摸。歌词文字默认 17.28sp，文字区域约 82dp，明确启用自动换行并最多显示两行；即使调大字号也为两行文字留出空间，同时保留独立进度线区域。封面位于屏幕左侧时歌词在右侧，封面位于右侧时歌词在左侧，卡片与侧键保留 4dp 间距。歌词文字区域使用约 28% 不透明度的暗底和轻微阴影，保持原有薄荷绿色。
 
 ### 手势
 
@@ -315,8 +316,8 @@ CI 会另外执行 APK 对齐、签名、签名证书验证和包名检查。构
 
 ## 版本与签名
 
-- 当前版本名：`1.46`
-- 当前版本号：`versionCode = 50`
+- 当前版本名：`1.50`
+- 当前版本号：`versionCode = 54`
 - Gradle 版本元数据位于 `app/build.gradle.kts`；用户可见变更记录位于 `RELEASE_NOTES.md`。
 
 GitHub Actions 工作流会设置 JDK 17 和 Gradle 8.9，检查资源后运行 JVM 单元测试、构建 Release、对 APK 执行 zipalign / 签名 / 校验，再上传 APK 并创建 Release。常规 `main` push 会创建预览发布；提交信息以 `release:` 开头时走正式发布逻辑。已有同名 Release 默认不会覆盖，只有明确的 `release: refresh v...` 提交才允许刷新现有版本。

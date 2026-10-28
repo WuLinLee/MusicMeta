@@ -143,7 +143,7 @@ internal const val PREVIOUS_DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP = 15.04f
 internal const val DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP = 17.28f
 internal const val MIN_FLOATING_LYRICS_FONT_SIZE_SP = DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP / 2f
 internal const val MAX_FLOATING_LYRICS_FONT_SIZE_SP = DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP * 2f
-internal const val FLOATING_LYRICS_PANEL_HEIGHT_DP = 70
+internal const val FLOATING_LYRICS_PANEL_HEIGHT_DP = 104
 internal const val FLOATING_LYRICS_PANEL_VERTICAL_PADDING_DP = 2
 internal const val FLOATING_LYRICS_PROGRESS_HEIGHT_DP = 18
 
@@ -3702,6 +3702,7 @@ private fun MusicMetaApp() {
                                         lineHeight = (floatingLyricsFontSizeSp * 1.12f).sp,
                                         textAlign = TextAlign.Center,
                                         maxLines = 2,
+                                        softWrap = true,
                                         overflow = TextOverflow.Ellipsis,
                                     )
                                 }

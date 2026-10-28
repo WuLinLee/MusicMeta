@@ -7,6 +7,11 @@ import org.junit.Test
 
 class FloatingOverlayPlacementTest {
     @Test
+    fun lyricsTextAreaCanFitTwoLinesAtMaximumFontSize() {
+        assertEquals(82f, floatingLyricsTextAreaHeightDp(), 0f)
+    }
+
+    @Test
     fun preferredLyricsWidthIsScaledByAnotherFactorOfOnePointFifteen() {
         assertEquals(441, FloatingOverlayPlacement.scaledPreferredLyricsWidthPx(356, 78, 1.587f))
     }

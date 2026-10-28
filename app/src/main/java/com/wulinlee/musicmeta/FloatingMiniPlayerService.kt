@@ -1265,6 +1265,7 @@ private fun OverlayLyricsUi(
                     lineHeight = (lyricsFontSizeSp * 1.12f).sp,
                     textAlign = TextAlign.Center,
                     maxLines = 2,
+                    softWrap = true,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
