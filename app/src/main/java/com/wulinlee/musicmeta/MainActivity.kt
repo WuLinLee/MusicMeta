@@ -3748,7 +3748,6 @@ private fun MusicMetaApp() {
                     ) {
                         Box(
                             modifier = Modifier
-                                .align(Alignment.CenterStart)
                                 .offset(x = coverOffset)
                                 .size(64.dp)
                                 .clip(coverShape)
