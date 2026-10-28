@@ -7,6 +7,11 @@ import org.junit.Test
 
 class FloatingOverlayPlacementTest {
     @Test
+    fun preferredLyricsWidthIsScaledToOnePointFifteenOfPreviousWidth() {
+        assertEquals(384, FloatingOverlayPlacement.scaledPreferredLyricsWidthPx(356, 78, 1.38f))
+    }
+
+    @Test
     fun lyricsAndControlsReserveTheSameWidthsOnEitherSideOfTheCover() {
         assertEquals(200, FloatingOverlayPlacement.lyricsWidthPx(400, 100, 64, 334, 4, 4, true, 28))
         assertEquals(200, FloatingOverlayPlacement.lyricsWidthPx(400, 236, 64, 334, 4, 4, false, 28))

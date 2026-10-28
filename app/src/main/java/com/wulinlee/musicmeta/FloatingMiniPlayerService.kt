@@ -661,7 +661,7 @@ class FloatingMiniPlayerService : LifecycleService() {
         FloatingOverlayPlacement.scaledPreferredLyricsWidthPx(
             baseGroupWidthPx = dp(356),
             nonLyricsWidthPx = dp(78),
-            scale = 1.2f,
+            scale = 1.38f,
         )
 
     private fun defaultCenteredOverlayCoverX(): Int =
@@ -1233,20 +1233,20 @@ private fun OverlayLyricsUi(
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp, vertical = FLOATING_LYRICS_PANEL_VERTICAL_PADDING_DP.dp),
+            modifier = Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = FLOATING_LYRICS_PANEL_VERTICAL_PADDING_DP.dp),
             verticalArrangement = Arrangement.spacedBy(0.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Box(
                 modifier = Modifier.fillMaxWidth().weight(1f)
                     .clip(RoundedCornerShape(9.dp))
-                    .background(Color.Black.copy(alpha = 0.28f), RoundedCornerShape(9.dp))
+                    .background(Color.Black.copy(alpha = 0.33f), RoundedCornerShape(9.dp))
                     .tapAndHoldToClose(
                         key = Unit,
                         onTap = onToggleTranslation,
                         onLongHold = onLongHoldToClose,
                     )
-                    .padding(horizontal = 5.dp, vertical = 0.dp)
+                    .padding(horizontal = 2.dp, vertical = 0.dp)
                     .semantics {
                         contentDescription = if (translatedLyrics.isBlank()) {
                             "歌词，当前歌曲没有已加载的译文，点击切换显示状态"

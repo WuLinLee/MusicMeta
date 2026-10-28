@@ -3536,7 +3536,7 @@ private fun MusicMetaApp() {
                 val desiredLyricsWidthPx = FloatingOverlayPlacement.scaledPreferredLyricsWidthPx(
                     baseGroupWidthPx = with(density) { 356.dp.roundToPx() },
                     nonLyricsWidthPx = with(density) { 78.dp.roundToPx() },
-                    scale = 1.2f,
+                    scale = 1.38f,
                 )
                 // Match the system overlay: drag the cover across the screen and mirror the lyric panel around it.
                 val coverBaseLeftPx = FloatingOverlayPlacement.centeredCoverXForExpandedGroup(
@@ -3673,20 +3673,20 @@ private fun MusicMetaApp() {
                             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                         ) {
                             Column(
-                                modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp, vertical = FLOATING_LYRICS_PANEL_VERTICAL_PADDING_DP.dp),
+                                modifier = Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = FLOATING_LYRICS_PANEL_VERTICAL_PADDING_DP.dp),
                                 verticalArrangement = Arrangement.spacedBy(0.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
                                 Box(
                                     modifier = Modifier.fillMaxWidth().weight(1f)
                                         .clip(RoundedCornerShape(9.dp))
-                                        .background(Color.Black.copy(alpha = 0.28f), RoundedCornerShape(9.dp))
+                                        .background(Color.Black.copy(alpha = 0.33f), RoundedCornerShape(9.dp))
                                         .tapAndHoldToClose(
                                             key = listOf(activePreviewSong, showTranslatedPreviewLyric, showPreviewDetails),
                                             onTap = { showTranslatedPreviewLyric = !showTranslatedPreviewLyric },
                                             onLongHold = { closePlayerCompletely() },
                                         )
-                                        .padding(horizontal = 5.dp, vertical = 0.dp)
+                                        .padding(horizontal = 2.dp, vertical = 0.dp)
                                         .semantics {
                                             contentDescription = if (previewTranslatedLyrics.isBlank()) "歌词，点击查看是否存在译文"
                                                 else "歌词，点击切换原文或译文"
