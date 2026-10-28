@@ -76,4 +76,45 @@ class PlaybackQueuePolicyTest {
             rememberRecentTrackKeys(emptyList(), "source:abc", "liked", 55L, 99L),
         )
     }
+
+
+    @Test
+    fun previewNavigationKeepsLikedPlaylistWhenUiIsOnDirectSearch() {
+        assertEquals(
+            "liked",
+            previewPlaylistModeForTrack(
+                currentPlaylistId = 41L,
+                likedPlaylistId = 41L,
+                publicPlaylistId = 99L,
+                fallbackMode = "search",
+            ),
+        )
+    }
+
+    @Test
+    fun previewNavigationKeepsPublicPlaylistWhenUiIsOnDirectSearch() {
+        assertEquals(
+            "playlist",
+            previewPlaylistModeForTrack(
+                currentPlaylistId = 99L,
+                likedPlaylistId = 41L,
+                publicPlaylistId = 99L,
+                fallbackMode = "search",
+            ),
+        )
+    }
+
+    @Test
+    fun previewNavigationUsesUiModeOnlyWhenSongHasNoKnownPlaylist() {
+        assertEquals(
+            "search",
+            previewPlaylistModeForTrack(
+                currentPlaylistId = null,
+                likedPlaylistId = 41L,
+                publicPlaylistId = 99L,
+                fallbackMode = "search",
+            ),
+        )
+    }
+
 }

@@ -2,13 +2,14 @@
 
 MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 Android 应用：读取可公开访问的网易云歌单，搜索并核对音源，下载音频，并尽可能补齐封面、歌词和音频标签。
 
-> **当前版本：1.45** · `versionCode = 49`  
+> **当前版本：1.46** · `versionCode = 50`  
 > 应用 ID：`com.wulinlee.musicmeta` · 最低 Android：10（API 29）· 目标 SDK：35  
 > 技术栈：Kotlin、Jetpack Compose、Material 3、Coroutines、OkHttp、Coil、jaudiotagger。
 
 - **正式版发布页：** [GitHub Releases](https://github.com/WuLinLee/MusicMeta/releases)
-- **v1.45 APK 直链：** [MusicMeta-v1.45.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.45/MusicMeta-v1.45.apk)
-- **上一版本 APK：** [MusicMeta-v1.44.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.44/MusicMeta-v1.44.apk)
+- **v1.46 APK 直链：** [MusicMeta-v1.46.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.46/MusicMeta-v1.46.apk)
+- **上一版本 APK：** [MusicMeta-v1.45.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.45/MusicMeta-v1.45.apk)
+- **历史版本 APK：** [MusicMeta-v1.44.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.44/MusicMeta-v1.44.apk)
 - **历史版本 APK：** [MusicMeta-v1.43.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.43/MusicMeta-v1.43.apk)
 - **历史版本 APK：** [MusicMeta-v1.42.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.42/MusicMeta-v1.42.apk)
 - **历史版本 APK：** [MusicMeta-v1.41.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.41/MusicMeta-v1.41.apk)
@@ -20,7 +21,7 @@ MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 A
 - **v1.30 历史版（系统媒体卡片参考）：** [MusicMeta-v1.30.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.30/MusicMeta-v1.30.apk)
 - **构建记录：** [GitHub Actions](https://github.com/WuLinLee/MusicMeta/actions)
 
-v1.45 将悬浮播放器手势调整为单击播放/暂停、双击展开/收起歌词栏、长按封面或歌词正文满 5 秒彻底关闭音笺、停止播放并从最近任务移除；拖动时画圈定位当前歌曲。彻底关闭会释放播放器、关闭音笺的媒体播放服务与通知，并清空当前队列；它不会结束其他应用，进程最终回收仍由 Android 系统管理。v1.44 的时间轴歌词与本地内嵌双语歌词保守解析策略继续保留。v1.43 将侧键固定在独立窗口，歌词卡片使用独立窗口并修复右侧布局展开/收起时闪烁；v1.42 修复收起歌词后透明窗口遮挡后方触摸的问题。默认歌词字号为 15.04sp。下载链接仅在对应 Release 资产创建成功后可用；请以对应 Actions 构建和 Release 附件为准。
+v1.46 修复无跨应用悬浮窗权限时备用播放器展开后无法充分左右拖动的问题：封面作为定位锚点，歌词栏根据封面所在屏幕位置切换到左侧或右侧，边缘宽度也与系统悬浮窗一致。展开歌词栏现在只有歌词文字和已播放进度线可见，卡片底色、内层底色、阴影以及未播放轨道均透明。上一首/下一首始终按当前歌曲所属的已同步歌单导航，不再因主界面切换到直接搜歌而误走音源候选队列。v1.45 的五秒彻底关闭与画圈定位行为保留；v1.44 的时间轴歌词与本地内嵌双语歌词保守解析策略继续保留。v1.43 将侧键固定在独立窗口，歌词卡片使用独立窗口并修复右侧布局展开/收起时闪烁；v1.42 修复收起歌词后透明窗口遮挡后方触摸的问题。默认歌词字号为 15.04sp。下载链接仅在对应 Release 资产创建成功后可用；请以对应 Actions 构建和 Release 附件为准。
 
 ## 目录
 
@@ -199,7 +200,7 @@ v1.45 将悬浮播放器手势调整为单击播放/暂停、双击展开/收起
 
 ## 悬浮迷你播放器
 
-### 当前行为（v1.45）
+### 当前行为（v1.46）
 
 封面、上下侧键和歌词卡片分开管理：封面位置不随歌词展开/收起改变；侧键窗口固定为 28×64dp；展开时单独显示歌词卡片，收起动画结束后移除卡片窗口，避免透明区域挡住其他应用的触摸。封面位于屏幕左侧时歌词在右侧，封面位于右侧时歌词在左侧，卡片与侧键保留 4dp 间距。
 
@@ -226,7 +227,7 @@ v1.45 将悬浮播放器手势调整为单击播放/暂停、双击展开/收起
 - 如果本地歌词格式无法可靠识别原文与译文，应用保留原始歌词文本而不擅自丢弃内容；没有可用时间轴的译文无法同步时，回退显示其第一行。
 - 收起歌词栏后，歌词卡片窗口会被移除；封面仍可拖动，上下侧键仍可点击，卡片原本覆盖的透明区域会让出给后方应用。
 
-播放进度仍由 MainActivity 提供唯一时间轴，悬浮服务不另行递增进度。当前试听播放器仍由 Activity 持有；这不是独立的持久后台播放架构。**CI 成功不代表已经完成真实设备端到端验收**，尤其应在设备上核验双击、长按 5 秒彻底关闭、画圈定位、歌词切换和系统触摸穿透。
+播放进度仍由 MainActivity 提供唯一时间轴，悬浮服务不另行递增进度。当前试听播放器仍由 Activity 持有；这不是独立的持久后台播放架构。**CI 成功不代表已经完成真实设备端到端验收**，尤其应在设备上核验展开歌词栏双向拖动、透明背景和进度轨道、上一首/下一首是否保持原歌单、长按 5 秒彻底关闭以及画圈定位。
 
 
 ## 技术架构与源码地图
@@ -312,17 +313,17 @@ CI 会另外执行 APK 对齐、签名、签名证书验证和包名检查。构
 
 ## 版本与签名
 
-- 当前版本名：`1.45`
-- 当前版本号：`versionCode = 49`
+- 当前版本名：`1.46`
+- 当前版本号：`versionCode = 50`
 - Gradle 版本元数据位于 `app/build.gradle.kts`；用户可见变更记录位于 `RELEASE_NOTES.md`。
 
 GitHub Actions 工作流会设置 JDK 17 和 Gradle 8.9，检查资源后运行 JVM 单元测试、构建 Release、对 APK 执行 zipalign / 签名 / 校验，再上传 APK 并创建 Release。常规 `main` push 会创建预览发布；提交信息以 `release:` 开头时走正式发布逻辑。已有同名 Release 默认不会覆盖，只有明确的 `release: refresh v...` 提交才允许刷新现有版本。
 
 正式发布前应检查：
-- `main` 最新 commit 与 `v1.45` 标签指向一致；
+- `main` 最新 commit 与 `v1.46` 标签指向一致；
 - 对应 Actions run 为 `completed / success`；
 - Release 不是草稿或预发布；
-- `MusicMeta-v1.45.apk` 资产已上传，签名及 package metadata 检查通过。
+- `MusicMeta-v1.46.apk` 资产已上传，签名及 package metadata 检查通过。
 
 ### APK 签名注意事项
 

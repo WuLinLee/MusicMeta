@@ -1227,8 +1227,8 @@ private fun OverlayLyricsUi(
             ignoreDragBelowFraction = 0.68f,
         ),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF17211F)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Column(
             modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp, vertical = 2.dp),
@@ -1238,7 +1238,6 @@ private fun OverlayLyricsUi(
             Box(
                 modifier = Modifier.fillMaxWidth().weight(1f)
                     .clip(RoundedCornerShape(9.dp))
-                    .background(Color(0xFF243631))
                     .tapAndHoldToClose(
                         key = Unit,
                         onTap = onToggleTranslation,
@@ -1294,7 +1293,6 @@ private fun OverlayLyricsUi(
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     val y = size.height / 2f
                     val stroke = 3.dp.toPx()
-                    drawLine(Color(0xFF3B514B), Offset(0f, y), Offset(size.width, y), stroke, cap = StrokeCap.Round)
                     if (progress > 0f) {
                         drawLine(
                             Color(0xFF9FF0C9),

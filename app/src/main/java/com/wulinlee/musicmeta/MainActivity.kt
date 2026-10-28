@@ -1878,12 +1878,44 @@ private fun MusicMetaApp() {
             it.artists.contains(filterText.trim(), ignoreCase = true) ||
             it.album.contains(filterText.trim(), ignoreCase = true)
     }
+    // Playback can outlive a tab switch. Keep previous/next bound to the playlist that started playback.
+    val previewPlaylistModeForNavigation = previewPlaylistModeForTrack(
+        currentPlaylistId = previewCurrentPlaylistId,
+        likedPlaylistId = likedPlaylist?.id,
+        publicPlaylistId = publicPlaylist?.id,
+        fallbackMode = inputMode,
+    )
+    val previewPlaylistForNavigation = when (previewPlaylistModeForNavigation) {
+        "liked" -> likedPlaylist
+        "playlist" -> publicPlaylist
+        else -> null
+    }
+    val previewFilterTextForNavigation = if (previewPlaylistModeForNavigation == "liked") likedFilterText else publicFilterText
+    val previewKnownTracksForNavigation = previewPlaylistForNavigation?.let { active ->
+        val prefix = "$previewPlaylistModeForNavigation:${active.id}:"
+        val cached = pageCache.entries
+            .filter { it.key.startsWith(prefix) }
+            .sortedBy { entry ->
+                val parts = entry.key.split(":")
+                val size = parts.getOrNull(2)?.toIntOrNull() ?: 100
+                val page = parts.getOrNull(3)?.toIntOrNull() ?: 1
+                (page - 1) * size
+            }
+            .flatMap { it.value }
+        (active.tracks + cached).distinctBy { it.id }
+    }.orEmpty()
+    val previewFilteredTracksForNavigation = previewKnownTracksForNavigation.filter {
+        previewFilterTextForNavigation.isBlank() ||
+            it.title.contains(previewFilterTextForNavigation.trim(), ignoreCase = true) ||
+            it.artists.contains(previewFilterTextForNavigation.trim(), ignoreCase = true) ||
+            it.album.contains(previewFilterTextForNavigation.trim(), ignoreCase = true)
+    }
     val navigatePlaylistPreview: (Int) -> Unit = remember(
-        knownTracks,
-        filteredKnownTracks,
-        playlist?.id,
-        inputMode,
-        filterText,
+        previewKnownTracksForNavigation,
+        previewFilteredTracksForNavigation,
+        previewPlaylistForNavigation?.id,
+        previewPlaylistModeForNavigation,
+        previewFilterTextForNavigation,
         pageSize,
         pageCache,
         playbackMode,
@@ -1901,16 +1933,17 @@ private fun MusicMetaApp() {
                 status = "正在准备当前试听，请稍候。"
             } else {
                 val currentTrack = previewCurrentTrack
-                val currentPlaylist = playlist
+                val currentPlaylist = previewPlaylistForNavigation
                 val activePlaylistId = previewCurrentPlaylistId
                 if (currentTrack == null || currentPlaylist == null || activePlaylistId != currentPlaylist.id) {
-                    status = "当前播放歌曲不在所选歌单中，无法定位歌单相邻曲目。"
+                    status = "当前播放歌曲不在已加载的原歌单中，无法定位相邻曲目；不会切换到直接搜歌队列。"
                 } else {
-                    val modeAtRequest = inputMode
+                    val modeAtRequest = previewPlaylistModeForNavigation
+                    val filterAtRequest = previewFilterTextForNavigation
                     val playlistIdAtRequest = currentPlaylist.id
                     val expectedTrackId = currentTrack.id
-                    val currentIndex: Int? = if (filterText.isNotBlank()) {
-                        filteredKnownTracks.indexOfFirst { it.id == expectedTrackId }.takeIf { it >= 0 }
+                    val currentIndex: Int? = if (filterAtRequest.isNotBlank()) {
+                        previewFilteredTracksForNavigation.indexOfFirst { it.id == expectedTrackId }.takeIf { it >= 0 }
                     } else {
                         val fromBase = currentPlaylist.tracks.indexOfFirst { it.id == expectedTrackId }
                         val locatedIndex = if (fromBase >= 0) {
@@ -1929,8 +1962,8 @@ private fun MusicMetaApp() {
                         }
                         locatedIndex.takeIf { it >= 0 }
                     }
-                    val navigationQueueSize = if (filterText.isNotBlank()) {
-                        filteredKnownTracks.size
+                    val navigationQueueSize = if (filterAtRequest.isNotBlank()) {
+                        previewFilteredTracksForNavigation.size
                     } else currentPlaylist.totalTrackCount
                     val targetPosition: Int? = when {
                         currentIndex == null -> null
@@ -1939,7 +1972,7 @@ private fun MusicMetaApp() {
                             val recentPlaylistKeys = recentlyPlayedKeys
                                 .filter { it.startsWith(playlistRecentPrefix) }
                                 .toSet()
-                            val recentPositions = if (filterText.isBlank()) {
+                            val recentPositions = if (filterAtRequest.isBlank()) {
                                 recentPlaylistPositions["$modeAtRequest:$playlistIdAtRequest"].orEmpty().toSet()
                             } else emptySet()
                             shuffleCandidatePositions(
@@ -1948,8 +1981,8 @@ private fun MusicMetaApp() {
                                 recentPositions = recentPositions,
                                 recentTrackKeys = recentPlaylistKeys,
                                 trackKeyAt = { position ->
-                                    val candidate = if (filterText.isNotBlank()) {
-                                        filteredKnownTracks.getOrNull(position)
+                                    val candidate = if (filterAtRequest.isNotBlank()) {
+                                        previewFilteredTracksForNavigation.getOrNull(position)
                                     } else {
                                         playlistTrackAtPosition(position, currentPlaylist, pageCache, modeAtRequest)
                                     }
@@ -1963,14 +1996,14 @@ private fun MusicMetaApp() {
                     }
                     if (targetPosition == null) {
                         status = "当前曲目不在已加载的歌单列表中，无法定位上一首 / 下一首。"
-                    } else if (filterText.isBlank() && targetPosition !in 0 until currentPlaylist.totalTrackCount) {
+                    } else if (filterAtRequest.isBlank() && targetPosition !in 0 until currentPlaylist.totalTrackCount) {
                         status = if (direction < 0) "已经是歌单第一首。" else "已经是歌单最后一首。"
-                    } else if (filterText.isNotBlank() && targetPosition !in filteredKnownTracks.indices) {
+                    } else if (filterAtRequest.isNotBlank() && targetPosition !in previewFilteredTracksForNavigation.indices) {
                         status = if (direction < 0) "已经是当前筛选结果的第一首。" else "已经是当前筛选结果的最后一首。"
                     } else {
                         val cachePrefix = "$modeAtRequest:$playlistIdAtRequest:"
-                        val targetFromLoaded = if (filterText.isNotBlank()) {
-                            filteredKnownTracks.getOrNull(targetPosition)
+                        val targetFromLoaded = if (filterAtRequest.isNotBlank()) {
+                            previewFilteredTracksForNavigation.getOrNull(targetPosition)
                         } else {
                             currentPlaylist.tracks.getOrNull(targetPosition) ?:
                                 pageCache.entries.asSequence()
@@ -2008,7 +2041,7 @@ private fun MusicMetaApp() {
                                             )
                                         }
                                     }.take(8)
-                                    if (inputMode != modeAtRequest || previewCurrentTrack?.id != expectedTrackId ||
+                                    if (previewCurrentTrack?.id != expectedTrackId ||
                                         previewCurrentPlaylistId != playlistIdAtRequest
                                     ) {
                                         isSearchingFlac = false
@@ -2026,6 +2059,9 @@ private fun MusicMetaApp() {
                                         isSearchingFlac = false
                                         status = "正在播放《${targetTrack.title}》的第一个匹配音源。"
                                         playPreview(matches.first())
+                                        // Restore the playlist context after playPreview updates UI state.
+                                        previewCurrentTrack = targetTrack
+                                        previewCurrentPlaylistId = playlistIdAtRequest
                                     }
                                 } catch (error: Exception) {
                                     // Always release the busy gate for this navigation when the
@@ -2051,7 +2087,7 @@ private fun MusicMetaApp() {
                         }
                         if (targetFromLoaded != null) {
                             searchAndPlay(targetFromLoaded)
-                        } else if (filterText.isNotBlank()) {
+                        } else if (filterAtRequest.isNotBlank()) {
                             status = "目标曲目尚未加载，请先翻到对应页。"
                         } else {
                             isSearchingFlac = true
@@ -2070,7 +2106,7 @@ private fun MusicMetaApp() {
                                             )
                                         }
                                     }
-                                    if (inputMode != modeAtRequest || previewCurrentTrack?.id != expectedTrackId ||
+                                    if (previewCurrentTrack?.id != expectedTrackId ||
                                         previewCurrentPlaylistId != playlistIdAtRequest
                                     ) {
                                         isSearchingFlac = false
@@ -2121,7 +2157,8 @@ private fun MusicMetaApp() {
                     status = if (direction < 0) "已经是本地列表第一首。" else "已经是本地列表最后一首。"
                 }
             }
-            previewCurrentTrack != null && previewCurrentPlaylistId != null && playlist?.id == previewCurrentPlaylistId ->
+            previewCurrentTrack != null && previewCurrentPlaylistId != null &&
+                (likedPlaylist?.id == previewCurrentPlaylistId || publicPlaylist?.id == previewCurrentPlaylistId) ->
                 navigatePlaylistPreview(direction)
             else -> {
                 val queue = previewQueue
@@ -3478,20 +3515,80 @@ private fun MusicMetaApp() {
             val activePreviewSong = previewSong!!
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val density = LocalDensity.current
-                val controlsLyricsGap = 4.dp
-                val maxGroupWidth = 64.dp + 28.dp + controlsLyricsGap + 334.dp
-                val groupWidth = minOf((maxWidth - 8.dp).coerceAtLeast(64.dp), maxGroupWidth)
+                val coverWidth = 64.dp
                 val sideControlsWidth = 28.dp
-                val panelWidth = (groupWidth - 64.dp - sideControlsWidth - controlsLyricsGap).coerceAtLeast(48.dp)
+                val preferredGap = 4.dp
+                val margin = 4.dp
+                val displayWidthPx = with(density) { maxWidth.roundToPx() }
+                val coverWidthPx = with(density) { coverWidth.roundToPx() }
+                val sideControlsWidthPx = with(density) { sideControlsWidth.roundToPx() }
+                val marginPx = with(density) { margin.roundToPx() }
+                val preferredGapPx = with(density) { preferredGap.roundToPx() }
+                val desiredLyricsWidthPx = FloatingOverlayPlacement.scaledPreferredLyricsWidthPx(
+                    baseGroupWidthPx = with(density) { 356.dp.roundToPx() },
+                    nonLyricsWidthPx = with(density) { 78.dp.roundToPx() },
+                    scale = 1.2f,
+                )
+                // Match the system overlay: drag the cover across the screen and mirror the lyric panel around it.
+                val coverBaseLeftPx = FloatingOverlayPlacement.centeredCoverXForExpandedGroup(
+                    displayWidth = displayWidthPx,
+                    coverWidthPx = coverWidthPx,
+                    desiredLyricsWidthPx = desiredLyricsWidthPx,
+                    preferredGapPx = preferredGapPx,
+                    marginPx = marginPx,
+                    sideControlsWidthPx = sideControlsWidthPx,
+                )
+                val minDragX = (marginPx - coverBaseLeftPx).toFloat()
+                val maxDragX = (displayWidthPx - marginPx - coverWidthPx - coverBaseLeftPx).toFloat()
+                val coverXpx = (coverBaseLeftPx + miniPlayerOffset.x.roundToInt())
+                    .coerceIn(marginPx, (displayWidthPx - marginPx - coverWidthPx).coerceAtLeast(marginPx))
+                val lyricsPanelOnRight = FloatingOverlayPlacement.lyricsPanelOnRight(
+                    coverX = coverXpx,
+                    coverWidthPx = coverWidthPx,
+                    displayWidth = displayWidthPx,
+                )
+                val panelGapPx = FloatingOverlayPlacement.panelGapPx(
+                    displayWidth = displayWidthPx,
+                    coverX = coverXpx,
+                    coverWidthPx = coverWidthPx,
+                    preferredGapPx = preferredGapPx,
+                    marginPx = marginPx,
+                    lyricsOnRight = lyricsPanelOnRight,
+                )
+                val panelWidthPx = FloatingOverlayPlacement.lyricsWidthPx(
+                    displayWidth = displayWidthPx,
+                    coverX = coverXpx,
+                    coverWidthPx = coverWidthPx,
+                    desiredLyricsWidthPx = desiredLyricsWidthPx,
+                    gapPx = panelGapPx,
+                    marginPx = marginPx,
+                    lyricsOnRight = lyricsPanelOnRight,
+                    reservedSideControlsPx = sideControlsWidthPx,
+                )
+                val panelWidth = with(density) { panelWidthPx.toDp() }
+                val controlsLyricsGap = with(density) { panelGapPx.toDp() }
+                val panelOffset = if (lyricsPanelOnRight) coverWidth + sideControlsWidth + controlsLyricsGap else 0.dp
+                val controlsOffset = when {
+                    lyricsPanelOnRight -> coverWidth
+                    showPreviewDetails -> panelWidth + controlsLyricsGap
+                    else -> 0.dp
+                }
+                val coverOffset = when {
+                    lyricsPanelOnRight -> 0.dp
+                    showPreviewDetails -> panelWidth + controlsLyricsGap + sideControlsWidth
+                    else -> sideControlsWidth
+                }
+                val groupWidth = if (showPreviewDetails) {
+                    coverWidth + sideControlsWidth + controlsLyricsGap + panelWidth
+                } else {
+                    coverWidth + sideControlsWidth
+                }
+                val groupLeftPx = if (lyricsPanelOnRight) {
+                    coverXpx
+                } else {
+                    coverXpx - if (showPreviewDetails) panelWidthPx + panelGapPx + sideControlsWidthPx else sideControlsWidthPx
+                }
                 val coverShape = RoundedCornerShape(18.dp)
-                val maxGroupDragX = with(density) { ((maxWidth - groupWidth) / 2).toPx().coerceAtLeast(0f) }
-                val coverBaseLeft = (maxWidth - groupWidth) / 2 + groupWidth - 64.dp
-                val minDragX = with(density) {
-                    if (showPreviewDetails) -maxGroupDragX else -coverBaseLeft.toPx()
-                }
-                val maxDragX = with(density) {
-                    if (showPreviewDetails) maxGroupDragX else (maxWidth - coverBaseLeft - 64.dp).toPx()
-                }
                 val maxDragY = with(density) { (maxHeight - 120.dp).toPx().coerceAtLeast(0f) }
                 val toggleLyricsPanel = { showPreviewDetails = !showPreviewDetails }
                 val locateCurrentPreviewSong = {
@@ -3524,13 +3621,13 @@ private fun MusicMetaApp() {
                 }
                 Box(
                     modifier = Modifier
-                        .align(Alignment.BottomCenter)
+                        .align(Alignment.BottomStart)
                         .padding(bottom = 12.dp)
                         .width(groupWidth)
                         .height(108.dp)
                         .offset {
                             IntOffset(
-                                miniPlayerOffset.x.coerceIn(minDragX, maxDragX).roundToInt(),
+                                groupLeftPx,
                                 miniPlayerOffset.y.coerceIn(-maxDragY, 0f).roundToInt(),
                             )
                         },
@@ -3549,7 +3646,7 @@ private fun MusicMetaApp() {
                             ).ifBlank { "♪" }
                         }
                         Card(
-                            modifier = Modifier.align(Alignment.CenterStart).offset(y = 4.dp)
+                            modifier = Modifier.align(Alignment.CenterStart).offset(x = panelOffset, y = 4.dp)
                                 .width(panelWidth).height(64.dp)
                                 .overlayDragGesture(
                                     key = listOf(activePreviewSong, minDragX, maxDragX, maxDragY, showPreviewDetails),
@@ -3563,8 +3660,8 @@ private fun MusicMetaApp() {
                                     ignoreDragBelowFraction = 0.68f,
                                 ),
                             shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFF17211F)),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                         ) {
                             Column(
                                 modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp, vertical = 2.dp),
@@ -3574,7 +3671,6 @@ private fun MusicMetaApp() {
                                 Box(
                                     modifier = Modifier.fillMaxWidth().weight(1f)
                                         .clip(RoundedCornerShape(9.dp))
-                                        .background(Color(0xFF243631))
                                         .tapAndHoldToClose(
                                             key = listOf(activePreviewSong, showTranslatedPreviewLyric, showPreviewDetails),
                                             onTap = { showTranslatedPreviewLyric = !showTranslatedPreviewLyric },
@@ -3629,7 +3725,6 @@ private fun MusicMetaApp() {
                                     Canvas(modifier = Modifier.fillMaxSize()) {
                                         val y = size.height / 2f
                                         val strokeWidth = 3.dp.toPx()
-                                        drawLine(Color(0xFF3B514B), Offset(0f, y), Offset(size.width, y), strokeWidth, cap = StrokeCap.Round)
                                         if (progress > 0f) {
                                             drawLine(Color(0xFF9FF0C9), Offset(0f, y), Offset(size.width * progress, y), strokeWidth, cap = StrokeCap.Round)
                                         }
@@ -3643,16 +3738,18 @@ private fun MusicMetaApp() {
                         onPrevious = { playAdjacentPreview(-1) },
                         onNext = { playAdjacentPreview(1) },
                         modifier = Modifier.align(Alignment.CenterStart)
-                            .offset(x = panelWidth + controlsLyricsGap)
+                            .offset(x = controlsOffset)
                             .width(sideControlsWidth).height(64.dp),
                     )
                     Column(
-                        modifier = Modifier.align(Alignment.CenterEnd).width(64.dp).height(108.dp).padding(top = 22.dp),
+                        modifier = Modifier.width(64.dp).height(108.dp).padding(top = 22.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Top,
                     ) {
                         Box(
                             modifier = Modifier
+                                .align(Alignment.CenterStart)
+                                .offset(x = coverOffset)
                                 .size(64.dp)
                                 .clip(coverShape)
                                 .background(Color(0xFF171E1A))

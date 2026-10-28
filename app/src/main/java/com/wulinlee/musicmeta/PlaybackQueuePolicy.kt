@@ -95,3 +95,15 @@ internal fun rememberRecentTrackKeys(
         .distinct()
         .takeLast(maxEntries.coerceAtLeast(1))
 }
+
+/** Resolve preview navigation from the playing track's playlist, independent of the visible tab. */
+internal fun previewPlaylistModeForTrack(
+    currentPlaylistId: Long?,
+    likedPlaylistId: Long?,
+    publicPlaylistId: Long?,
+    fallbackMode: String,
+): String = when {
+    currentPlaylistId != null && currentPlaylistId == likedPlaylistId -> "liked"
+    currentPlaylistId != null && currentPlaylistId == publicPlaylistId -> "playlist"
+    else -> fallbackMode
+}
