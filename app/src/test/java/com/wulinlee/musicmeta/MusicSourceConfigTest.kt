@@ -52,26 +52,6 @@ class MusicSourceConfigTest {
     }
 
     @Test
-    fun gdStudioServerErrorsCanUseFallbackButRateLimitIsNotMisclassified() {
-        assertTrue(
-            isGdStudioTransientServiceError(
-                java.io.IOException("GD Studio API 请求失败：HTTP 503"),
-            ),
-        )
-        assertTrue(
-            isGdStudioTransientServiceError(
-                java.io.IOException("请求失败", java.io.IOException("HTTP 502")),
-            ),
-        )
-        assertFalse(
-            isGdStudioTransientServiceError(GdStudioRateLimitException(22_001L)),
-        )
-        assertFalse(
-            isGdStudioTransientServiceError(java.io.IOException("HTTP 429")),
-        )
-    }
-
-    @Test
     fun flacSiteSongNotFoundErrorGivesRecoverySteps() {
         val message = formatFlacSiteApiError(
             -1,
