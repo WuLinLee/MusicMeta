@@ -256,7 +256,7 @@ class MusicSourceConfigTest {
             gdStudioEncodeSignatureValue("A B!'()*/雨"),
         )
         assertEquals(
-            "1881E771",
+            "E7B351FB",
             gdStudioApiSignature(
                 value = "雨のmusique",
                 serverTime = "1793250000",
@@ -265,12 +265,21 @@ class MusicSourceConfigTest {
             ),
         )
         assertEquals(
-            "1881E771",
+            "E7B351FB",
             gdStudioApiSignature(
                 value = "雨のmusique",
                 serverTime = "1793250000",
                 host = "music.gdstudio.xyz",
                 version = "2026.9.25",
+            ),
+        )
+        assertEquals(
+            gdStudioProtocolDigest("179325000|music.gdstudio.xyz|20260925|abc").takeLast(8).uppercase(),
+            gdStudioApiSignature(
+                value = "abc",
+                serverTime = "1793250000",
+                host = "music.gdstudio.xyz",
+                version = "2026.09.25",
             ),
         )
     }
