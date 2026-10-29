@@ -217,7 +217,7 @@ class MetadataProvider {
         if (id <= 0L) return LyricsPayload()
         return try {
             val url = HttpUrl.Builder()
-                .scheme("https").host("music-api.gdstudio.xyz").addPathSegments("api.php")
+                .scheme("https").host("music.gdstudio.xyz").addPathSegments("api.php")
                 .addQueryParameter("types", "lyric")
                 .addQueryParameter("source", "netease")
                 .addQueryParameter("id", id.toString())
@@ -320,7 +320,7 @@ class MetadataProvider {
 
     private fun resolveCoverUrlFromGdStudio(track: MusicTrack): String? {
         return try {
-            val searchUrl = HttpUrl.Builder().scheme("https").host("music-api.gdstudio.xyz")
+            val searchUrl = HttpUrl.Builder().scheme("https").host("music.gdstudio.xyz")
                 .addPathSegments("api.php")
                 .addQueryParameter("types", "search")
                 .addQueryParameter("source", "netease")
@@ -356,7 +356,7 @@ class MetadataProvider {
             val picId = match.optString("pic_id").ifBlank { match.optString("picId") }
                 .ifBlank { match.optString("pic") }
             if (picId.isBlank() || picId == "0") return null
-            val picUrl = HttpUrl.Builder().scheme("https").host("music-api.gdstudio.xyz")
+            val picUrl = HttpUrl.Builder().scheme("https").host("music.gdstudio.xyz")
                 .addPathSegments("api.php").addQueryParameter("types", "pic")
                 .addQueryParameter("source", "netease").addQueryParameter("id", picId)
                 .addQueryParameter("size", "500").build()
