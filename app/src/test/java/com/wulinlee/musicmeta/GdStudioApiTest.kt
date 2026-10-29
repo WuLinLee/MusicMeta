@@ -36,6 +36,37 @@ class GdStudioApiTest {
     }
 
     @Test
+    fun signatureRejectionRetriesOnlyWhenVersionOrTimeBucketChanged() {
+        assertEquals(
+            false,
+            GdStudioApiClient.shouldRetryAfterSignatureRejection(
+                "2026.09.25",
+                "179326946",
+                "2026.09.25",
+                "179326946",
+            ),
+        )
+        assertEquals(
+            true,
+            GdStudioApiClient.shouldRetryAfterSignatureRejection(
+                "2026.09.25",
+                "179326946",
+                "2026.10.29",
+                "179326946",
+            ),
+        )
+        assertEquals(
+            true,
+            GdStudioApiClient.shouldRetryAfterSignatureRejection(
+                "2026.09.25",
+                "179326946",
+                "2026.09.25",
+                "179326947",
+            ),
+        )
+    }
+
+    @Test
     fun signaturesChangeWhenSearchPayloadChanges() {
         fun signed(keyword: String): String? = GdStudioApiClient.buildSignedUrl(
             GdStudioApiClient.PRIMARY_HOST,
