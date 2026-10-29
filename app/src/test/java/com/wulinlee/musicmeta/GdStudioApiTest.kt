@@ -39,6 +39,23 @@ class GdStudioApiTest {
     }
 
     @Test
+    fun gdstudioAudioLookupUsesUrlIdWhenAvailable() {
+        val song = FlacSiteSong(
+            id = "track-id",
+            platform = "gd:netease",
+            title = "测试曲",
+            artist = "测试歌手",
+            album = "",
+            sign = "",
+            time = "",
+            coverUrl = "",
+            urlId = "url-id",
+        )
+        assertEquals("url-id", gdStudioUrlLookupId(song))
+        assertEquals("track-id", gdStudioUrlLookupId(song.copy(urlId = "")))
+    }
+
+    @Test
     fun encodeURIComponentMatchesJavascriptEncodingForJapaneseAndPunctuation() {
         assertEquals(
             "%E6%B6%9A%E3%81%8C%20%E3%81%BB%E3%81%8A%26x",

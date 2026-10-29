@@ -32,7 +32,11 @@ data class FlacSiteSong(
     val coverUrl: String,
     val coverId: String = "",
     val lyricId: String = id,
+    val urlId: String = id,
 )
+
+internal fun gdStudioUrlLookupId(song: FlacSiteSong): String =
+    song.urlId.takeIf { it.isNotBlank() } ?: song.id
 
 internal fun flacSiteDownloadUrlCacheKey(song: FlacSiteSong, format: String, bitrate: String): String =
     listOf(song.platform, song.id, format.lowercase(), bitrate, song.time, song.sign).joinToString("|")
@@ -579,11 +583,19 @@ class FlacMusicProvider {
                     .build()
             )
             .build()
-        val root = JSONObject(executeJson(request))
-        checkApiCode(root, "搜索")
-        val data = root.optJSONObject("data")
-            ?: throw IOException("下载站搜索响应中没有 data 字段。")
-        val list = data.optJSONArray("list") ?: JSONArray()
+        val body = executeJson(request).trim()
+        val list = if (body.startsWith("[")) {
+            JSONArray(body)
+        } else {
+            val root = JSONObject(body)
+            checkApiCode(root, "搜索")
+            val data = root.optJSONObject("data")
+            data?.optJSONArray("list")
+                ?: root.optJSONArray("list")
+                ?: root.optJSONArray("result")
+                ?: root.optJSONArray("songs")
+                ?: JSONArray()
+        }
         return (0 until list.length()).mapNotNull { index ->
             parseSong(list.optJSONObject(index), sitePlatform)
         }
@@ -649,6 +661,7 @@ class FlacMusicProvider {
             )
             FlacSiteSong(
                 id = id,
+                urlId = item.optString("url_id").ifBlank { id },
                 platform = "gd:" + source,
                 title = title,
                 artist = artist.ifBlank { "未知歌手" },
@@ -666,12 +679,13 @@ class FlacMusicProvider {
 
     private fun resolveGdStudioUrl(song: FlacSiteSong, bitrate: String, userAgent: String): String {
         val source = song.platform.removePrefix("gd:").ifBlank { "netease" }
+        val urlLookupId = gdStudioUrlLookupId(song)
         val body = GdStudioApiClient.getText(
             client,
             linkedMapOf(
                 "types" to "url",
                 "source" to source,
-                "id" to song.id,
+                "id" to urlLookupId,
                 "br" to bitrate,
             ),
             GdStudioApiSupport.DOWNLOAD_URL_TTL_MILLIS,
@@ -718,7 +732,9 @@ class FlacMusicProvider {
 
     private fun parseSong(song: JSONObject?, platform: String): FlacSiteSong? {
         if (song == null) return null
-        val id = song.optString("id").ifBlank { song.optString("songid") }
+        val id = song.optString("rid")
+            .ifBlank { song.optString("id") }
+            .ifBlank { song.optString("songid") }
         val title = song.optString("name").ifBlank { song.optString("title") }
         if (id.isBlank() || title.isBlank()) return null
         val artistValue = song.opt("artist")
@@ -733,22 +749,33 @@ class FlacMusicProvider {
             is JSONObject -> artistValue.optString("name")
             is String -> artistValue
             else -> song.optString("artists")
+                .ifBlank { song.optString("singer") }
+                .ifBlank { song.optString("artistName") }
         }
         return FlacSiteSong(
             id = id,
             platform = platform,
             title = title,
             artist = artist.ifBlank { "未知歌手" },
-            album = song.optString("album_name").ifBlank { song.optString("album") },
+            album = song.optString("album_name")
+                .ifBlank { song.optString("album") }
+                .ifBlank { song.optString("albumName") },
             sign = song.optString("sign"),
             time = song.optString("time"),
             coverUrl = normalizeCoverUrl(
-                listOf(song.optString("pic_url"), song.optString("coverUrl"), song.optString("cover"), song.optString("pic"))
-                    .firstOrNull { it.isNotBlank() && !it.equals("null", ignoreCase = true) }.orEmpty()
+                listOf(
+                    song.optString("pic_url"),
+                    song.optString("coverUrl"),
+                    song.optString("cover"),
+                    song.optString("pic"),
+                    song.optString("picurl"),
+                    song.optString("album_img"),
+                ).firstOrNull { it.isNotBlank() && !it.equals("null", ignoreCase = true) }.orEmpty()
             ),
             coverId = listOf(song.optString("pic_id"), song.optString("picId"), song.optString("picture_id"))
                 .firstOrNull { it.isNotBlank() && !it.equals("null", ignoreCase = true) }.orEmpty(),
             lyricId = song.optString("lyric_id").ifBlank { song.optString("lyricId") }.ifBlank { id },
+            urlId = song.optString("url_id").ifBlank { id },
         )
     }
 
