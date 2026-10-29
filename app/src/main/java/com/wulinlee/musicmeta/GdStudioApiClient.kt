@@ -19,19 +19,16 @@ internal object GdStudioApiClient {
     internal const val DEFAULT_USER_AGENT =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
 
-    private data class TimeEntry(val prefix: String, val expiresAtElapsedMs: Long)
     private data class VersionEntry(val version: String, val expiresAtElapsedMs: Long)
 
     private const val VERSION_CACHE_TTL_MILLIS = 10 * 60 * 1000L
-    private val timeCache = mutableMapOf<String, TimeEntry>()
     private val versionCache = mutableMapOf<String, VersionEntry>()
     private val versionPattern = Regex(
         """\bversion\s*[:=]\s*["']?(20\d{2}\.\d{1,2}\.\d{1,2})""",
         RegexOption.IGNORE_CASE,
     )
 
-    /** Host failover stays within GD Studio; it never silently changes API providers. */
-    /** Host failover stays within GD Studio; it never silently changes API providers. */
+    /** Host failover stays within GD Studio; cross-provider fallback is handled by FlacMusicProvider. */
     fun getText(
         client: OkHttpClient,
         params: Map<String, String>,
@@ -48,10 +45,10 @@ internal object GdStudioApiClient {
                 } catch (error: IOException) {
                     if (!isSignatureRejection(error)) throw error
 
-                    // A 401 means either the site rotated its player version or the 10-second
-                    // signing bucket changed. Refresh both values and retry this host once.
+                    // Refresh both the player-script version and server time before one retry.
+                    // A fresh time read avoids reusing a signature prefix across a bucket boundary.
                     val refreshedVersion = currentApiVersion(client, host, forceRefresh = true)
-                    val refreshedTime = serverTimePrefix(client, host, forceRefresh = true)
+                    val refreshedTime = serverTimePrefix(client, host)
                     try {
                         return executeSignedRequest(
                             client, host, params, ttlMillis, refreshedTime, refreshedVersion,
@@ -217,18 +214,18 @@ internal object GdStudioApiClient {
             if (part.length == 1) "0$part" else part
         }
 
+    /**
+     * Fetch the signature time from the service for each request.
+     *
+     * The maintained musicdl implementation does not cache this value. The first nine
+     * digits are a short-lived signing bucket, and treating the response as either seconds
+     * or milliseconds when calculating a local expiry can keep a stale bucket alive. A fresh
+     * read is cheap and avoids a class of intermittent HTTP 401 errors around bucket rollover.
+     */
     private fun serverTimePrefix(
         client: OkHttpClient,
         host: String,
-        forceRefresh: Boolean = false,
     ): String {
-        val now = System.nanoTime() / 1_000_000L
-        synchronized(timeCache) {
-            if (!forceRefresh) {
-                timeCache[host]?.takeIf { now < it.expiresAtElapsedMs }?.let { return it.prefix }
-            }
-        }
-
         val request = Request.Builder()
             .url("https://$host/time")
             .header("User-Agent", DEFAULT_USER_AGENT)
@@ -247,15 +244,7 @@ internal object GdStudioApiClient {
         if (serverTime.length < 9 || serverTime.any { !it.isDigit() }) {
             throw IOException("GD Studio 时间接口返回了无效的签名时间。")
         }
-        val prefix = serverTime.take(9)
-        val epochSeconds = serverTime.toLongOrNull()
-        val untilPrefixChangesMs = epochSeconds?.let {
-            ((10 - (it % 10)) * 1_000L - 500L).coerceIn(250L, 8_500L)
-        } ?: 1_000L
-        synchronized(timeCache) {
-            timeCache[host] = TimeEntry(prefix, System.nanoTime() / 1_000_000L + untilPrefixChangesMs)
-        }
-        return prefix
+        return serverTime.take(9)
     }
 
     private fun apiPayloadError(body: String): String? {
