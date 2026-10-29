@@ -1860,7 +1860,7 @@ private fun MusicMetaApp() {
                         null,
                         if (selectedQuality == "FLAC") "audio/flac" else "audio/mpeg",
                         (if (usedGdStudio) "https://music.gdstudio.xyz/" else FLAC_SITE_HOME),
-                        cookie,
+                        if (usedGdStudio) null else cookie,
                         selectedTrack ?: metadataTrackForSource(song),
                         song,
                     )
@@ -3471,7 +3471,7 @@ private fun MusicMetaApp() {
                                                                     null,
                                                                     if (selectedQuality == "FLAC") "audio/flac" else "audio/mpeg",
                                                                     (if (usedGdStudio) "https://music.gdstudio.xyz/" else FLAC_SITE_HOME),
-                                                                    cookie,
+                                                                    if (usedGdStudio) null else cookie,
                                                                     selectedTrack ?: metadataTrackForSource(song),
                                                                     song,
                                                                 )
