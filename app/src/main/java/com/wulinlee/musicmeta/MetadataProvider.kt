@@ -216,19 +216,11 @@ class MetadataProvider {
     private fun getGdStudioLyrics(id: Long): LyricsPayload {
         if (id <= 0L) return LyricsPayload()
         return try {
-            val url = HttpUrl.Builder()
-                .scheme("https").host("music-api.gdstudio.xyz").addPathSegments("api.php")
-                .addQueryParameter("types", "lyric")
-                .addQueryParameter("source", "netease")
-                .addQueryParameter("id", id.toString())
-                .build()
-            val request = Request.Builder()
-                .url(url)
-                .header("Referer", "https://music.gdstudio.xyz/")
-                .header("User-Agent", userAgent)
-                .get()
-                .build()
-            val body = GdStudioApiSupport.getText(client, request, GdStudioApiSupport.LYRIC_TTL_MILLIS)
+            val body = GdStudioApiClient.getText(
+                client,
+                linkedMapOf("types" to "lyric", "source" to "netease", "id" to id.toString()),
+                GdStudioApiSupport.LYRIC_TTL_MILLIS,
+            )
             val root = JSONObject(body)
             val data = root.optJSONObject("data")
             LyricsPayload(
@@ -320,16 +312,17 @@ class MetadataProvider {
 
     private fun resolveCoverUrlFromGdStudio(track: MusicTrack): String? {
         return try {
-            val searchUrl = HttpUrl.Builder().scheme("https").host("music-api.gdstudio.xyz")
-                .addPathSegments("api.php")
-                .addQueryParameter("types", "search")
-                .addQueryParameter("source", "netease")
-                .addQueryParameter("name", track.title + " " + track.artists.substringBefore(" / "))
-                .addQueryParameter("count", "10").addQueryParameter("pages", "1").build()
-            val searchRequest = Request.Builder().url(searchUrl)
-                .header("Referer", "https://music.gdstudio.xyz/")
-                .header("User-Agent", userAgent).get().build()
-            val body = GdStudioApiSupport.getText(client, searchRequest, GdStudioApiSupport.SEARCH_TTL_MILLIS)
+            val body = GdStudioApiClient.getText(
+                client,
+                linkedMapOf(
+                    "types" to "search",
+                    "source" to "netease",
+                    "name" to (track.title + " " + track.artists.substringBefore(" / ")),
+                    "count" to "10",
+                    "pages" to "1",
+                ),
+                GdStudioApiSupport.SEARCH_TTL_MILLIS,
+            )
             val root = runCatching { JSONObject(body) }.getOrNull()
             val results = if (body.trimStart().startsWith("[")) {
                 runCatching { JSONArray(body) }.getOrNull()
@@ -356,18 +349,13 @@ class MetadataProvider {
             val picId = match.optString("pic_id").ifBlank { match.optString("picId") }
                 .ifBlank { match.optString("pic") }
             if (picId.isBlank() || picId == "0") return null
-            val picUrl = HttpUrl.Builder().scheme("https").host("music-api.gdstudio.xyz")
-                .addPathSegments("api.php").addQueryParameter("types", "pic")
-                .addQueryParameter("source", "netease").addQueryParameter("id", picId)
-                .addQueryParameter("size", "500").build()
-            val picRequest = Request.Builder().url(picUrl)
-                .header("Referer", "https://music.gdstudio.xyz/")
-                .header("User-Agent", userAgent).get().build()
-            client.newCall(picRequest).execute().use { response ->
-                if (!response.isSuccessful) return@use null
-                val value = response.body?.string().orEmpty().trim()
-                if (value.startsWith("http://") || value.startsWith("https://")) return@use value
-                val json = runCatching { JSONObject(value) }.getOrNull() ?: return@use null
+            val value = GdStudioApiClient.getText(
+                client,
+                linkedMapOf("types" to "pic", "source" to "netease", "id" to picId, "size" to "500"),
+                GdStudioApiSupport.COVER_URL_TTL_MILLIS,
+            ).trim()
+            if (value.startsWith("http://") || value.startsWith("https://")) value else {
+                val json = runCatching { JSONObject(value) }.getOrNull() ?: return null
                 json.optString("url").ifBlank { json.optJSONObject("data")?.optString("url").orEmpty() }
                     .takeIf { it.startsWith("http://") || it.startsWith("https://") }
             }

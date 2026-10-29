@@ -116,9 +116,9 @@ internal object GdStudioApiSupport {
         }
     }
 
-    /** Uses the documented music-api.gdstudio.xyz API directly; it does not require a web-client signature. */
+    /** Low-level HTTP/cache primitive. Build signed API calls with GdStudioApiClient. */
     fun getText(client: OkHttpClient, request: Request, ttlMillis: Long = 0L): String {
-        val key = request.url.toString()
+        val key = request.url.newBuilder().removeAllQueryParameters("s").build().toString()
         if (ttlMillis > 0L) cached(key)?.let { return it }
 
         val body = client.newCall(request).execute().use { response ->
@@ -133,7 +133,11 @@ internal object GdStudioApiSupport {
             }
             content
         }
-        store(key, body, ttlMillis)
+        val hasApiErrorCode = runCatching {
+            val json = JSONObject(body)
+            json.has("code") && json.optInt("code", 0) !in setOf(0, 200)
+        }.getOrDefault(false)
+        if (!hasApiErrorCode) store(key, body, ttlMillis)
         return body
     }
 }

@@ -68,25 +68,36 @@ internal object FlacSiteDownloadUrlCache {
 
 internal fun formatFlacSiteApiError(code: Int, detail: String, operation: String): String? {
     if (code == 0 || code == 200) return null
-    if (code == 468 || detail.contains("验证") || detail.contains("challenge", ignoreCase = true)) {
-        return "下载站要求网页访问验证。请先在下方网站页面完成验证，再重新搜索。"
-    }
-    if (code == -1 && detail.contains("接口请求失败")) {
-        return "下载站暂时无法处理请求（-1）。请打开下方 flac.music.hi.cn 网页刷新访问验证后重试；若仍失败，可切换到 GD Studio。"
-    }
+    // Prefer the precise per-track error over the generic "-1" wrapper. Otherwise users are
+    // incorrectly sent to the verification WebView for songs the endpoint simply cannot resolve.
     if (code == -1 && (
             detail.contains("Song not found", ignoreCase = true) ||
                 detail.contains("invalid response", ignoreCase = true)
         )
     ) {
         return if (operation.contains("下载地址")) {
-            "下载站无法解析该候选歌曲的下载地址：曲目可能已失效，或此版本在当前平台暂不可用。请重新搜索并选择其他候选，或切换 API 服务 / 音乐平台后重试。"
+            "下载站无法解析该候选歌曲的下载地址：曲目可能已失效，或此版本在当前平台暂不可用。请重新搜索并选择其他候选，或稍后重试。"
         } else {
-            "下载站暂时无法处理这次$operation；该平台或候选可能暂不可用，请稍后重试，或切换音乐平台。"
+            "下载站暂时无法处理这次$operation；该平台或候选可能暂不可用，请稍后重试。"
         }
+    }
+    if (code == 468 || detail.contains("验证") || detail.contains("challenge", ignoreCase = true)) {
+        return "下载站要求网页访问验证。请先在下方网站页面完成验证，再重新搜索。"
+    }
+    if (code == -1 && detail.contains("接口请求失败")) {
+        return "下载站接口暂时无法处理请求（-1）。请重新搜索并重试；如果网站页面明确显示验证要求，再打开网页完成验证。"
     }
     val message = detail.ifBlank { "请稍后重试" }
     return "下载站接口返回错误 $code：$message"
+}
+
+internal fun isFlacInvalidCandidateError(error: Throwable): Boolean {
+    val messages = generateSequence(error) { it.cause }
+        .mapNotNull { it.message }
+        .joinToString(" ")
+    return messages.contains("Song not found", ignoreCase = true) ||
+        messages.contains("invalid response", ignoreCase = true) ||
+        messages.contains("无法解析该候选歌曲")
 }
 
 
@@ -168,6 +179,7 @@ class FlacMusicProvider {
         userAgent: String,
         backend: String = MusicSourceConfig.BACKEND_FLAC_SITE,
         fallbackKeyword: String? = null,
+        forceRefresh: Boolean = false,
     ): List<FlacSiteSong> = withContext(Dispatchers.IO) {
         if (keyword.isBlank()) throw IOException("请输入要搜索的歌名或歌手。")
         val selectedBackend = MusicSourceConfig.normalizeBackend(backend)
@@ -175,7 +187,7 @@ class FlacMusicProvider {
         // A stale saved value such as Kuwo must never be sent to GD Studio as an unsupported source.
         val source = MusicSourceConfig.platformForBackend(selectedBackend, platform)
         val cacheKey = "$selectedBackend:$source:${keyword.trim().lowercase()}"
-        MusicSourceSearchCache.get(cacheKey)?.let { return@withContext it }
+        if (!forceRefresh) MusicSourceSearchCache.get(cacheKey)?.let { return@withContext it }
 
         val songs = if (selectedBackend == MusicSourceConfig.BACKEND_GD_STUDIO) {
             try {
@@ -352,6 +364,56 @@ class FlacMusicProvider {
                 ).also { it.addSuppressed(lastError) }
             }
 
+            if (!requestedFromGdStudio && isFlacInvalidCandidateError(primaryError)) {
+                val refreshKeywords = gdStudioSearchKeywords(
+                    listOf(song.title, song.artist).filter { it.isNotBlank() }.joinToString(" "),
+                    song.title,
+                )
+                var refreshedCandidate: FlacSiteSong? = null
+                for (keyword in refreshKeywords) {
+                    try {
+                        val freshCandidates = search(
+                            keyword = keyword,
+                            platform = song.platform,
+                            cookie = cookie,
+                            userAgent = userAgent,
+                            backend = MusicSourceConfig.BACKEND_FLAC_SITE,
+                            forceRefresh = true,
+                        )
+                        refreshedCandidate = freshCandidates.firstOrNull { candidate ->
+                            gdStudioFallbackCandidateMatches(
+                                song.title,
+                                song.artist,
+                                candidate.title,
+                                candidate.artist,
+                            )
+                        }
+                        if (refreshedCandidate != null) break
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        // Try the title-only query below before reporting the original failure.
+                    }
+                }
+                if (refreshedCandidate != null &&
+                    (refreshedCandidate.id != song.id ||
+                        refreshedCandidate.time != song.time ||
+                        refreshedCandidate.sign != song.sign)
+                ) {
+                    try {
+                        return@withContext resolveDownloadUrl(
+                            refreshedCandidate,
+                            format,
+                            bitrate,
+                            cookie,
+                            userAgent,
+                        ) to false
+                    } catch (refreshError: Exception) {
+                        primaryError.addSuppressed(refreshError)
+                    }
+                }
+            }
+
             val provider = if (requestedFromGdStudio) "GD Studio" else "flac.music.hi.cn"
             val guidance = if (requestedFromGdStudio) {
                 "请在设置中选择 GD Studio 的其他可用音乐平台，或稍后重试。"
@@ -396,22 +458,11 @@ class FlacMusicProvider {
             return@withContext ""
         }
 
-        val url = HttpUrl.Builder()
-            .scheme("https")
-            .host("music-api.gdstudio.xyz")
-            .addPathSegments("api.php")
-            .addQueryParameter("types", "pic")
-            .addQueryParameter("source", source)
-            .addQueryParameter("id", picId)
-            .addQueryParameter("size", "500")
-            .build()
-        val request = Request.Builder()
-            .url(url)
-            .header("Referer", "https://music.gdstudio.xyz/")
-            .header("User-Agent", fallbackUserAgent)
-            .get()
-            .build()
-        val body = GdStudioApiSupport.getText(client, request, GdStudioApiSupport.COVER_URL_TTL_MILLIS).trim()
+        val body = GdStudioApiClient.getText(
+            client,
+            linkedMapOf("types" to "pic", "source" to source, "id" to picId, "size" to "500"),
+            GdStudioApiSupport.COVER_URL_TTL_MILLIS,
+        ).trim()
         val direct = if (body.startsWith("http://") || body.startsWith("https://")) {
             body
         } else {
@@ -432,7 +483,6 @@ class FlacMusicProvider {
             fetchGdStudioLyricsBody(
                 source = song.platform.removePrefix("gd:").ifBlank { "netease" },
                 lyricId = song.lyricId.ifBlank { song.id },
-                userAgent = userAgent,
             )
         } else {
             val request = baseRequest(apiUrl("getLyric"), cookie, userAgent)
@@ -468,7 +518,6 @@ class FlacMusicProvider {
                         fetchGdStudioLyricsBody(
                             source = source,
                             lyricId = song.lyricId.ifBlank { song.id },
-                            userAgent = userAgent,
                         )
                     )
                 }.getOrDefault(PreviewLyrics())
@@ -482,23 +531,12 @@ class FlacMusicProvider {
         }
     }
 
-    private fun fetchGdStudioLyricsBody(source: String, lyricId: String, userAgent: String): String {
-        val url = HttpUrl.Builder()
-            .scheme("https")
-            .host("music-api.gdstudio.xyz")
-            .addPathSegments("api.php")
-            .addQueryParameter("types", "lyric")
-            .addQueryParameter("source", source)
-            .addQueryParameter("id", lyricId)
-            .build()
-        val request = Request.Builder()
-            .url(url)
-            .header("Referer", "https://music.gdstudio.xyz/")
-            .header("User-Agent", userAgent.ifBlank { fallbackUserAgent })
-            .get()
-            .build()
-        return GdStudioApiSupport.getText(client, request, GdStudioApiSupport.LYRIC_TTL_MILLIS).trim()
-    }
+    private fun fetchGdStudioLyricsBody(source: String, lyricId: String): String =
+        GdStudioApiClient.getText(
+            client,
+            linkedMapOf("types" to "lyric", "source" to source, "id" to lyricId),
+            GdStudioApiSupport.LYRIC_TTL_MILLIS,
+        ).trim()
 
     private fun parsePreviewLyricsPayload(body: String): PreviewLyrics {
         val text = body.trim()
@@ -557,23 +595,17 @@ class FlacMusicProvider {
             MusicSourceConfig.BACKEND_GD_STUDIO,
             normalizedPlatform,
         )
-        val url = HttpUrl.Builder()
-            .scheme("https")
-            .host("music-api.gdstudio.xyz")
-            .addPathSegments("api.php")
-            .addQueryParameter("types", "search")
-            .addQueryParameter("source", source)
-            .addQueryParameter("name", keyword.trim())
-            .addQueryParameter("count", "20")
-            .addQueryParameter("pages", "1")
-            .build()
-        val request = Request.Builder()
-            .url(url)
-            .header("Referer", "https://music.gdstudio.xyz/")
-            .header("User-Agent", fallbackUserAgent)
-            .get()
-            .build()
-        val body = GdStudioApiSupport.getText(client, request, GdStudioApiSupport.SEARCH_TTL_MILLIS).trim()
+        val body = GdStudioApiClient.getText(
+            client,
+            linkedMapOf(
+                "types" to "search",
+                "source" to source,
+                "name" to keyword.trim(),
+                "count" to "20",
+                "pages" to "1",
+            ),
+            GdStudioApiSupport.SEARCH_TTL_MILLIS,
+        ).trim()
         val root = runCatching { JSONObject(body) }.getOrNull()
         if (root != null && root.has("code") && root.optInt("code") != 0 && root.optInt("code") != 200) {
             throw IOException("GD Studio 搜索返回错误：" + root.optString("msg").ifBlank { root.optString("message") })
@@ -633,22 +665,16 @@ class FlacMusicProvider {
 
     private fun resolveGdStudioUrl(song: FlacSiteSong, bitrate: String, userAgent: String): String {
         val source = song.platform.removePrefix("gd:").ifBlank { "netease" }
-        val url = HttpUrl.Builder()
-            .scheme("https")
-            .host("music-api.gdstudio.xyz")
-            .addPathSegments("api.php")
-            .addQueryParameter("types", "url")
-            .addQueryParameter("source", source)
-            .addQueryParameter("id", song.id)
-            .addQueryParameter("br", bitrate)
-            .build()
-        val request = Request.Builder()
-            .url(url)
-            .header("Referer", "https://music.gdstudio.xyz/")
-            .header("User-Agent", userAgent.ifBlank { fallbackUserAgent })
-            .get()
-            .build()
-        val body = GdStudioApiSupport.getText(client, request, GdStudioApiSupport.DOWNLOAD_URL_TTL_MILLIS).trim()
+        val body = GdStudioApiClient.getText(
+            client,
+            linkedMapOf(
+                "types" to "url",
+                "source" to source,
+                "id" to song.id,
+                "br" to bitrate,
+            ),
+            GdStudioApiSupport.DOWNLOAD_URL_TTL_MILLIS,
+        ).trim()
         val direct = if (body.startsWith("http://") || body.startsWith("https://")) {
             body
         } else {
