@@ -180,7 +180,7 @@ internal fun isGdStudioApiFallbackEligible(error: Throwable, source: String): Bo
         val message = cause.message.orEmpty()
         message.contains("HTTP 401", ignoreCase = true) ||
             message.contains("Invalid request", ignoreCase = true) ||
-            Regex("""\\bHTTP 5\\d{2}\\b""").containsMatchIn(message)
+            Regex("""\bHTTP 5\d{2}\b""").containsMatchIn(message)
     }
 }
 
