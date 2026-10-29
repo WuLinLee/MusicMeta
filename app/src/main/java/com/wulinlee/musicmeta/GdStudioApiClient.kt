@@ -20,8 +20,17 @@ internal object GdStudioApiClient {
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
 
     private data class TimeEntry(val prefix: String, val expiresAtElapsedMs: Long)
-    private val timeCache = mutableMapOf<String, TimeEntry>()
+    private data class VersionEntry(val version: String, val expiresAtElapsedMs: Long)
 
+    private const val VERSION_CACHE_TTL_MILLIS = 10 * 60 * 1000L
+    private val timeCache = mutableMapOf<String, TimeEntry>()
+    private val versionCache = mutableMapOf<String, VersionEntry>()
+    private val versionPattern = Regex(
+        """\bversion\s*[:=]\s*["']?(20\d{2}\.\d{1,2}\.\d{1,2})""",
+        RegexOption.IGNORE_CASE,
+    )
+
+    /** Host failover stays within GD Studio; it never silently changes API providers. */
     /** Host failover stays within GD Studio; it never silently changes API providers. */
     fun getText(
         client: OkHttpClient,
@@ -32,21 +41,26 @@ internal object GdStudioApiClient {
         val errors = mutableListOf<IOException>()
         for (host in API_HOSTS) {
             try {
-                val timePrefix = serverTimePrefix(client, host)
-                val url = buildSignedUrl(host, params, timePrefix)
-                val request = Request.Builder()
-                    .url(url)
-                    .header("User-Agent", DEFAULT_USER_AGENT)
-                    .header("Origin", "https://$host")
-                    .header("Referer", "https://$host/")
-                    .header("X-Requested-With", "XMLHttpRequest")
-                    .header("Accept", "application/json, text/javascript, */*; q=0.01")
-                    .header("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
-                    .get()
-                    .build()
-                val body = GdStudioApiSupport.getText(client, request, ttlMillis).trim()
-                apiPayloadError(body)?.let { throw IOException(it) }
-                return body
+                val version = currentApiVersion(client, host)
+                val serverTime = serverTimePrefix(client, host)
+                try {
+                    return executeSignedRequest(client, host, params, ttlMillis, serverTime, version)
+                } catch (error: IOException) {
+                    if (!isSignatureRejection(error)) throw error
+
+                    // A 401 means either the site rotated its player version or the 10-second
+                    // signing bucket changed. Refresh both values and retry this host once.
+                    val refreshedVersion = currentApiVersion(client, host, forceRefresh = true)
+                    val refreshedTime = serverTimePrefix(client, host, forceRefresh = true)
+                    try {
+                        return executeSignedRequest(
+                            client, host, params, ttlMillis, refreshedTime, refreshedVersion,
+                        )
+                    } catch (retryError: IOException) {
+                        retryError.addSuppressed(error)
+                        throw retryError
+                    }
+                }
             } catch (error: Exception) {
                 val io = if (error is IOException) error else IOException(
                     "GD Studio 请求主机 $host 失败。",
@@ -61,11 +75,94 @@ internal object GdStudioApiClient {
         throw failure
     }
 
+    private fun executeSignedRequest(
+        client: OkHttpClient,
+        host: String,
+        params: Map<String, String>,
+        ttlMillis: Long,
+        serverTime: String,
+        version: String,
+    ): String {
+        val url = buildSignedUrl(host, params, serverTime, version)
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", DEFAULT_USER_AGENT)
+            .header("Origin", "https://$host")
+            .header("Referer", "https://$host/")
+            .header("X-Requested-With", "XMLHttpRequest")
+            .header("Accept", "application/json, text/javascript, */*; q=0.01")
+            .header("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
+            .get()
+            .build()
+        val body = GdStudioApiSupport.getText(client, request, ttlMillis).trim()
+        apiPayloadError(body)?.let { throw IOException(it) }
+        return body
+    }
+
+    private fun isSignatureRejection(error: IOException): Boolean {
+        val text = buildString {
+            append(error.message.orEmpty())
+            error.cause?.message?.let { append(' ').append(it) }
+            error.suppressed.forEach { append(' ').append(it.message.orEmpty()) }
+        }
+        return text.contains("HTTP 401", ignoreCase = true) ||
+            text.contains("Invalid request", ignoreCase = true)
+    }
+
+    private fun currentApiVersion(
+        client: OkHttpClient,
+        host: String,
+        forceRefresh: Boolean = false,
+    ): String {
+        val now = System.nanoTime() / 1_000_000L
+        synchronized(versionCache) {
+            if (!forceRefresh) {
+                versionCache[host]?.takeIf { now < it.expiresAtElapsedMs }?.let { return it.version }
+            }
+        }
+
+        // The website rotates the version used in its signature. Read the current value from
+        // the same host's player script and keep only a short cache; static API_VERSION is a
+        // fallback for mirrors which temporarily cannot serve the script.
+        val version = readApiVersion(client, host) ?: API_VERSION
+        synchronized(versionCache) {
+            versionCache[host] = VersionEntry(
+                version,
+                System.nanoTime() / 1_000_000L + VERSION_CACHE_TTL_MILLIS,
+            )
+        }
+        return version
+    }
+
+    private fun readApiVersion(client: OkHttpClient, host: String): String? {
+        val request = Request.Builder()
+            .url("https://$host/js/player.js")
+            .header("User-Agent", DEFAULT_USER_AGENT)
+            .header("Origin", "https://$host")
+            .header("Referer", "https://$host/")
+            .header("Accept", "text/javascript, application/javascript, */*; q=0.1")
+            .get()
+            .build()
+        val script = try {
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return null
+                response.body?.string().orEmpty()
+            }
+        } catch (_: Exception) {
+            return null
+        }
+        return parseVersionFromPlayerScript(script)
+    }
+
+    internal fun parseVersionFromPlayerScript(script: String): String? =
+        versionPattern.find(script)?.groupValues?.getOrNull(1)
+
     /** Exposed internally for deterministic request-shape tests. */
     internal fun buildSignedUrl(
         host: String,
         params: Map<String, String>,
         serverTime: String,
+        version: String = API_VERSION,
     ): HttpUrl {
         require(host in API_HOSTS) { "Unsupported GD Studio API host." }
         val type = params["types"].orEmpty()
@@ -75,7 +172,7 @@ internal object GdStudioApiClient {
         val encodedPayload = encodeURIComponent(payload)
         val timePrefix = serverTime.take(9)
         require(timePrefix.length == 9) { "GD Studio server time must contain at least 9 digits." }
-        val signatureInput = "$timePrefix|$host|${normalizeVersion(API_VERSION)}|$encodedPayload"
+        val signatureInput = "$timePrefix|$host|${normalizeVersion(version)}|$encodedPayload"
         val signature = modifiedMd5(signatureInput).takeLast(8).uppercase(Locale.US)
 
         return HttpUrl.Builder()
@@ -115,15 +212,21 @@ internal object GdStudioApiClient {
             .replace("*", "%2A")
     }
 
-    private fun normalizeVersion(version: String): String =
-        version.split('.').joinToString(".") { part ->
+    internal fun normalizeVersion(version: String): String =
+        version.split('.').joinToString("") { part ->
             if (part.length == 1) "0$part" else part
         }
 
-    private fun serverTimePrefix(client: OkHttpClient, host: String): String {
+    private fun serverTimePrefix(
+        client: OkHttpClient,
+        host: String,
+        forceRefresh: Boolean = false,
+    ): String {
         val now = System.nanoTime() / 1_000_000L
         synchronized(timeCache) {
-            timeCache[host]?.takeIf { now < it.expiresAtElapsedMs }?.let { return it.prefix }
+            if (!forceRefresh) {
+                timeCache[host]?.takeIf { now < it.expiresAtElapsedMs }?.let { return it.prefix }
+            }
         }
 
         val request = Request.Builder()
@@ -147,7 +250,7 @@ internal object GdStudioApiClient {
         val prefix = serverTime.take(9)
         val epochSeconds = serverTime.toLongOrNull()
         val untilPrefixChangesMs = epochSeconds?.let {
-            (((10 - (it % 10)) % 10) * 1_000L - 500L).coerceIn(250L, 8_500L)
+            ((10 - (it % 10)) * 1_000L - 500L).coerceIn(250L, 8_500L)
         } ?: 1_000L
         synchronized(timeCache) {
             timeCache[host] = TimeEntry(prefix, System.nanoTime() / 1_000_000L + untilPrefixChangesMs)

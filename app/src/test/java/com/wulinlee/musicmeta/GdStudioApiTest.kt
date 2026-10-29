@@ -25,6 +25,7 @@ class GdStudioApiTest {
         assertEquals("search", url.queryParameter("types"))
         assertEquals("netease", url.queryParameter("source"))
         assertEquals("涙が ほお&x", url.queryParameter("name"))
+        assertEquals("9ACA8505", url.queryParameter("s"))
         assertTrue(url.queryParameter("s").orEmpty().matches(Regex("[A-F0-9]{8}")))
     }
 
@@ -74,4 +75,37 @@ class GdStudioApiTest {
         assertTrue(message.orEmpty().contains("候选歌曲"))
         assertTrue(isFlacInvalidCandidateError(java.io.IOException(message)))
     }
+
+    @Test
+    fun versionNormalizationMatchesTheWebsiteSignatureProtocol() {
+        assertEquals("20260925", GdStudioApiClient.normalizeVersion("2026.09.25"))
+        assertEquals(
+            "2026.10.29",
+            GdStudioApiClient.parseVersionFromPlayerScript(
+                """const mkPlayer = { version: "2026.10.29" };""",
+            ),
+        )
+        assertEquals(null, GdStudioApiClient.parseVersionFromPlayerScript("const player = {};"))
+    }
+
+    @Test
+    fun genericHiCnMinusOneErrorsAreRetriedWithoutAssumingWebVerification() {
+        assertTrue(
+            isFlacRetryableResolutionError(
+                java.io.IOException("下载站接口暂时无法处理请求（-1）。请重新搜索并重试。"),
+            ),
+        )
+        assertTrue(
+            isFlacRetryableResolutionError(
+                java.io.IOException("下载站无法解析该候选歌曲的下载地址。"),
+            ),
+        )
+        assertEquals(
+            false,
+            isFlacRetryableResolutionError(
+                java.io.IOException("下载站访问验证未通过（HTTP 468）。"),
+            ),
+        )
+    }
+
 }

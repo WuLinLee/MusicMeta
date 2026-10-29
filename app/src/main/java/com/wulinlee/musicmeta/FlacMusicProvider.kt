@@ -96,12 +96,23 @@ internal fun formatFlacSiteApiError(code: Int, detail: String, operation: String
 }
 
 internal fun isFlacInvalidCandidateError(error: Throwable): Boolean {
-    val messages = generateSequence(error) { it.cause }
+    val messages = throwableTree(error)
         .mapNotNull { it.message }
         .joinToString(" ")
     return messages.contains("Song not found", ignoreCase = true) ||
         messages.contains("invalid response", ignoreCase = true) ||
         messages.contains("无法解析该候选歌曲")
+}
+
+/** Generic HiCN code -1 errors may be transient or candidate-specific; retry once in-provider. */
+internal fun isFlacRetryableResolutionError(error: Throwable): Boolean {
+    if (isFlacInvalidCandidateError(error)) return true
+    val messages = throwableTree(error).mapNotNull { it.message }
+    return messages.any { message ->
+        message.contains("下载站接口暂时无法处理请求（-1）") ||
+            (message.contains("接口请求失败", ignoreCase = true) &&
+                message.contains("-1", ignoreCase = true))
+    }
 }
 
 
@@ -327,6 +338,7 @@ class FlacMusicProvider {
     ): Pair<String, Boolean> = withContext(Dispatchers.IO) {
         val requestedFromGdStudio = song.platform.startsWith("gd:")
         val source = song.platform.removePrefix("gd:").lowercase().ifBlank { "netease" }
+        var didRetryFlacResolution = false
         try {
             resolveDownloadUrl(song, format, bitrate, cookie, userAgent) to requestedFromGdStudio
         } catch (error: CancellationException) {
@@ -388,12 +400,13 @@ class FlacMusicProvider {
                 ).also { it.addSuppressed(lastError) }
             }
 
-            if (!requestedFromGdStudio && isFlacInvalidCandidateError(primaryError)) {
+            if (!requestedFromGdStudio && isFlacRetryableResolutionError(primaryError)) {
+                didRetryFlacResolution = true
                 val refreshKeywords = gdStudioSearchKeywords(
                     listOf(song.title, song.artist).filter { it.isNotBlank() }.joinToString(" "),
                     song.title,
                 )
-                var refreshedCandidate: FlacSiteSong? = null
+                val refreshedCandidates = mutableListOf<FlacSiteSong>()
                 for (keyword in refreshKeywords) {
                     try {
                         val freshCandidates = search(
@@ -404,7 +417,7 @@ class FlacMusicProvider {
                             backend = MusicSourceConfig.BACKEND_FLAC_SITE,
                             forceRefresh = true,
                         )
-                        refreshedCandidate = freshCandidates.firstOrNull { candidate ->
+                        refreshedCandidates += freshCandidates.filter { candidate ->
                             gdStudioFallbackCandidateMatches(
                                 song.title,
                                 song.artist,
@@ -412,37 +425,47 @@ class FlacMusicProvider {
                                 candidate.artist,
                             )
                         }
-                        if (refreshedCandidate != null) break
                     } catch (cancelled: CancellationException) {
                         throw cancelled
-                    } catch (_: Exception) {
-                        // Try the title-only query below before reporting the original failure.
-                    }
-                }
-                if (refreshedCandidate != null &&
-                    (refreshedCandidate.id != song.id ||
-                        refreshedCandidate.time != song.time ||
-                        refreshedCandidate.sign != song.sign)
-                ) {
-                    try {
-                        return@withContext resolveDownloadUrl(
-                            refreshedCandidate,
-                            format,
-                            bitrate,
-                            cookie,
-                            userAgent,
-                        ) to false
                     } catch (refreshError: Exception) {
                         primaryError.addSuppressed(refreshError)
+                    }
+                }
+
+                // Prefer refreshed metadata for the same track, then other exact-title /
+                // compatible-artist candidates, and only then retry the identical payload.
+                val retryCandidates = refreshedCandidates
+                    .distinctBy { listOf(it.id, it.time, it.sign).joinToString("|") }
+                    .sortedBy { candidate ->
+                        when {
+                            candidate.id == song.id &&
+                                (candidate.time != song.time || candidate.sign != song.sign) -> 0
+                            candidate.id != song.id -> 1
+                            else -> 2
+                        }
+                    }
+                    .take(3)
+
+                for (candidate in retryCandidates) {
+                    try {
+                        val url = resolveDownloadUrl(candidate, format, bitrate, cookie, userAgent)
+                        return@withContext url to false
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (retryError: Exception) {
+                        primaryError.addSuppressed(retryError)
                     }
                 }
             }
 
             val provider = if (requestedFromGdStudio) "GD Studio" else "flac.music.hi.cn"
-            val guidance = if (requestedFromGdStudio) {
-                "请在设置中选择 GD Studio 的其他可用音乐平台，或稍后重试。"
-            } else {
-                "请先在 flac.music.hi.cn 网页完成必要的访问验证，或在设置中切换 API 服务。"
+            val guidance = when {
+                requestedFromGdStudio ->
+                    "请在设置中选择 GD Studio 的其他可用音乐平台，或稍后重试。"
+                didRetryFlacResolution ->
+                    "已在同一 API 服务内刷新搜索并尝试匹配候选，仍未取得地址；请稍后重试或切换 API 服务。只有网页明确显示访问验证要求时，才需要先在网页中完成验证。"
+                else ->
+                    "请重新搜索或切换 API 服务；只有网页明确显示访问验证要求时，才需要先在网页中完成验证。"
             }
             throw IOException(
                 "$provider 解析《${song.title}》的下载地址失败（${primaryError.message ?: "未知错误"}）。$guidance 本次未自动切换到另一 API 服务。",
