@@ -201,7 +201,7 @@ internal fun gdStudioProtocolDigest(value: String): String {
     }
     constants[29] = 0xFCFEA3F8L.toInt()
 
-    val state = intArrayOf(0x67452301, 0xEFCDAB89.toInt(), 0x98BADCFE.toInt(), 0x10325476)
+    val state = intArrayOf(0x67452301, -271733879, -1732584194, 0x10325476)
     for (offset in padded.indices step 64) {
         val words = IntArray(16) { index ->
             val base = offset + index * 4
