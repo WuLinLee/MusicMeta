@@ -445,20 +445,33 @@ private fun MusicMetaApp() {
     }
     var isSyncing by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("输入公开歌单 ID 或链接开始。无需登录网易云账号。") }
-    var lastErrorReport by remember { mutableStateOf<String?>(null) }
+    var errorReports by remember { mutableStateOf<List<String>>(emptyList()) }
     val captureError: (String, Throwable) -> Unit = { stage, error ->
-        lastErrorReport = makeErrorReport(context, stage, error)
+        val report = makeErrorReport(context, stage, error)
+        errorReports = (errorReports + report).takeLast(20)
     }
     val copyErrorReport: () -> Unit = {
-        val report = lastErrorReport
-        if (report != null) {
+        if (errorReports.isNotEmpty()) {
+            val report = buildString {
+                appendLine("音笺 MusicMeta 汇总错误报告")
+                appendLine("错误条数: ${errorReports.size}")
+                appendLine("说明: 以下按发生顺序排列，最新错误在最后。")
+                appendLine()
+                errorReports.forEachIndexed { index, item ->
+                    appendLine("========== 错误 ${index + 1}/${errorReports.size} ==========")
+                    appendLine(item)
+                    appendLine()
+                }
+            }
             runCatching {
                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                clipboard.setPrimaryClip(ClipData.newPlainText("MusicMeta error report", report))
+                clipboard.setPrimaryClip(ClipData.newPlainText("MusicMeta all error reports", report))
             }.onSuccess {
-                status = "错误报告已复制到剪贴板，请粘贴发送给助手。"
+                status = "已复制全部 ${errorReports.size} 条错误报告，可一次性粘贴发送。"
+                Toast.makeText(context, "已复制全部 ${errorReports.size} 条错误报告", Toast.LENGTH_SHORT).show()
             }.onFailure { error ->
                 status = "复制失败：" + (error.message ?: "请重试")
+                Toast.makeText(context, "复制失败", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -2516,12 +2529,12 @@ private fun MusicMetaApp() {
                     ) {
                         IconButton(
                             onClick = copyErrorReport,
-                            enabled = lastErrorReport != null,
+                            enabled = errorReports.isNotEmpty(),
                             modifier = Modifier.padding(start = 4.dp).size(38.dp).semantics {
-                                contentDescription = "复制错误报告"
+                                contentDescription = "复制全部错误报告（${errorReports.size}条）"
                             },
                         ) {
-                            ErrorReportGlyph(enabled = lastErrorReport != null)
+                            ErrorReportGlyph(enabled = errorReports.isNotEmpty())
                         }
                         IconButton(
                             onClick = { verificationOpen = true },
@@ -4745,19 +4758,21 @@ private fun makeErrorReport(context: Context, stage: String, error: Throwable): 
         .joinToString("\n") { cause ->
             cause.javaClass.name + if (cause.message.isNullOrBlank()) "" else ": " + redact(cause.message!!)
         }
-    val frames = error.stackTrace.take(8).joinToString("\n") { frame ->
+    val frames = error.stackTrace.take(30).joinToString("\n") { frame ->
         "  at " + frame.className + "." + frame.methodName +
             "(" + (frame.fileName ?: "unknown") + ":" + frame.lineNumber + ")"
     }
+    val device = Build.MANUFACTURER + " " + Build.MODEL
     return buildString {
         appendLine("音笺 MusicMeta 错误报告")
         appendLine("错误编号: MM-" + System.currentTimeMillis())
         appendLine("阶段: " + stage)
         appendLine("应用版本: " + appVersion)
+        appendLine("设备: " + device)
         appendLine("Android: " + Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ")")
         appendLine("异常链:")
         appendLine(errorChain)
-        appendLine("调用位置:")
+        appendLine("调用位置（最多 30 层）:")
         appendLine(frames)
         appendLine("隐私说明: 未附加歌单输入、下载链接或 Cookie；消息中的网址已隐藏。")
     }
