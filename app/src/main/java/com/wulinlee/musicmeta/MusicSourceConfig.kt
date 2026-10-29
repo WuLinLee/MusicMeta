@@ -246,7 +246,11 @@ internal object GdStudioApiSupport {
         val bootstrapClient = signingClient(client)
         val request = Request.Builder()
             .url("https://$GD_STUDIO_HOST/time")
+            .header("Origin", "https://$GD_STUDIO_HOST")
             .header("Referer", "https://$GD_STUDIO_HOST/")
+            .header("Accept", "application/json, text/javascript, */*; q=0.01")
+            .header("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
+            .header("X-Requested-With", "XMLHttpRequest")
             .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124.0 Mobile Safari/537.36")
             .get()
             .build()
@@ -293,11 +297,11 @@ internal object GdStudioApiSupport {
     ): Request {
         if (request.url.host != GD_STUDIO_HOST || request.url.encodedPath != "/api.php") return request
         val type = request.url.queryParameter("types") ?: return request
-        val rawValue = if (type == "search") {
+        val rawValue = (if (type == "search") {
             request.url.queryParameter("name")
         } else {
             request.url.queryParameter("id")
-        } ?: throw IOException("GD Studio 请求缺少签名参数。")
+        }) ?: throw IOException("GD Studio 请求缺少签名参数。")
         val version = getPlayerVersion(client, forceRefreshVersion)
         val serverTime = getServerTime(client)
         val signature = gdStudioApiSignature(rawValue, serverTime, request.url.host, version)
