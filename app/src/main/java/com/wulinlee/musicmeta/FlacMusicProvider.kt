@@ -41,6 +41,12 @@ internal fun gdStudioUrlLookupId(song: FlacSiteSong): String =
 internal fun flacSiteDownloadUrlCacheKey(song: FlacSiteSong, format: String, bitrate: String): String =
     listOf(song.platform, song.id, format.lowercase(), bitrate, song.time, song.sign).joinToString("|")
 
+/** The hi.cn contract defines `id` as the track identifier; use legacy aliases only if absent. */
+internal fun flacSiteSongId(song: JSONObject): String =
+    song.optString("id")
+        .ifBlank { song.optString("rid") }
+        .ifBlank { song.optString("songid") }
+
 /** Short-lived, bounded cache for direct URLs returned by flac.music.hi.cn. */
 internal object FlacSiteDownloadUrlCache {
     const val TTL_MILLIS = 50 * 60 * 1000L
@@ -263,7 +269,17 @@ class FlacMusicProvider {
             } catch (e: Exception) {
                 throw IOException("下载站没有返回有效的下载地址；可能需要先在网页中完成访问验证。", e)
             }
-            checkApiCode(root, "下载地址解析")
+            try {
+                checkApiCode(root, "下载地址解析")
+            } catch (error: IOException) {
+                throw IOException(
+                    "hi.cn getUrl 请求诊断：platform=${song.platform}, songid=${song.id}, " +
+                        "format=$normalizedFormat, bitrate=$actualBitrate, " +
+                        "hasTime=${song.time.isNotBlank()}, hasSign=${song.sign.isNotBlank()}；" +
+                        error.message.orEmpty(),
+                    error,
+                )
+            }
             root.optString("url")
                 .ifBlank { root.optJSONObject("data")?.optString("url").orEmpty() }
         }
@@ -669,9 +685,7 @@ class FlacMusicProvider {
 
     private fun parseSong(song: JSONObject?, platform: String): FlacSiteSong? {
         if (song == null) return null
-        val id = song.optString("rid")
-            .ifBlank { song.optString("id") }
-            .ifBlank { song.optString("songid") }
+        val id = flacSiteSongId(song)
         val title = song.optString("name").ifBlank { song.optString("title") }
         if (id.isBlank() || title.isBlank()) return null
         val artistValue = song.opt("artist")
