@@ -342,7 +342,13 @@ class FlacMusicProvider {
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (retryError: Exception) {
-                        primaryError.addSuppressed(retryError)
+                        // Preserve which same-platform candidate failed so the copied report
+                        // can distinguish stale IDs from a general endpoint failure.
+                        val candidateContext = IOException(
+                            "hi.cn 同平台候选重试失败：平台=${candidate.platform}，歌曲=${candidate.title}，曲目ID=${candidate.id}；原因=${retryError.message.orEmpty()}",
+                            retryError,
+                        )
+                        primaryError.addSuppressed(candidateContext)
                     }
                 }
             }
