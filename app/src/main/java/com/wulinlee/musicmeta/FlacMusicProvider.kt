@@ -154,9 +154,33 @@ class FlacMusicProvider {
                 candidates
             }
         } else {
-            val candidates = searchFlacSite(keyword, source, cookie, userAgent)
-            if (candidates.isEmpty()) throw IOException("flac.music.hi.cn 没有搜索到歌曲。")
-            candidates
+            try {
+                val candidates = searchFlacSite(keyword, source, cookie, userAgent)
+                if (candidates.isEmpty()) throw IOException("flac.music.hi.cn 没有搜索到歌曲。")
+                candidates
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                // The secondary site implements NetEase and Kuwo, while GD Studio's currently
+                // stable list includes NetEase but not Kuwo. Only cross-fallback NetEase.
+                if (source != "netease") throw error
+                try {
+                    var alternate = searchGdStudio(keyword, source)
+                    if (alternate.isEmpty() && !fallbackKeyword.isNullOrBlank()) {
+                        alternate = searchGdStudio(fallbackKeyword, source)
+                    }
+                    if (alternate.isEmpty()) throw IOException(formatGdStudioNoCandidatesMessage())
+                    alternate
+                } catch (fallbackError: CancellationException) {
+                    throw fallbackError
+                } catch (fallbackError: Exception) {
+                    throw IOException(
+                        "备用源 flac.music.hi.cn 搜索失败（${error.message ?: "未知错误"}）；" +
+                            "GD Studio 也无法搜索（${fallbackError.message ?: "未知错误"}）。请稍后重试。",
+                        error,
+                    ).also { it.addSuppressed(fallbackError) }
+                }
+            }
         }
         if (songs.isEmpty()) throw IOException("没有搜索到歌曲。")
         MusicSourceSearchCache.put(cacheKey, songs)
