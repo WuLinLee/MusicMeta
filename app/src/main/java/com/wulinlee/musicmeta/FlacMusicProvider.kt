@@ -71,6 +71,9 @@ internal fun formatFlacSiteApiError(code: Int, detail: String, operation: String
     if (code == 468 || detail.contains("验证") || detail.contains("challenge", ignoreCase = true)) {
         return "下载站要求网页访问验证。请先在下方网站页面完成验证，再重新搜索。"
     }
+    if (code == -1 && detail.contains("接口请求失败")) {
+        return "下载站暂时无法处理请求（-1）。请打开下方 flac.music.hi.cn 网页刷新访问验证后重试；若仍失败，可切换到 GD Studio。"
+    }
     if (code == -1 && (
             detail.contains("Song not found", ignoreCase = true) ||
                 detail.contains("invalid response", ignoreCase = true)
