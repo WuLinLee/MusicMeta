@@ -754,7 +754,14 @@ class FlacMusicProvider {
     private fun checkApiCode(root: JSONObject, operation: String = "请求") {
         if (!root.has("code")) return
         val code = root.optInt("code")
-        val detail = root.optString("msg").ifBlank { root.optString("message") }
+        // Different deployments use different error fields. Preserve every short, non-empty
+        // server-provided detail so generic -1 errors are diagnosable without logging cookies,
+        // request URLs, or the search keyword.
+        val detail = listOf("msg", "message", "error", "detail")
+            .map { key -> root.optString(key).trim() }
+            .filter { value -> value.isNotBlank() && !value.equals("null", ignoreCase = true) }
+            .distinct()
+            .joinToString("；")
         val message = formatFlacSiteApiError(code, detail, operation) ?: return
         throw IOException(message)
     }
