@@ -3,11 +3,6 @@ package com.wulinlee.musicmeta
 import android.content.Context
 import android.content.SharedPreferences
 import java.io.IOException
-import kotlin.math.abs
-import kotlin.math.floor
-import kotlin.math.sin
-import java.util.Locale
-import java.util.concurrent.TimeUnit
 import org.json.JSONObject
 import java.util.ArrayDeque
 import java.util.LinkedHashMap
@@ -157,143 +152,12 @@ internal fun formatGdStudioHttpErrorMessage(statusCode: Int, responseBody: Strin
 }
 
 
-/** Encodes a GD Studio signature payload exactly as its current web client does. */
-internal fun gdStudioEncodeSignatureValue(value: String): String {
-    val hex = "0123456789ABCDEF"
-    return buildString {
-        for (byte in value.toByteArray(Charsets.UTF_8)) {
-            val b = byte.toInt() and 0xFF
-            val ch = b.toChar()
-            if (ch in 'a'..'z' || ch in 'A'..'Z' || ch in '0'..'9' || ch in "-_.~") {
-                append(ch)
-            } else {
-                append('%')
-                append(hex[b ushr 4])
-                append(hex[b and 0x0F])
-            }
-        }
-    }
-}
-
-/**
- * GD Studio's protocol digest resembles MD5 but intentionally changes round constant 29.
- * Using MessageDigest("MD5") produces a different signature and is rejected by the API.
- */
-internal fun gdStudioProtocolDigest(value: String): String {
-    val input = value.toByteArray(Charsets.UTF_8)
-    val paddedLength = ((input.size + 8) / 64 + 1) * 64
-    val padded = ByteArray(paddedLength)
-    System.arraycopy(input, 0, padded, 0, input.size)
-    padded[input.size] = 0x80.toByte()
-    val bitLength = input.size.toLong() * 8L
-    for (index in 0 until 8) {
-        padded[paddedLength - 8 + index] = (bitLength ushr (index * 8)).toByte()
-    }
-
-    val shifts = intArrayOf(
-        7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
-        5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20,
-        4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
-        6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
-    )
-    val constants = IntArray(64) { index ->
-        floor(abs(sin((index + 1).toDouble())) * 4294967296.0).toLong().toInt()
-    }
-    constants[29] = 0xFCFEA3F8L.toInt()
-
-    val state = intArrayOf(0x67452301, -271733879, -1732584194, 0x10325476)
-    for (offset in padded.indices step 64) {
-        val words = IntArray(16) { index ->
-            val base = offset + index * 4
-            (padded[base].toInt() and 0xFF) or
-                ((padded[base + 1].toInt() and 0xFF) shl 8) or
-                ((padded[base + 2].toInt() and 0xFF) shl 16) or
-                ((padded[base + 3].toInt() and 0xFF) shl 24)
-        }
-        var a = state[0]
-        var b = state[1]
-        var c = state[2]
-        var d = state[3]
-        for (index in 0 until 64) {
-            val group = index / 16
-            val function: Int
-            val wordIndex: Int
-            when (group) {
-                0 -> {
-                    function = (b and c) or (b.inv() and d)
-                    wordIndex = index
-                }
-                1 -> {
-                    function = (d and b) or (d.inv() and c)
-                    wordIndex = (5 * index + 1) % 16
-                }
-                2 -> {
-                    function = b xor c xor d
-                    wordIndex = (3 * index + 5) % 16
-                }
-                else -> {
-                    function = c xor (b or d.inv())
-                    wordIndex = (7 * index) % 16
-                }
-            }
-            val sum = a + function + constants[index] + words[wordIndex]
-            val rotated = Integer.rotateLeft(sum, shifts[index])
-            val previousD = d
-            d = c
-            c = b
-            b += rotated
-            a = previousD
-        }
-        state[0] += a
-        state[1] += b
-        state[2] += c
-        state[3] += d
-    }
-
-    val digest = ByteArray(16)
-    for (stateIndex in state.indices) {
-        for (byteIndex in 0 until 4) {
-            digest[stateIndex * 4 + byteIndex] = (state[stateIndex] ushr (byteIndex * 8)).toByte()
-        }
-    }
-    val hex = "0123456789abcdef"
-    return buildString(digest.size * 2) {
-        for (byte in digest) {
-            val unsigned = byte.toInt() and 0xFF
-            append(hex[unsigned ushr 4])
-            append(hex[unsigned and 0x0F])
-        }
-    }
-}
-
-/** Produces the short request signature required by the GD Studio web API. */
-internal fun gdStudioApiSignature(
-    value: String,
-    serverTime: String,
-    host: String,
-    version: String,
-): String {
-    val versionParts = version.trim().split('.')
-    val normalizedVersion = versionParts.map { part -> part.padStart(2, '0') }.joinToString("")
-    val payload = "${serverTime.trim().take(9)}|$host|$normalizedVersion|${gdStudioEncodeSignatureValue(value)}"
-    return gdStudioProtocolDigest(payload).takeLast(8).uppercase(Locale.ROOT)
-}
-
 /** Shared expiring GET-response cache for GD Studio API calls. */
 internal object GdStudioApiSupport {
     const val SEARCH_TTL_MILLIS = 5 * 60 * 1000L
     const val DOWNLOAD_URL_TTL_MILLIS = 15 * 1000L
     const val COVER_URL_TTL_MILLIS = 12 * 60 * 60 * 1000L
     const val LYRIC_TTL_MILLIS = 12 * 60 * 60 * 1000L
-
-    private const val GD_STUDIO_HOST = "music.gdstudio.xyz"
-    private const val GD_STUDIO_VERSION_FALLBACK = "2026.09.25"
-    private const val PLAYER_VERSION_TTL_MILLIS = 10 * 60 * 1000L
-    private const val SIGNATURE_BOOTSTRAP_TIMEOUT_MILLIS = 1_500L
-    private val playerVersionRegex = Regex("""mkPlayer\.version\s*[:=]\s*["'](20\d{2}\.\d{1,2}\.\d{1,2})["']""")
-    private val genericVersionRegex = Regex("""\bversion\s*[:=]\s*["'](20\d{2}\.\d{1,2}\.\d{1,2})["']""")
-    @Volatile private var cachedPlayerVersion: Pair<String, Long>? = null
-    private val versionLock = Any()
 
     private data class Entry(val body: String, val expiresAt: Long)
     private val cache = object : LinkedHashMap<String, Entry>(64, 0.75f, true) {
@@ -317,145 +181,26 @@ internal object GdStudioApiSupport {
         }
     }
 
-    private fun signingClient(client: OkHttpClient): OkHttpClient =
-        client.newBuilder()
-            .callTimeout(SIGNATURE_BOOTSTRAP_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
-            .connectTimeout(SIGNATURE_BOOTSTRAP_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
-            .readTimeout(SIGNATURE_BOOTSTRAP_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
-            .build()
-
-    private fun getServerTime(client: OkHttpClient): String {
-        val localFallback = (System.currentTimeMillis() / 1000L).toString()
-        val bootstrapClient = signingClient(client)
-        val request = Request.Builder()
-            .url("https://$GD_STUDIO_HOST/time")
-            .header("Origin", "https://$GD_STUDIO_HOST")
-            .header("Referer", "https://$GD_STUDIO_HOST/")
-            .header("Accept", "application/json, text/javascript, */*; q=0.01")
-            .header("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
-            .header("X-Requested-With", "XMLHttpRequest")
-            .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124.0 Mobile Safari/537.36")
-            .get()
-            .build()
-        val value = runCatching {
-            bootstrapClient.newCall(request).execute().use { response ->
-                if (response.isSuccessful) response.body?.string()?.trim().orEmpty() else ""
-            }
-        }.getOrDefault("")
-        val numericTime = value.toLongOrNull() ?: return localFallback
-        val seconds = if (numericTime > 10_000_000_000L) numericTime / 1000L else numericTime
-        return seconds.takeIf { it > 0L }?.toString() ?: localFallback
-    }
-
-    private fun getPlayerVersion(client: OkHttpClient, forceRefresh: Boolean): String {
-        val now = System.nanoTime() / 1_000_000L
-        synchronized(versionLock) {
-            cachedPlayerVersion?.let { cached ->
-                if (!forceRefresh && now < cached.second) return cached.first
-            }
-            val request = Request.Builder()
-                .url("https://$GD_STUDIO_HOST/js/player.js")
-                .header("Referer", "https://$GD_STUDIO_HOST/")
-                .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124.0 Mobile Safari/537.36")
-                .get()
-                .build()
-            val script = runCatching {
-                signingClient(client).newCall(request).execute().use { response ->
-                    if (response.isSuccessful) response.body?.string().orEmpty() else ""
-                }
-            }.getOrDefault("")
-            val version = playerVersionRegex.find(script)?.groupValues?.getOrNull(1)
-                ?: genericVersionRegex.find(script)?.groupValues?.getOrNull(1)
-            val actualVersion = version ?: GD_STUDIO_VERSION_FALLBACK
-            val ttl = if (version != null) PLAYER_VERSION_TTL_MILLIS else 5 * 60 * 1000L
-            cachedPlayerVersion = actualVersion to (System.nanoTime() / 1_000_000L + ttl)
-            return actualVersion
-        }
-    }
-
-    private fun signApiRequest(
-        client: OkHttpClient,
-        request: Request,
-        forceRefreshVersion: Boolean = false,
-    ): Request {
-        if (request.url.host != GD_STUDIO_HOST || request.url.encodedPath != "/api.php") return request
-        val type = request.url.queryParameter("types") ?: return request
-        val rawValue = (if (type == "search") {
-            request.url.queryParameter("name")
-        } else {
-            request.url.queryParameter("id")
-        }) ?: throw IOException("GD Studio 请求缺少签名参数。")
-        val version = getPlayerVersion(client, forceRefreshVersion)
-        val serverTime = getServerTime(client)
-        val signature = gdStudioApiSignature(rawValue, serverTime, request.url.host, version)
-        val signedUrl = request.url.newBuilder()
-            .removeAllQueryParameters("s")
-            .addQueryParameter("s", signature)
-            .build()
-        return request.newBuilder()
-            .url(signedUrl)
-            .header("Origin", "https://$GD_STUDIO_HOST")
-            .header("Referer", "https://$GD_STUDIO_HOST/")
-            .header("Accept", "application/json, text/javascript, */*; q=0.01")
-            .header("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
-            .header("X-Requested-With", "XMLHttpRequest")
-            .build()
-    }
-
+    /** Uses the documented music-api.gdstudio.xyz API directly; it does not require a web-client signature. */
     fun getText(client: OkHttpClient, request: Request, ttlMillis: Long = 0L): String {
-        // Keep the cache key independent of the time-based signature so the same payload
-        // remains reusable for the normal response TTL.
         val key = request.url.toString()
         if (ttlMillis > 0L) cached(key)?.let { return it }
-        var forceRefreshVersion = false
-        for (attempt in 0..1) {
-            GdStudioRequestLimiter.acquire()
-            var retryRequest = false
-            val signedRequest = signApiRequest(client, request, forceRefreshVersion)
-            forceRefreshVersion = false
-            val body = client.newCall(signedRequest).execute().use { response ->
-                when {
-                    response.code == 429 -> throw IOException(
-                        "GD Studio 返回 HTTP 429，服务端可能已触发请求频率限制；已停止自动重试，请稍后再试。"
-                    )
-                    response.code == 401 && attempt == 0 -> {
-                        // GD Studio uses 401 for an invalid/stale signature. Refresh player.js,
-                        // re-read server time, and re-sign once. A 403 is an edge/host block,
-                        // not a signature error, so it should go directly to provider fallback.
-                        forceRefreshVersion = true
-                        retryRequest = true
-                        ""
-                    }
-                    response.code in 500..599 && attempt == 0 -> {
-                        retryRequest = true
-                        ""
-                    }
-                    !response.isSuccessful -> {
-                        val errorBody = runCatching { response.body?.string().orEmpty() }.getOrDefault("")
-                        throw IOException(formatGdStudioHttpErrorMessage(response.code, errorBody))
-                    }
-                    else -> {
-                        val content = response.body?.string() ?: throw IOException("GD Studio API 返回空内容。")
-                        val trimmed = content.trimStart()
-                        if (trimmed.startsWith("<!doctype html", true) || trimmed.startsWith("<html", true)) {
-                            throw IOException("GD Studio 返回了网页而不是 API 数据，可能暂时不可用或需要稍后重试。")
-                        }
-                        content
-                    }
-                }
+
+        GdStudioRequestLimiter.acquire()
+        val body = client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                val errorBody = runCatching { response.body?.string().orEmpty() }.getOrDefault("")
+                throw IOException(formatGdStudioHttpErrorMessage(response.code, errorBody))
             }
-            if (!retryRequest) {
-                store(key, body, ttlMillis)
-                return body
+            val content = response.body?.string() ?: throw IOException("GD Studio API 返回空内容。")
+            val trimmed = content.trimStart()
+            if (trimmed.startsWith("<!doctype html", true) || trimmed.startsWith("<html", true)) {
+                throw IOException("GD Studio 返回了网页而不是 API 数据，可能暂时不可用或需要稍后重试。")
             }
-            try {
-                Thread.sleep(350L)
-            } catch (error: InterruptedException) {
-                Thread.currentThread().interrupt()
-                throw IOException("GD Studio 请求重试被中断。", error)
-            }
+            content
         }
-        throw IOException("GD Studio API 暂时不可用，重试后仍失败。")
+        store(key, body, ttlMillis)
+        return body
     }
 }
 
