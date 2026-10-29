@@ -207,8 +207,8 @@ internal object GdStudioApiSupport {
     private const val GD_STUDIO_VERSION_FALLBACK = "2026.09.25"
     private const val PLAYER_VERSION_TTL_MILLIS = 6 * 60 * 60 * 1000L
     private const val SIGNATURE_BOOTSTRAP_TIMEOUT_MILLIS = 1_500L
-    private val playerVersionRegex = Regex("""mkPlayer\\.version\\s*[:=]\\s*["'](20\\d{2}\\.\\d{1,2}\\.\\d{1,2})["']""")
-    private val genericVersionRegex = Regex("""\\bversion\\s*[:=]\\s*["'](20\\d{2}\\.\\d{1,2}\\.\\d{1,2})["']""")
+    private val playerVersionRegex = Regex("""mkPlayer\.version\s*[:=]\s*["'](20\d{2}\.\d{1,2}\.\d{1,2})["']""")
+    private val genericVersionRegex = Regex("""\bversion\s*[:=]\s*["'](20\d{2}\.\d{1,2}\.\d{1,2})["']""")
     @Volatile private var cachedPlayerVersion: Pair<String, Long>? = null
     private val versionLock = Any()
 
