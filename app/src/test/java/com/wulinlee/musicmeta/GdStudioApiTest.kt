@@ -83,6 +83,7 @@ class GdStudioApiTest {
 
     @Test
     fun versionNormalizationMatchesTheWebsiteSignatureProtocol() {
+        assertEquals("2026.09.25", GdStudioApiClient.API_VERSION)
         assertEquals("20260925", GdStudioApiClient.normalizeVersion("2026.09.25"))
         assertEquals(
             "2026.10.29",
