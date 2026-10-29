@@ -118,7 +118,18 @@ internal object GdStudioApiSupport {
 
     /** Low-level HTTP/cache primitive. Build signed API calls with GdStudioApiClient. */
     fun getText(client: OkHttpClient, request: Request, ttlMillis: Long = 0L): String {
-        val key = request.url.newBuilder().removeAllQueryParameters("s").build().toString()
+        val cacheUrl = request.url.newBuilder().removeAllQueryParameters("s").build().toString()
+        val formBody = request.body as? okhttp3.FormBody
+        val formKey = formBody?.let { form ->
+            (0 until form.size)
+                .filter { form.encodedName(it) != "s" }
+                .joinToString("&") { index ->
+                    "${form.encodedName(index)}=${form.encodedValue(index)}"
+                }
+        }.orEmpty()
+        // POST parameters live in the body, not the URL. Include them in the cache key so
+        // different search terms / track IDs can never receive each other's cached response.
+        val key = "${request.method}:$cacheUrl:$formKey"
         if (ttlMillis > 0L) cached(key)?.let { return it }
 
         val body = client.newCall(request).execute().use { response ->
