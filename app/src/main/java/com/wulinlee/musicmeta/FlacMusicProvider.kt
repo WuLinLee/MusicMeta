@@ -63,13 +63,6 @@ internal fun gdStudioSearchKeywords(keyword: String, fallbackKeyword: String?): 
         .distinctBy { value -> value.lowercase().filter { it.isLetterOrDigit() } }
 }
 
-internal fun isGdStudioTransientServiceError(error: Throwable): Boolean =
-    error !is GdStudioRateLimitException && generateSequence(error) { it.cause }.any { cause ->
-        val message = cause.message.orEmpty()
-        Regex("(?i)HTTP\\s+5\\d{2}").containsMatchIn(message) ||
-            message.contains("重试后仍失败")
-    }
-
 internal fun formatGdStudioNoCandidatesMessage(): String =
     "GD Studio 没有搜索到候选歌曲：可能是当前平台暂无此版本，或关键词不匹配。请改用歌名搜索、稍后重试，或切换音乐平台 / API 服务。"
 
