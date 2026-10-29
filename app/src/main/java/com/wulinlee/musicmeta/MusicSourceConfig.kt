@@ -79,6 +79,8 @@ internal fun formatGdStudioHttpErrorMessage(statusCode: Int, responseBody: Strin
         ?: body.takeUnless { it.startsWith("{") || it.startsWith("[") }.orEmpty()
     val safeDetail = detail
         .replace(Regex("(?i)https?://\\S+"), "[网址已隐藏]")
+        .replace(Regex("(?i)(cookie|authorization|token|api[_-]?key|signature|sign)\\s*[:=]\\s*[^\\s,;]+"), "\\$1=[敏感值已隐藏]")
+        .replace(Regex("(?i)([?&](?:s|sign|signature|token|key)=)[^&\\s]+")) { it.groupValues[1] + "[已隐藏]" }
         .replace(Regex("[\\r\\n\\t]+"), " ")
         .replace(Regex("<[^>]*>"), " ")
         .trim()

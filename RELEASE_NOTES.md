@@ -1,3 +1,13 @@
+# 音笺 MusicMeta v1.72 正式版
+
+- **补齐 hi.cn 业务错误诊断：** 当 HTTP 请求成功但 JSON 返回非零 API code 时，错误信息明确标出 HTTP 层为 2xx、API code 与操作阶段，避免把 HTTP 传输失败和服务端业务拒绝混为一谈。
+- **加强 GD Studio 错误文本脱敏：** 在保留短错误原因的同时，额外过滤独立出现的 token、签名和 API key 字段，避免错误正文意外泄露敏感值。
+- **问题状态如实说明：** GD Studio 的 HTTP 401 / Invalid request 和 hi.cn 的 API -1 属于第三方服务响应；本版改进诊断与隐私处理，不宣称已绕过或修复第三方服务端故障。请以正式构建后的真实设备复测结果为准。
+- **验证范围：** GitHub Actions 单元测试、Release APK 构建、APK 签名及包信息检查。
+- **版本号：** 1.72，versionCode = 76。
+
+> 正式版发布不等于第三方音源已恢复；如仍出现 401 或 -1，新报告将明确区分 HTTP 层与 API 业务层，便于继续定位。
+
 # 音笺 MusicMeta v1.71 正式候选版
 
 - **加强 hi.cn 错误诊断：** 搜索 / 下载接口返回错误时，汇总 JSON 中可用的 `msg`、`message`、`error`、`detail` 字段，避免只读取单一字段而丢失服务端给出的线索。
