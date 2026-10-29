@@ -1327,7 +1327,9 @@ private fun MusicMetaApp() {
                         previewSong?.let(sourceSongKey) != songKey
                     ) return@launch
 
-                    val referer = if (song.platform.startsWith("gd:")) {
+                    // The URL may have been resolved by the alternate provider; use the
+                    // provider that actually returned the URL, not the original search row.
+                    val referer = if (usedGdStudio) {
                         "https://music.gdstudio.xyz/"
                     } else {
                         FLAC_SITE_HOME
@@ -1336,7 +1338,7 @@ private fun MusicMetaApp() {
                         "User-Agent" to fallbackUserAgent,
                         "Referer" to referer,
                     )
-                    if (!cookie.isNullOrBlank() && !song.platform.startsWith("gd:")) {
+                    if (!cookie.isNullOrBlank() && !usedGdStudio) {
                         headers["Cookie"] = cookie
                     }
 
@@ -1857,7 +1859,7 @@ private fun MusicMetaApp() {
                         fallbackUserAgent,
                         null,
                         if (selectedQuality == "FLAC") "audio/flac" else "audio/mpeg",
-                        (if (song.platform.startsWith("gd:")) "https://music.gdstudio.xyz/" else FLAC_SITE_HOME),
+                        (if (usedGdStudio) "https://music.gdstudio.xyz/" else FLAC_SITE_HOME),
                         cookie,
                         selectedTrack ?: metadataTrackForSource(song),
                         song,
@@ -3414,6 +3416,10 @@ private fun MusicMetaApp() {
                                                 )
                                                 if (song.platform.startsWith("gd:")) {
                                                     Text("GD Studio · " + MusicSourceConfig.labelForPlatform(song.platform.removePrefix("gd:")), color = Accent, fontSize = 10.sp)
+                                                } else if (sourceProvider == MusicSourceConfig.BACKEND_GD_STUDIO &&
+                                                    song.platform in setOf("wyy", "netease")
+                                                ) {
+                                                    Text("备用源 · flac.music.hi.cn", color = Accent, fontSize = 10.sp)
                                                 }
                                             }
                                             IconButton(
@@ -3464,7 +3470,7 @@ private fun MusicMetaApp() {
                                                                     fallbackUserAgent,
                                                                     null,
                                                                     if (selectedQuality == "FLAC") "audio/flac" else "audio/mpeg",
-                                                                    (if (song.platform.startsWith("gd:")) "https://music.gdstudio.xyz/" else FLAC_SITE_HOME),
+                                                                    (if (usedGdStudio) "https://music.gdstudio.xyz/" else FLAC_SITE_HOME),
                                                                     cookie,
                                                                     selectedTrack ?: metadataTrackForSource(song),
                                                                     song,
@@ -4338,6 +4344,10 @@ private fun ManualSourceSearchPanel(
                                     )
                                     if (song.platform.startsWith("gd:")) {
                                         Text("GD Studio · " + MusicSourceConfig.labelForPlatform(song.platform.removePrefix("gd:")), color = Accent, fontSize = 9.sp)
+                                    } else if (sourceProvider == MusicSourceConfig.BACKEND_GD_STUDIO &&
+                                        song.platform in setOf("wyy", "netease")
+                                    ) {
+                                        Text("备用源 · flac.music.hi.cn", color = Accent, fontSize = 9.sp)
                                     }
                                 }
                                 IconButton(
