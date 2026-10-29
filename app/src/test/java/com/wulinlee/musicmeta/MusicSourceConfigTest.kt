@@ -273,8 +273,9 @@ class MusicSourceConfigTest {
                 version = "2026.9.25",
             ),
         )
+        assertEquals("9ef90af686e68195b6f6d89b69d3c584", gdStudioProtocolDigest("abc"))
         assertEquals(
-            gdStudioProtocolDigest("179325000|music.gdstudio.xyz|20260925|abc").takeLast(8).uppercase(),
+            "FA9A7FE6",
             gdStudioApiSignature(
                 value = "abc",
                 serverTime = "1793250000",
