@@ -3,7 +3,9 @@ package com.wulinlee.musicmeta
 import android.content.Context
 import android.content.SharedPreferences
 import java.io.IOException
-import java.security.MessageDigest
+import kotlin.math.abs
+import kotlin.math.floor
+import kotlin.math.sin
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import org.json.JSONObject
@@ -173,7 +175,98 @@ internal fun gdStudioEncodeSignatureValue(value: String): String {
     }
 }
 
-/** Produces the short MD5 signature used by the GD Studio web client. */
+/**
+ * GD Studio's protocol digest resembles MD5 but intentionally changes round constant 29.
+ * Using MessageDigest("MD5") produces a different signature and is rejected by the API.
+ */
+internal fun gdStudioProtocolDigest(value: String): String {
+    val input = value.toByteArray(Charsets.UTF_8)
+    val paddedLength = ((input.size + 8) / 64 + 1) * 64
+    val padded = ByteArray(paddedLength)
+    System.arraycopy(input, 0, padded, 0, input.size)
+    padded[input.size] = 0x80.toByte()
+    val bitLength = input.size.toLong() * 8L
+    for (index in 0 until 8) {
+        padded[paddedLength - 8 + index] = (bitLength ushr (index * 8)).toByte()
+    }
+
+    val shifts = intArrayOf(
+        7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
+        5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20,
+        4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
+        6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
+    )
+    val constants = IntArray(64) { index ->
+        floor(abs(sin((index + 1).toDouble())) * 4294967296.0).toLong().toInt()
+    }
+    constants[29] = 0xFCFEA3F8L.toInt()
+
+    val state = intArrayOf(0x67452301, 0xEFCDAB89.toInt(), 0x98BADCFE.toInt(), 0x10325476)
+    for (offset in padded.indices step 64) {
+        val words = IntArray(16) { index ->
+            val base = offset + index * 4
+            (padded[base].toInt() and 0xFF) or
+                ((padded[base + 1].toInt() and 0xFF) shl 8) or
+                ((padded[base + 2].toInt() and 0xFF) shl 16) or
+                ((padded[base + 3].toInt() and 0xFF) shl 24)
+        }
+        var a = state[0]
+        var b = state[1]
+        var c = state[2]
+        var d = state[3]
+        for (index in 0 until 64) {
+            val group = index / 16
+            val function: Int
+            val wordIndex: Int
+            when (group) {
+                0 -> {
+                    function = (b and c) or (b.inv() and d)
+                    wordIndex = index
+                }
+                1 -> {
+                    function = (d and b) or (d.inv() and c)
+                    wordIndex = (5 * index + 1) % 16
+                }
+                2 -> {
+                    function = b xor c xor d
+                    wordIndex = (3 * index + 5) % 16
+                }
+                else -> {
+                    function = c xor (b or d.inv())
+                    wordIndex = (7 * index) % 16
+                }
+            }
+            val sum = a + function + constants[index] + words[wordIndex]
+            val rotated = Integer.rotateLeft(sum, shifts[index])
+            val previousD = d
+            d = c
+            c = b
+            b += rotated
+            a = previousD
+        }
+        state[0] += a
+        state[1] += b
+        state[2] += c
+        state[3] += d
+    }
+
+    val digest = ByteArray(16)
+    for (stateIndex in state.indices) {
+        for (byteIndex in 0 until 4) {
+            digest[stateIndex * 4 + byteIndex] = (state[stateIndex] ushr (byteIndex * 8)).toByte()
+        }
+    }
+    val hex = "0123456789abcdef"
+    return buildString(digest.size * 2) {
+        for (byte in digest) {
+            val unsigned = byte.toInt() and 0xFF
+            append(hex[unsigned ushr 4])
+            append(hex[unsigned and 0x0F])
+        }
+    }
+}
+
+/** Produces the short request signature required by the GD Studio web API. */
 internal fun gdStudioApiSignature(
     value: String,
     serverTime: String,
@@ -181,19 +274,9 @@ internal fun gdStudioApiSignature(
     version: String,
 ): String {
     val versionParts = version.trim().split('.')
-    val normalizedVersion = versionParts.mapIndexed { index, part ->
-        if (index == 0) part else part.padStart(2, '0')
-    }.joinToString("")
+    val normalizedVersion = versionParts.map { part -> part.padStart(2, '0') }.joinToString("")
     val payload = "${serverTime.trim().take(9)}|$host|$normalizedVersion|${gdStudioEncodeSignatureValue(value)}"
-    val digest = MessageDigest.getInstance("MD5").digest(payload.toByteArray(Charsets.UTF_8))
-    val hex = buildString(digest.size * 2) {
-        for (byte in digest) {
-            val b = byte.toInt() and 0xFF
-            append("0123456789abcdef"[b ushr 4])
-            append("0123456789abcdef"[b and 0x0F])
-        }
-    }
-    return hex.takeLast(8).uppercase(Locale.ROOT)
+    return gdStudioProtocolDigest(payload).takeLast(8).uppercase(Locale.ROOT)
 }
 
 /** Shared expiring GET-response cache for GD Studio API calls. */
