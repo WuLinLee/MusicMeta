@@ -4344,10 +4344,6 @@ private fun ManualSourceSearchPanel(
                                     )
                                     if (song.platform.startsWith("gd:")) {
                                         Text("GD Studio · " + MusicSourceConfig.labelForPlatform(song.platform.removePrefix("gd:")), color = Accent, fontSize = 9.sp)
-                                    } else if (sourceProvider == MusicSourceConfig.BACKEND_GD_STUDIO &&
-                                        song.platform in setOf("wyy", "netease")
-                                    ) {
-                                        Text("备用源 · flac.music.hi.cn", color = Accent, fontSize = 9.sp)
                                     }
                                 }
                                 IconButton(
