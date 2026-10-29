@@ -14,10 +14,11 @@ internal object MusicSourceConfig {
     const val DEFAULT_BACKEND = BACKEND_GD_STUDIO
     const val DEFAULT_PLATFORM = "netease"
 
-    // GD Studio labels available sources dynamically. Its current documentation marks
-    // NetEase, JOOX, and Bilibili as stable; keep the UI aligned to that published list.
+    // Keep this list aligned with GD Studio's published stable-source list.
+    // The API docs currently list NetEase, Kuwo, JOOX, and Bilibili.
     val gdStudioPlatforms = listOf(
         MusicPlatformOption("netease", "网易云"),
+        MusicPlatformOption("kuwo", "酷我"),
         MusicPlatformOption("joox", "JOOX"),
         MusicPlatformOption("bilibili", "Bilibili"),
     )
