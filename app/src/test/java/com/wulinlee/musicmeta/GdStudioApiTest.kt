@@ -92,6 +92,12 @@ class GdStudioApiTest {
                 """const mkPlayer = { version: "2026.10.29" };""",
             ),
         )
+        assertEquals(
+            "2026.11.03",
+            GdStudioApiClient.parseVersionFromPlayerScript(
+                """window.mkPlayer = { name: "player", version: '2026.11.03' };""",
+            ),
+        )
         assertEquals(null, GdStudioApiClient.parseVersionFromPlayerScript("const player = {};"))
     }
 
