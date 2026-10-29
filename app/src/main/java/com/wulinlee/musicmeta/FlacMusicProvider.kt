@@ -125,22 +125,12 @@ internal fun gdStudioSearchKeywords(keyword: String, fallbackKeyword: String?): 
 }
 
 internal fun formatGdStudioNoCandidatesMessage(): String =
-    "GD Studio 没有搜索到候选歌曲：可能是当前平台暂无此版本，或关键词不匹配。请改用歌名搜索、稍后重试，或切换音乐平台 / API 服务。"
-
-/** Try the preferred GD Studio source first, then only other sources currently marked stable. */
-internal fun gdStudioFallbackPlatformOrder(preferredSource: String): List<String> {
-    val supported = MusicSourceConfig.platformsFor(MusicSourceConfig.BACKEND_GD_STUDIO).map { it.id }
-    val preferred = MusicSourceConfig.platformForBackend(
-        MusicSourceConfig.BACKEND_GD_STUDIO,
-        preferredSource,
-    )
-    return listOf(preferred) + supported.filterNot { it == preferred }
-}
+    "GD Studio 没有搜索到候选歌曲：可能是当前平台暂无此版本，或关键词不匹配。请改用歌名搜索或稍后重试；如需换源，请在设置中手动选择。"
 
 /**
  * Inspect both cause and suppressed exception chains. The GD Studio host failover adapter may
- * suppress the first host's explicit "source not supported" response when the second host fails
- * at the transport layer; that original response still needs to trigger source fallback.
+ * suppress an earlier failure when the second host fails at the transport layer; retaining the
+ * chain helps report the actual failure without changing the user's selected source.
  */
 private fun throwableTree(root: Throwable): Sequence<Throwable> = sequence {
     val queue = java.util.ArrayDeque<Throwable>()
@@ -157,8 +147,8 @@ private fun throwableTree(root: Throwable): Sequence<Throwable> = sequence {
     }
 }
 
-/** Require an exact normalized title and, when both are known, a compatible artist before cross-source fallback. */
-internal fun gdStudioFallbackCandidateMatches(
+/** Require exact normalized titles and compatible artists when retrying candidates on the same platform. */
+internal fun samePlatformCandidateMatches(
     requestedTitle: String,
     requestedArtist: String,
     candidateTitle: String,
@@ -314,7 +304,7 @@ class FlacMusicProvider {
                             forceRefresh = true,
                         )
                         refreshedCandidates += freshCandidates.filter { candidate ->
-                            gdStudioFallbackCandidateMatches(
+                            samePlatformCandidateMatches(
                                 song.title,
                                 song.artist,
                                 candidate.title,
