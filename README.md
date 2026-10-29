@@ -2,30 +2,15 @@
 
 MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 Android 应用：读取可公开访问的网易云歌单，搜索并核对音源，下载音频，并尽可能补齐封面、歌词和音频标签。
 
-> **当前版本：1.56** · `versionCode = 60`  
+> **源码版本：1.57** · `versionCode = 61`  
 > 应用 ID：`com.wulinlee.musicmeta` · 最低 Android：10（API 29）· 目标 SDK：35  
+> 当前已确认的正式 Release 为 v1.50；v1.57 是后续 CI 构建版本，发布状态以 Releases 页面为准。
 > 技术栈：Kotlin、Jetpack Compose、Material 3、Coroutines、OkHttp、Coil、jaudiotagger。
 
 - **正式版发布页：** [GitHub Releases](https://github.com/WuLinLee/MusicMeta/releases)
-- **v1.56 APK 直链：** [MusicMeta-v1.56.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.56/MusicMeta-v1.56.apk)
-- **上一版本 APK：** [MusicMeta-v1.55.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.55/MusicMeta-v1.55.apk)
-- **上一版本 APK：** [MusicMeta-v1.52.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.52/MusicMeta-v1.52.apk)
-- **上一版本 APK：** [MusicMeta-v1.51.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.51/MusicMeta-v1.51.apk)
-- **上一版本 APK：** [MusicMeta-v1.50.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.50/MusicMeta-v1.50.apk)
-- **上一版本 APK：** [MusicMeta-v1.49.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.49/MusicMeta-v1.49.apk)
-- **上一版本 APK：** [MusicMeta-v1.48.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.48/MusicMeta-v1.48.apk)
-- **v1.47 APK 直链：** [MusicMeta-v1.47.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.47/MusicMeta-v1.47.apk)
-- **上一版本 APK：** [MusicMeta-v1.46.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.46/MusicMeta-v1.46.apk)
-- **历史版本 APK：** [MusicMeta-v1.44.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.44/MusicMeta-v1.44.apk)
-- **历史版本 APK：** [MusicMeta-v1.43.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.43/MusicMeta-v1.43.apk)
-- **历史版本 APK：** [MusicMeta-v1.42.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.42/MusicMeta-v1.42.apk)
-- **历史版本 APK：** [MusicMeta-v1.41.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.41/MusicMeta-v1.41.apk)
-- **历史版本 APK：** [MusicMeta-v1.40.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.40/MusicMeta-v1.40.apk)
-- **历史版本 APK：** [MusicMeta-v1.39.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.39/MusicMeta-v1.39.apk)
-- **历史版本 APK：** [MusicMeta-v1.38.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.38/MusicMeta-v1.38.apk)
-- **历史版本 APK：** [MusicMeta-v1.37.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.37/MusicMeta-v1.37.apk)
-- **悬浮窗实现基线 v1.29：** [MusicMeta-v1.29.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.29/MusicMeta-v1.29.apk)
-- **v1.30 历史版（系统媒体卡片参考）：** [MusicMeta-v1.30.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.30/MusicMeta-v1.30.apk)
+- **最新已确认的正式 APK：** [MusicMeta-v1.50.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.50/MusicMeta-v1.50.apk)
+- **较早的正式版本：** 请在 [GitHub Releases](https://github.com/WuLinLee/MusicMeta/releases) 中选择已存在的版本和附件。
+- **最新 CI 构建：** [GitHub Actions](https://github.com/WuLinLee/MusicMeta/actions)；在对应成功运行中下载 `MusicMeta-v1.57` artifact。CI artifact 不等同于正式 Release。
 - **构建记录：** [GitHub Actions](https://github.com/WuLinLee/MusicMeta/actions)
 
 v1.55 将系统悬浮歌词与应用内备用播放器的歌词栏黑色背景不透明度统一调整为 70%，保留半透明效果。v1.52 修复应用内备用播放器歌词栏垂直偏移：歌词卡片改为相对播放器组顶部定位，保持与封面顶部对齐；v1.47 在保留原有薄荷绿歌词颜色（#9FF0C9）的前提下，提高歌词在复杂背景上的可读性：仅在歌词文字区域增加约 28% 不透明度的黑色半透明底和轻微文字阴影；外层歌词卡片继续透明，未播放进度轨道继续不绘制。默认歌词字号从 15.04sp 调整到 17.28sp，并将歌词栏高度调整为 70dp；按默认行高计算，文字区域可容纳两行歌词并为已播放进度线保留独立区域。系统悬浮窗与应用内备用播放器的样式同步，自定义字号通常会保留。v1.46 的无权限备用播放器拖动、歌单归属上一首/下一首导航，以及 v1.45 的五秒彻底关闭与画圈定位行为继续保留；v1.44 的时间轴歌词与本地内嵌双语歌词保守解析策略继续保留。v1.43 将侧键固定在独立窗口，歌词卡片使用独立窗口并修复右侧布局展开/收起时闪烁；v1.42 修复收起歌词后透明窗口遮挡后方触摸的问题。默认歌词字号为 17.28sp。下载链接仅在对应 Release 资产创建成功后可用；请以对应 Actions 构建和 Release 附件为准。
@@ -47,7 +32,7 @@ v1.55 将系统悬浮歌词与应用内备用播放器的歌词栏黑色背景�
 
 - **歌单导入：** 读取网易云公开歌单；可尝试通过用户 ID 定位“我喜欢的音乐”。私密、受限或要求登录授权的歌单不保证可访问。
 - **分页与筛选：** 支持每页 25 / 50 / 100 首、跳页、已加载曲目筛选，以及不同歌单的独立状态。
-- **直接搜歌与音源候选：** 可按歌名 / 歌手搜索候选音源，支持网易云和酷我来源。候选可能存在同名翻唱、现场版、重制版或不同母带，下载前应核对曲名、歌手、专辑和版本。
+- **直接搜歌与音源候选：** 可按歌名 / 歌手搜索候选音源。GD Studio 当前界面提供网易云、JOOX、Bilibili；flac.music.hi.cn 适配网易云、酷我。两种后端的跨服务自动回退主要针对网易云，不代表所有平台都能相互回退。候选可能存在同名翻唱、现场版、重制版或不同母带，下载前应核对曲名、歌手、专辑和版本。
 - **快速查找并播放：** 每首歌曲“找音源”按钮旁边的纯图标按钮会搜索并尝试播放第一个匹配结果。
 - **本地曲库：** 扫描常见音乐目录（包括 `Download/-07-MusicMeta` 和 `Music`），也可以选择有权访问的本地音乐文件夹；点击歌曲可开始试听。
 - **歌曲信息与文件整理：** 在来源可提供的范围内补充封面、原文歌词、翻译、罗马音或逐字歌词；可写入音频标签并按设置另存 LRC 文件。
@@ -181,7 +166,7 @@ v1.55 将系统悬浮歌词与应用内备用播放器的歌词栏黑色背景�
 - **版本号：** 1.24，`versionCode = 28`。
 
 
-## v1.23 本次改进
+## v1.23 历史记录（当时的实现）
 
 - **修正请求量放大：** 搜索候选列表不再为每一行自动请求封面地址；缺失封面的候选先显示应用默认封面，开始试听时再解析当前歌曲封面。
 - **优化 GD Studio 请求预算体验：** 本地保护预算调整为每安装实例最多 50 次 / 5 分钟，不再额外预留 5 次；达到预算时显示可恢复提示，不作为异常报告上传。
@@ -194,7 +179,7 @@ v1.55 将系统悬浮歌词与应用内备用播放器的歌词栏黑色背景�
 
 第三方 API 使用提示：GD Studio 文档要求注明“GD音乐台 (music.gdstudio.xyz)”出处，并遵守其 CC BY-NC 4.0 / 非商业使用限制。
 
-## v1.22 改进记录
+## v1.22 历史记录（当时的实现）
 
 - **两级音源配置：** 先选择 API 服务入口（GD Studio / flac.music.hi.cn），再选择音乐平台；默认 GD Studio + 网易云（netease）。两种服务分别记住平台选择。
 - **GD Studio 请求控制：** 同一 GET URL 使用带过期时间的响应缓存；把最近 5 分钟的请求时间写入应用私有设置，限流预算在进程重启后仍保留（每个安装实例最多 45 次 / 5 分钟），并避免 HTTP 429 自动重试。共享公网 IP 上的其他设备仍会消耗服务端额度。
@@ -207,7 +192,7 @@ v1.55 将系统悬浮歌词与应用内备用播放器的歌词栏黑色背景�
 
 ## 悬浮迷你播放器
 
-### 当前行为（v1.51）
+### 当前行为（源码版本 v1.57）
 
 封面、上下侧键和歌词卡片仍分开管理；系统悬浮窗的窗口位置更新会保留歌词面板的真实高度，不再把它意外压回 64dp。默认歌词面板恢复紧凑的 70dp 高度，正文可用高度约 48dp，正常字号下长句自动折为最多两行，底部 18dp 进度区域独立保留。用户主动增大歌词字号时，面板才按两行所需高度自适应增长。无悬浮窗权限的应用内备用播放器使用相同高度规则，歌词面板顶部与封面顶部对齐，播放模式 / 时间 / 播放按钮跟随封面移动，不再叠到进度线上。原有 1.587 宽度比例、4dp 侧键间距、半透明暗底、薄荷绿文字和轻微阴影保持不变。
 
@@ -275,7 +260,7 @@ v1.55 将系统悬浮歌词与应用内备用播放器的歌词栏黑色背景�
 
 ## 数据源与使用边界
 
-项目从第三方服务获取可访问的歌单、候选音源、歌词和封面。歌单使用网易云公开只读接口；音源服务可以选择 GD Studio API 或 flac.music.hi.cn。GD Studio 的 source 参数较多，但文档声明当前可用源会动态调整；flac.music.hi.cn 当前适配网易云与酷我。LRCLIB 和 iTunes Search 用于部分歌词 / 封面补全。接口、域名和访问策略可能改变，实际使用以当前 Provider 实现和服务条款为准。
+项目从第三方服务获取可访问的歌单、候选音源、歌词和封面。歌单使用网易云公开只读接口；音源服务可以选择 GD Studio API 或 flac.music.hi.cn。GD Studio 的 source 参数较多，但文档声明当前可用源会动态调整；应用界面目前列出网易云、JOOX、Bilibili。flac.music.hi.cn 当前适配网易云与酷我；跨服务自动回退主要针对网易云。客户端不再强制执行本地“每 5 分钟 50 次”的请求限流，但服务端仍可能执行自身的速率限制并返回 HTTP 429 / 403；响应缓存仍用于减少重复请求。LRCLIB 和 iTunes Search 用于部分歌词 / 封面补全。接口、域名和访问策略可能改变，实际使用以当前 Provider 实现和服务条款为准。
 
 - 不承诺私密歌单、受限资源或需要登录授权的内容可用。
 - 不保证第三方音源长期可访问，也不保证每首歌曲都能找到完全匹配的录音版本。
@@ -320,8 +305,9 @@ CI 会另外执行 APK 对齐、签名、签名证书验证和包名检查。构
 
 ## 版本与签名
 
-- 当前版本名：`1.51`
-- 当前版本号：`versionCode = 55`
+- 当前源码版本名：`1.57`
+- 当前源码版本号：`versionCode = 61`
+- 已确认正式 Release：`v1.50`（后续源码版本须以 Actions 和 Releases 状态为准）
 - Gradle 版本元数据位于 `app/build.gradle.kts`；用户可见变更记录位于 `RELEASE_NOTES.md`。
 
 GitHub Actions 工作流会设置 JDK 17 和 Gradle 8.9，检查资源后运行 JVM 单元测试、构建 Release、对 APK 执行 zipalign / 签名 / 校验，再上传 APK 并创建 Release。常规 `main` push 会创建预览发布；提交信息以 `release:` 开头时走正式发布逻辑。已有同名 Release 默认不会覆盖，只有明确的 `release: refresh v...` 提交才允许刷新现有版本。

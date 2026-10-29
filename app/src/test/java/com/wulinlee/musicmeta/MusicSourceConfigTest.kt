@@ -36,12 +36,6 @@ class MusicSourceConfigTest {
     }
 
     @Test
-    fun defaultLimitMatchesGdStudioDocumentation() {
-        // GdStudioRequestLimiter exposes its configured ceiling through a testable helper.
-        assertEquals(50, GdStudioRequestLimiter.maxRequestsForTests())
-    }
-
-    @Test
     fun defaultsToGdStudioAndNetEase() {
         assertEquals(MusicSourceConfig.BACKEND_GD_STUDIO, MusicSourceConfig.DEFAULT_BACKEND)
         assertEquals("netease", MusicSourceConfig.DEFAULT_PLATFORM)
@@ -60,6 +54,13 @@ class MusicSourceConfigTest {
         assertEquals("kuwo", MusicSourceConfig.normalizePlatform("kuwo"))
         assertEquals("kuwo", MusicSourceConfig.platformForBackend(MusicSourceConfig.BACKEND_FLAC_SITE, "kuwo"))
         assertEquals("netease", MusicSourceConfig.platformForBackend(MusicSourceConfig.BACKEND_GD_STUDIO, "kuwo"))
+    }
+
+    @Test
+    fun platformLabelsCoverBothBackends() {
+        assertEquals("酷我", MusicSourceConfig.labelForPlatform("kuwo"))
+        assertEquals("网易云", MusicSourceConfig.labelForPlatform("wyy"))
+        assertEquals("JOOX", MusicSourceConfig.labelForPlatform("joox"))
     }
 
     @Test
@@ -306,13 +307,6 @@ class MusicSourceConfigTest {
                 "JUDY AND MARY",
             ),
         )
-    }
-
-    @Test
-    fun rateLimitExceptionProvidesRecoverableDelay() {
-        val error = GdStudioRateLimitException(22_001L)
-        assertEquals(23L, error.retryAfterSeconds)
-        assertTrue(error.message.orEmpty().contains("GD Studio 请求较多"))
     }
 
     @Test

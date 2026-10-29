@@ -1,10 +1,7 @@
 package com.wulinlee.musicmeta
 
-import android.content.Context
-import android.content.SharedPreferences
 import java.io.IOException
 import org.json.JSONObject
-import java.util.ArrayDeque
 import java.util.LinkedHashMap
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -54,7 +51,8 @@ internal object MusicSourceConfig {
         if (normalizeBackend(backend) == BACKEND_FLAC_SITE) "source_platform_flac" else "source_platform_gdstudio"
 
     fun labelForPlatform(value: String): String =
-        gdStudioPlatforms.firstOrNull { it.id == normalizePlatform(value) }?.label ?: value
+        (gdStudioPlatforms + flacSitePlatforms)
+            .firstOrNull { it.id == normalizePlatform(value) }?.label ?: value
 
     fun toFlacSitePlatform(value: String): String = when (normalizePlatform(value)) {
         "netease" -> "wyy"
@@ -63,70 +61,6 @@ internal object MusicSourceConfig {
     }
 }
 
-internal class GdStudioRateLimitException(val retryAfterMillis: Long) : IOException(
-    "GD Studio 请求较多，约 ${maxOf(1L, (retryAfterMillis + 999L) / 1000L)} 秒后可重试。请稍后重试。"
-) {
-    val retryAfterSeconds: Long
-        get() = maxOf(1L, (retryAfterMillis + 999L) / 1000L)
-}
-
-/**
- * The GD Studio documentation states at most 50 requests per five-minute window.
- * MusicMeta uses the documented client-side ceiling; the server may also count other clients on a shared IP.
- * The budget persists across process restarts, but is per installation—not a guarantee about
- * the server-side IP quota. Expensive thumbnail lookups are intentionally not done per result row.
- */
-internal object GdStudioRequestLimiter {
-    private const val WINDOW_MILLIS = 5 * 60 * 1000L
-    private const val MAX_REQUESTS = 50
-    internal fun maxRequestsForTests(): Int = MAX_REQUESTS
-    private const val PREFS_NAME = "music_meta_api_limits"
-    private const val TIMESTAMPS_KEY = "gd_studio_request_timestamps_v1"
-    private val lock = Any()
-    private val requestTimes = ArrayDeque<Long>()
-    private var preferences: SharedPreferences? = null
-    private var configured = false
-
-    /** Restores the sliding-window budget across process restarts. */
-    fun configure(context: Context) {
-        synchronized(lock) {
-            if (configured) return
-            val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            preferences = prefs
-            requestTimes.clear()
-            val now = System.currentTimeMillis()
-            prefs.getString(TIMESTAMPS_KEY, null)
-                ?.split(',')
-                ?.mapNotNull { it.toLongOrNull() }
-                ?.filter { it <= now && now - it < WINDOW_MILLIS }
-                ?.forEach { requestTimes.addLast(it) }
-            configured = true
-            persistLocked()
-        }
-    }
-
-    fun acquire() {
-        val waitMillis = synchronized(lock) {
-            val now = System.currentTimeMillis()
-            while (requestTimes.isNotEmpty()) {
-                val first = requestTimes.peekFirst()
-                if (first > now || now - first >= WINDOW_MILLIS) requestTimes.removeFirst() else break
-            }
-            if (requestTimes.size < MAX_REQUESTS) {
-                requestTimes.addLast(now)
-                persistLocked()
-                0L
-            } else {
-                (WINDOW_MILLIS - (now - requestTimes.peekFirst())).coerceAtLeast(1L)
-            }
-        }
-        if (waitMillis > 0L) throw GdStudioRateLimitException(waitMillis)
-    }
-
-    private fun persistLocked() {
-        preferences?.edit()?.putString(TIMESTAMPS_KEY, requestTimes.joinToString(","))?.apply()
-    }
-}
 /** Formats a sanitized explanation for non-successful GD Studio HTTP responses. */
 internal fun formatGdStudioHttpErrorMessage(statusCode: Int, responseBody: String): String {
     val prefix = "GD Studio API 请求失败：HTTP $statusCode"
@@ -186,7 +120,6 @@ internal object GdStudioApiSupport {
         val key = request.url.toString()
         if (ttlMillis > 0L) cached(key)?.let { return it }
 
-        GdStudioRequestLimiter.acquire()
         val body = client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
                 val errorBody = runCatching { response.body?.string().orEmpty() }.getOrDefault("")

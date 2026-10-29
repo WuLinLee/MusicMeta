@@ -311,7 +311,6 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun MusicMetaApp() {
     val context = LocalContext.current
-    remember(context.applicationContext) { GdStudioRequestLimiter.configure(context) }
     val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
     var jumpFieldFocused by remember { mutableStateOf(false) }
@@ -846,9 +845,7 @@ private fun MusicMetaApp() {
                         if (rowIndex != null) listState.animateScrollToItem(rowIndex)
                     }
                 } catch (error: Exception) {
-                    if (error is GdStudioRateLimitException) {
-                        status = "GD Studio 请求较多；当前试听保持不变。约 ${error.retryAfterSeconds} 秒后可重试，或切换到 flac.music.hi.cn。"
-                    } else if (isGdStudioNoCandidatesError(error)) {
+                    if (isGdStudioNoCandidatesError(error)) {
                         status = "GD Studio 暂无《${track.title}》的候选音源。可尝试仅用歌名搜索，或切换音乐平台 / API 服务后重试。"
                     } else {
                         val detail = error.message?.takeIf { it.isNotBlank() } ?: "音源服务暂不可用"
@@ -975,9 +972,6 @@ private fun MusicMetaApp() {
                         "找到 " + flacResults.size + " 个候选版本，请核对歌手和专辑后下载。"
                     }
                 } catch (error: Exception) {
-                    if (error is GdStudioRateLimitException) {
-                        status = "GD Studio 请求较多。约 ${error.retryAfterSeconds} 秒后可重试，或切换到 flac.music.hi.cn。"
-                    } else {
                         val detail = error.message?.takeIf { it.isNotBlank() } ?: "音源服务暂不可用"
                         status = "搜索失败：" + detail
                         captureError("直接搜索音源", error)
@@ -989,7 +983,6 @@ private fun MusicMetaApp() {
                         ) {
                             verificationOpen = true
                         }
-                    }
                 } finally {
                     isSearchingFlac = false
                 }
@@ -1561,8 +1554,6 @@ private fun MusicMetaApp() {
                         if (candidateUnavailable && nextCandidate != null) {
                             status = "当前候选音源暂不可用，正在自动尝试下一个版本：《${nextCandidate.title}》。"
                             playPreviewRef.value(nextCandidate)
-                        } else if (error is GdStudioRateLimitException) {
-                            status = "GD Studio 请求较多，暂时无法开始该曲试听。约 ${error.retryAfterSeconds} 秒后可重试，或切换到 flac.music.hi.cn。"
                         } else {
                             status = "试听失败：" + (error.message?.takeIf { it.isNotBlank() } ?: "音源暂不可用")
                             captureError("解析试听音源", error)
@@ -1865,16 +1856,12 @@ private fun MusicMetaApp() {
                         song,
                     )
                 } catch (error: Exception) {
-                    if (error is GdStudioRateLimitException) {
-                        status = "GD Studio 请求较多。约 ${error.retryAfterSeconds} 秒后可重试，或切换到 flac.music.hi.cn。"
-                    } else {
                         val detail = error.message?.takeIf { it.isNotBlank() } ?: "音源服务暂不可用"
                         status = "解析下载地址失败：" + detail
                         captureError("解析直接搜索音源", error)
                         if (detail.contains("验证") || detail.contains("468")) {
                             verificationOpen = true
                         }
-                    }
                 } finally {
                     isResolvingUrl = false
                 }
@@ -2108,9 +2095,7 @@ private fun MusicMetaApp() {
                                     ) {
                                         isSearchingFlac = false
                                         if (inputMode == modeAtRequest) {
-                                            if (error is GdStudioRateLimitException) {
-                                                status = "GD Studio 请求较多，已保留当前试听。约 ${error.retryAfterSeconds} 秒后可继续，或在设置中切换到 flac.music.hi.cn。"
-                                            } else if (isGdStudioNoCandidatesError(error)) {
+                                            if (isGdStudioNoCandidatesError(error)) {
                                                 status = "GD Studio 暂无《${targetTrack.title}》的可用候选，当前试听保持不变。可稍后重试或切换音乐平台 / API 服务。"
                                             } else {
                                                 status = "查找上一首 / 下一首音源失败：" + (error.message?.takeIf { it.isNotBlank() } ?: "请重试")
@@ -3476,16 +3461,12 @@ private fun MusicMetaApp() {
                                                                     song,
                                                                 )
                                                             } catch (error: Exception) {
-                                                                if (error is GdStudioRateLimitException) {
-                                                                    status = "GD Studio 请求较多。约 ${error.retryAfterSeconds} 秒后可重试，或切换到 flac.music.hi.cn。"
-                                                                } else {
                                                                     val detail = error.message?.takeIf { it.isNotBlank() } ?: "音源服务暂不可用"
                                                                     status = "解析下载地址失败：" + detail
                                                                     captureError("解析下载地址", error)
                                                                     if (detail.contains("验证") || detail.contains("468")) {
                                                                         verificationOpen = true
                                                                     }
-                                                                }
                                                             } finally {
                                                                 isResolvingUrl = false
                                                             }
