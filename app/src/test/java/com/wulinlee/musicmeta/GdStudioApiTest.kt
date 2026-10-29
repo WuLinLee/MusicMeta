@@ -7,7 +7,7 @@ import org.junit.Test
 
 class GdStudioApiTest {
     @Test
-    fun searchRequestUsesMaintainedHostAndSignedPostForm() {
+    fun searchRequestUsesMaintainedHostAndSignedGetQuery() {
         val params = linkedMapOf(
             "types" to "search",
             "source" to "netease",
@@ -16,33 +16,31 @@ class GdStudioApiTest {
             "pages" to "1",
         )
         val url = GdStudioApiClient.apiUrl(GdStudioApiClient.PRIMARY_HOST)
-        val form = GdStudioApiClient.buildSignedFormBody(
+        val signedUrl = GdStudioApiClient.buildSignedUrl(
             GdStudioApiClient.PRIMARY_HOST,
             params,
             "1793255432",
         )
-        fun value(name: String): String? =
-            (0 until form.size).firstOrNull { form.name(it) == name }?.let(form::value)
 
         assertEquals("music.gdstudio.xyz", url.host)
         assertEquals("/api.php", url.encodedPath)
-        assertEquals(0, url.querySize)
-        assertEquals("search", value("types"))
-        assertEquals("netease", value("source"))
-        assertEquals("涙が ほお&x", value("name"))
-        assertEquals("0AB1D53C", value("s"))
-        assertTrue(value("s").orEmpty().matches(Regex("[A-F0-9]{8}")))
+        assertEquals("https", signedUrl.scheme)
+        assertEquals("music.gdstudio.xyz", signedUrl.host)
+        assertEquals("/api.php", signedUrl.encodedPath)
+        assertEquals("search", signedUrl.queryParameter("types"))
+        assertEquals("netease", signedUrl.queryParameter("source"))
+        assertEquals("涙が ほお&x", signedUrl.queryParameter("name"))
+        assertEquals("0AB1D53C", signedUrl.queryParameter("s"))
+        assertTrue(signedUrl.queryParameter("s").orEmpty().matches(Regex("[A-F0-9]{8}")))
     }
 
     @Test
     fun signaturesChangeWhenSearchPayloadChanges() {
-        fun signed(keyword: String): String? = GdStudioApiClient.buildSignedFormBody(
+        fun signed(keyword: String): String? = GdStudioApiClient.buildSignedUrl(
             GdStudioApiClient.PRIMARY_HOST,
             linkedMapOf("types" to "search", "source" to "netease", "name" to keyword, "count" to "20", "pages" to "1"),
             "1793255432",
-        ).let { form ->
-            (0 until form.size).firstOrNull { form.name(it) == "s" }?.let(form::value)
-        }
+        ).queryParameter("s")
         assertNotEquals(signed("涙がほおを流れても"), signed("あさきゆめみし"))
     }
 
