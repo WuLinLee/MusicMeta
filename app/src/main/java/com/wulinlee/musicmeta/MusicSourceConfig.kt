@@ -3,6 +3,9 @@ package com.wulinlee.musicmeta
 import android.content.Context
 import android.content.SharedPreferences
 import java.io.IOException
+import java.security.MessageDigest
+import java.util.Locale
+import java.util.concurrent.TimeUnit
 import org.json.JSONObject
 import java.util.ArrayDeque
 import java.util.LinkedHashMap
@@ -152,12 +155,62 @@ internal fun formatGdStudioHttpErrorMessage(statusCode: Int, responseBody: Strin
 }
 
 
+/** Encodes a GD Studio signature payload exactly as its current web client does. */
+internal fun gdStudioEncodeSignatureValue(value: String): String {
+    val hex = "0123456789ABCDEF"
+    return buildString {
+        for (byte in value.toByteArray(Charsets.UTF_8)) {
+            val b = byte.toInt() and 0xFF
+            val ch = b.toChar()
+            if (ch in 'a'..'z' || ch in 'A'..'Z' || ch in '0'..'9' || ch in "-_.~") {
+                append(ch)
+            } else {
+                append('%')
+                append(hex[b ushr 4])
+                append(hex[b and 0x0F])
+            }
+        }
+    }
+}
+
+/** Produces the short MD5 signature used by the GD Studio web client. */
+internal fun gdStudioApiSignature(
+    value: String,
+    serverTime: String,
+    host: String,
+    version: String,
+): String {
+    val versionParts = version.trim().split('.')
+    val normalizedVersion = versionParts.mapIndexed { index, part ->
+        if (index == 0) part else part.padStart(2, '0')
+    }.joinToString("")
+    val payload = "${serverTime.trim().take(9)}|$host|$normalizedVersion|${gdStudioEncodeSignatureValue(value)}"
+    val digest = MessageDigest.getInstance("MD5").digest(payload.toByteArray(Charsets.UTF_8))
+    val hex = buildString(digest.size * 2) {
+        for (byte in digest) {
+            val b = byte.toInt() and 0xFF
+            append("0123456789abcdef"[b ushr 4])
+            append("0123456789abcdef"[b and 0x0F])
+        }
+    }
+    return hex.takeLast(8).uppercase(Locale.ROOT)
+}
+
 /** Shared expiring GET-response cache for GD Studio API calls. */
 internal object GdStudioApiSupport {
     const val SEARCH_TTL_MILLIS = 5 * 60 * 1000L
     const val DOWNLOAD_URL_TTL_MILLIS = 15 * 1000L
     const val COVER_URL_TTL_MILLIS = 12 * 60 * 60 * 1000L
     const val LYRIC_TTL_MILLIS = 12 * 60 * 60 * 1000L
+
+    private const val GD_STUDIO_HOST = "music.gdstudio.xyz"
+    private const val GD_STUDIO_VERSION_FALLBACK = "2026.09.25"
+    private const val PLAYER_VERSION_TTL_MILLIS = 6 * 60 * 60 * 1000L
+    private const val SIGNATURE_BOOTSTRAP_TIMEOUT_MILLIS = 1_500L
+    private val playerVersionRegex = Regex("""mkPlayer\\.version\\s*[:=]\\s*["'](20\\d{2}\\.\\d{1,2}\\.\\d{1,2})["']""")
+    private val genericVersionRegex = Regex("""\\bversion\\s*[:=]\\s*["'](20\\d{2}\\.\\d{1,2}\\.\\d{1,2})["']""")
+    @Volatile private var cachedPlayerVersion: Pair<String, Long>? = null
+    private val versionLock = Any()
 
     private data class Entry(val body: String, val expiresAt: Long)
     private val cache = object : LinkedHashMap<String, Entry>(64, 0.75f, true) {
@@ -181,19 +234,112 @@ internal object GdStudioApiSupport {
         }
     }
 
+    private fun signingClient(client: OkHttpClient): OkHttpClient =
+        client.newBuilder()
+            .callTimeout(SIGNATURE_BOOTSTRAP_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
+            .connectTimeout(SIGNATURE_BOOTSTRAP_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
+            .readTimeout(SIGNATURE_BOOTSTRAP_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
+            .build()
+
+    private fun getServerTime(client: OkHttpClient): String {
+        val localFallback = (System.currentTimeMillis() / 1000L).toString()
+        val bootstrapClient = signingClient(client)
+        val request = Request.Builder()
+            .url("https://$GD_STUDIO_HOST/time")
+            .header("Referer", "https://$GD_STUDIO_HOST/")
+            .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124.0 Mobile Safari/537.36")
+            .get()
+            .build()
+        val value = runCatching {
+            bootstrapClient.newCall(request).execute().use { response ->
+                if (response.isSuccessful) response.body?.string()?.trim().orEmpty() else ""
+            }
+        }.getOrDefault("")
+        val numericTime = value.toLongOrNull() ?: return localFallback
+        val seconds = if (numericTime > 10_000_000_000L) numericTime / 1000L else numericTime
+        return seconds.takeIf { it > 0L }?.toString() ?: localFallback
+    }
+
+    private fun getPlayerVersion(client: OkHttpClient, forceRefresh: Boolean): String {
+        val now = System.nanoTime() / 1_000_000L
+        synchronized(versionLock) {
+            cachedPlayerVersion?.let { cached ->
+                if (!forceRefresh && now < cached.second) return cached.first
+            }
+            val request = Request.Builder()
+                .url("https://$GD_STUDIO_HOST/js/player.js")
+                .header("Referer", "https://$GD_STUDIO_HOST/")
+                .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124.0 Mobile Safari/537.36")
+                .get()
+                .build()
+            val script = runCatching {
+                signingClient(client).newCall(request).execute().use { response ->
+                    if (response.isSuccessful) response.body?.string().orEmpty() else ""
+                }
+            }.getOrDefault("")
+            val version = playerVersionRegex.find(script)?.groupValues?.getOrNull(1)
+                ?: genericVersionRegex.find(script)?.groupValues?.getOrNull(1)
+            val actualVersion = version ?: GD_STUDIO_VERSION_FALLBACK
+            val ttl = if (version != null) PLAYER_VERSION_TTL_MILLIS else 5 * 60 * 1000L
+            cachedPlayerVersion = actualVersion to (System.nanoTime() / 1_000_000L + ttl)
+            return actualVersion
+        }
+    }
+
+    private fun signApiRequest(
+        client: OkHttpClient,
+        request: Request,
+        forceRefreshVersion: Boolean = false,
+    ): Request {
+        if (request.url.host != GD_STUDIO_HOST || request.url.encodedPath != "/api.php") return request
+        val type = request.url.queryParameter("types") ?: return request
+        val rawValue = if (type == "search") {
+            request.url.queryParameter("name")
+        } else {
+            request.url.queryParameter("id")
+        } ?: throw IOException("GD Studio 请求缺少签名参数。")
+        val version = getPlayerVersion(client, forceRefreshVersion)
+        val serverTime = getServerTime(client)
+        val signature = gdStudioApiSignature(rawValue, serverTime, request.url.host, version)
+        val signedUrl = request.url.newBuilder()
+            .removeAllQueryParameters("s")
+            .addQueryParameter("s", signature)
+            .build()
+        return request.newBuilder()
+            .url(signedUrl)
+            .header("Origin", "https://$GD_STUDIO_HOST")
+            .header("Referer", "https://$GD_STUDIO_HOST/")
+            .header("Accept", "application/json, text/javascript, */*; q=0.01")
+            .header("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
+            .header("X-Requested-With", "XMLHttpRequest")
+            .build()
+    }
+
     fun getText(client: OkHttpClient, request: Request, ttlMillis: Long = 0L): String {
+        // Keep the cache key independent of the time-based signature so the same payload
+        // remains reusable for the normal response TTL.
         val key = request.url.toString()
         if (ttlMillis > 0L) cached(key)?.let { return it }
+        var forceRefreshVersion = false
         for (attempt in 0..1) {
             GdStudioRequestLimiter.acquire()
-            var retryTransient = false
-            val body = client.newCall(request).execute().use { response ->
+            var retryRequest = false
+            val signedRequest = signApiRequest(client, request, forceRefreshVersion)
+            forceRefreshVersion = false
+            val body = client.newCall(signedRequest).execute().use { response ->
                 when {
                     response.code == 429 -> throw IOException(
                         "GD Studio 返回 HTTP 429，服务端可能已触发请求频率限制；已停止自动重试，请稍后再试。"
                     )
+                    response.code == 403 && attempt == 0 -> {
+                        // A 403 can mean the web-client version changed; refresh player.js once,
+                        // re-sign with the current version, and do not loop on persistent blocks.
+                        forceRefreshVersion = true
+                        retryRequest = true
+                        ""
+                    }
                     response.code in 500..599 && attempt == 0 -> {
-                        retryTransient = true
+                        retryRequest = true
                         ""
                     }
                     !response.isSuccessful -> {
@@ -210,7 +356,7 @@ internal object GdStudioApiSupport {
                     }
                 }
             }
-            if (!retryTransient) {
+            if (!retryRequest) {
                 store(key, body, ttlMillis)
                 return body
             }
@@ -222,6 +368,7 @@ internal object GdStudioApiSupport {
             }
         }
         throw IOException("GD Studio API 暂时不可用，重试后仍失败。")
+    }
     }
 }
 
