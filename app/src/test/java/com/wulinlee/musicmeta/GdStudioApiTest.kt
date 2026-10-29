@@ -8,7 +8,7 @@ import org.junit.Test
 
 class GdStudioApiTest {
     @Test
-    fun searchRequestUsesMaintainedHostAndSignedGetQuery() {
+    fun searchRequestUsesMaintainedHostAndSignedPostForm() {
         val params = linkedMapOf(
             "types" to "search",
             "source" to "netease",
@@ -17,7 +17,7 @@ class GdStudioApiTest {
             "pages" to "1",
         )
         val url = GdStudioApiClient.apiUrl(GdStudioApiClient.PRIMARY_HOST)
-        val signedUrl = GdStudioApiClient.buildSignedUrl(
+        val signedParams = GdStudioApiClient.buildSignedParams(
             GdStudioApiClient.PRIMARY_HOST,
             params,
             "1793255432",
@@ -25,14 +25,12 @@ class GdStudioApiTest {
 
         assertEquals("music.gdstudio.xyz", url.host)
         assertEquals("/api.php", url.encodedPath)
-        assertEquals("https", signedUrl.scheme)
-        assertEquals("music.gdstudio.xyz", signedUrl.host)
-        assertEquals("/api.php", signedUrl.encodedPath)
-        assertEquals("search", signedUrl.queryParameter("types"))
-        assertEquals("netease", signedUrl.queryParameter("source"))
-        assertEquals("涙が ほお&x", signedUrl.queryParameter("name"))
-        assertEquals("9ACA8505", signedUrl.queryParameter("s"))
-        assertTrue(signedUrl.queryParameter("s").orEmpty().matches(Regex("[A-F0-9]{8}")))
+        assertEquals(0, url.querySize)
+        assertEquals("search", signedParams["types"])
+        assertEquals("netease", signedParams["source"])
+        assertEquals("涙が ほお&x", signedParams["name"])
+        assertEquals("0AB1D53C", signedParams["s"])
+        assertTrue(signedParams["s"].orEmpty().matches(Regex("[A-F0-9]{8}")))
     }
 
     @Test
@@ -68,11 +66,11 @@ class GdStudioApiTest {
 
     @Test
     fun signaturesChangeWhenSearchPayloadChanges() {
-        fun signed(keyword: String): String? = GdStudioApiClient.buildSignedUrl(
+        fun signed(keyword: String): String? = GdStudioApiClient.buildSignedParams(
             GdStudioApiClient.PRIMARY_HOST,
             linkedMapOf("types" to "search", "source" to "netease", "name" to keyword, "count" to "20", "pages" to "1"),
             "1793255432",
-        ).queryParameter("s")
+        )["s"]
         assertNotEquals(signed("涙がほおを流れても"), signed("あさきゆめみし"))
     }
 
