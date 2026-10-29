@@ -49,10 +49,13 @@ internal object GdStudioApiClient {
                     // the same signature again cannot help and may worsen upstream rate limiting.
                     val refreshedVersion = currentApiVersion(client, host, forceRefresh = true)
                     val refreshedTime = serverTimePrefix(client, host)
-                    val versionChanged =
-                        normalizeVersion(refreshedVersion) != normalizeVersion(version)
-                    val timeBucketChanged = refreshedTime != serverTime
-                    if (!versionChanged && !timeBucketChanged) {
+                    if (!shouldRetryAfterSignatureRejection(
+                            version,
+                            serverTime,
+                            refreshedVersion,
+                            refreshedTime,
+                        )
+                    ) {
                         error.addSuppressed(
                             IOException(
                                 "401 后签名版本与服务器时间桶均未变化；为避免重复相同签名请求，已跳过本主机的重复重试。",
@@ -252,6 +255,15 @@ internal object GdStudioApiClient {
         version.split('.').joinToString("") { part ->
             if (part.length == 1) "0$part" else part
         }
+
+    internal fun shouldRetryAfterSignatureRejection(
+        previousVersion: String,
+        previousTimePrefix: String,
+        refreshedVersion: String,
+        refreshedTimePrefix: String,
+    ): Boolean =
+        normalizeVersion(previousVersion) != normalizeVersion(refreshedVersion) ||
+            previousTimePrefix != refreshedTimePrefix
 
     /**
      * Fetch the signature time from the service for each request.
