@@ -3,6 +3,7 @@ package com.wulinlee.musicmeta
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
+import org.json.JSONObject
 import org.junit.Test
 
 class GdStudioApiTest {
@@ -92,6 +93,18 @@ class GdStudioApiTest {
             ),
         )
         assertEquals(null, GdStudioApiClient.parseVersionFromPlayerScript("const player = {};"))
+    }
+
+    @Test
+    fun hiCnTrackIdPrefersDocumentedIdOverLegacyAliases() {
+        assertEquals(
+            "official-id",
+            flacSiteSongId(JSONObject("""{"id":"official-id","rid":"legacy-id","songid":"old-id"}""")),
+        )
+        assertEquals(
+            "legacy-id",
+            flacSiteSongId(JSONObject("""{"rid":"legacy-id","songid":"old-id"}""")),
+        )
     }
 
     @Test
