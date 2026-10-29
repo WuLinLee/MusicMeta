@@ -97,15 +97,10 @@ class GdStudioApiTest {
 
     @Test
     fun hiCnTrackIdPrefersDocumentedIdOverLegacyAliases() {
-        val documented = JSONObject()
-        documented.put("id", "official-id")
-        documented.put("rid", "legacy-id")
-        documented.put("songid", "old-id")
+        val documented = mapOf("id" to "official-id", "rid" to "legacy-id", "songid" to "old-id")
         assertEquals("official-id", flacSiteSongId(documented))
 
-        val legacy = JSONObject()
-        legacy.put("rid", "legacy-id")
-        legacy.put("songid", "old-id")
+        val legacy = mapOf("rid" to "legacy-id", "songid" to "old-id")
         assertEquals("legacy-id", flacSiteSongId(legacy))
     }
 
