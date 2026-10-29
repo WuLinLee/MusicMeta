@@ -43,9 +43,9 @@ internal fun flacSiteDownloadUrlCacheKey(song: FlacSiteSong, format: String, bit
 
 /** The hi.cn contract defines `id` as the track identifier; use legacy aliases only if absent. */
 internal fun flacSiteSongId(song: JSONObject): String =
-    song.optString("id", "")
-        .ifBlank { song.optString("rid", "") }
-        .ifBlank { song.optString("songid", "") }
+    (song.opt("id") as? String).orEmpty()
+        .ifBlank { (song.opt("rid") as? String).orEmpty() }
+        .ifBlank { (song.opt("songid") as? String).orEmpty() }
 
 /** Short-lived, bounded cache for direct URLs returned by flac.music.hi.cn. */
 internal object FlacSiteDownloadUrlCache {
