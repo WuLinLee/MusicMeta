@@ -377,15 +377,23 @@ class FlacMusicProvider {
                 "kuwo" -> "kuwo"
                 else -> song.platform.lowercase()
             }
-            val fallback = runCatching {
-                parsePreviewLyricsPayload(
-                    fetchGdStudioLyricsBody(
-                        source = source,
-                        lyricId = song.lyricId.ifBlank { song.id },
-                        userAgent = userAgent,
+            // Do not send legacy/secondary-site IDs such as "kuwo" to a GD Studio
+            // source that is currently unsupported; its API responds with HTTP 400.
+            val fallback = if (MusicSourceConfig.platformsFor(MusicSourceConfig.BACKEND_GD_STUDIO)
+                    .any { it.id == source }
+            ) {
+                runCatching {
+                    parsePreviewLyricsPayload(
+                        fetchGdStudioLyricsBody(
+                            source = source,
+                            lyricId = song.lyricId.ifBlank { song.id },
+                            userAgent = userAgent,
+                        )
                     )
-                )
-            }.getOrDefault(PreviewLyrics())
+                }.getOrDefault(PreviewLyrics())
+            } else {
+                PreviewLyrics()
+            }
             PreviewLyrics(
                 original = primary.original.ifBlank { fallback.original },
                 translated = primary.translated.ifBlank { fallback.translated },
@@ -462,7 +470,12 @@ class FlacMusicProvider {
     }
 
     private fun searchGdStudio(keyword: String, normalizedPlatform: String): List<FlacSiteSong> {
-        val source = if (normalizedPlatform == "wyy") "netease" else normalizedPlatform
+        // This private helper is also used for artwork/lyrics fallback; normalize there too
+        // so a legacy "kuwo" value cannot reach GD Studio from a non-search call site.
+        val source = MusicSourceConfig.platformForBackend(
+            MusicSourceConfig.BACKEND_GD_STUDIO,
+            normalizedPlatform,
+        )
         val url = HttpUrl.Builder()
             .scheme("https")
             .host("music-api.gdstudio.xyz")
