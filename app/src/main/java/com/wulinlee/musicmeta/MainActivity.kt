@@ -4749,10 +4749,10 @@ private fun makeErrorReport(context: Context, stage: String, error: Throwable): 
         context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "unknown"
     }.getOrDefault("unknown")
     fun redact(value: String): String =
-        value.replace(Regex("https?://\\\\S+"), "<URL已隐藏>")
-            .replace(Regex("(?i)(cookie|authorization|token|api[_-]?key)\\\\s*[:=]\\\\s*[^\\\\s,;]+"), "<敏感字段已隐藏>")
-            .replace(Regex("(?i)([?&](?:s|sign|signature|token|key)=)[^&\\\\s]+"), "$1<已隐藏>")
-            .replace(Regex("[\\\\r\\\\n\\\\t]+"), " ")
+        value.replace(Regex("https?://\\S+"), "<URL已隐藏>")
+            .replace(Regex("(?i)(cookie|authorization|token|api[_-]?key)\\s*[:=]\\s*[^\\s,;]+"), "<敏感字段已隐藏>")
+            .replace(Regex("(?i)([?&](?:s|sign|signature|token|key)=)[^&\\s]+")) { match -> match.groupValues[1] + "<已隐藏>" }
+            .replace(Regex("[\\r\\n\\t]+"), " ")
             .take(1200)
 
     val report = StringBuilder()
