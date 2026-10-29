@@ -126,9 +126,29 @@ internal fun gdStudioFallbackPlatformOrder(preferredSource: String): List<String
     return listOf(preferred) + supported.filterNot { it == preferred }
 }
 
+/**
+ * Inspect both cause and suppressed exception chains. The GD Studio host failover adapter may
+ * suppress the first host's explicit "source not supported" response when the second host fails
+ * at the transport layer; that original response still needs to trigger source fallback.
+ */
+private fun throwableTree(root: Throwable): Sequence<Throwable> = sequence {
+    val queue = java.util.ArrayDeque<Throwable>()
+    val seen = java.util.Collections.newSetFromMap(
+        java.util.IdentityHashMap<Throwable, Boolean>(),
+    )
+    queue.addLast(root)
+    while (queue.isNotEmpty()) {
+        val current = queue.removeFirst()
+        if (!seen.add(current)) continue
+        yield(current)
+        current.cause?.let { queue.addLast(it) }
+        current.suppressed.forEach { queue.addLast(it) }
+    }
+}
+
 /** Recognize the API validation response that says a source is currently unsupported. */
 internal fun isGdStudioUnsupportedSourceError(error: Throwable): Boolean =
-    generateSequence(error) { it.cause }.any { cause ->
+    throwableTree(error).any { cause ->
         val message = cause.message.orEmpty()
         message.contains("source", ignoreCase = true) &&
             (message.contains("not supported", ignoreCase = true) ||
@@ -137,8 +157,7 @@ internal fun isGdStudioUnsupportedSourceError(error: Throwable): Boolean =
     }
 
 internal fun isGdStudioNoCandidatesError(error: Throwable): Boolean =
-    generateSequence(error) { it.cause }
-        .any { it.message?.contains("GD Studio 没有搜索到候选歌曲") == true }
+    throwableTree(error).any { it.message?.contains("GD Studio 没有搜索到候选歌曲") == true }
 
 /** Require an exact normalized title and, when both are known, a compatible artist before cross-source fallback. */
 internal fun gdStudioFallbackCandidateMatches(

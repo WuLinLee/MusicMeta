@@ -62,11 +62,14 @@ class MusicSourceConfigTest {
     }
 
     @Test
-    fun gdStudioUnsupportedSourceErrorIsRecognizedThroughWrappedExceptions() {
+    fun gdStudioUnsupportedSourceErrorIsRecognizedThroughCauseAndSuppressedChains() {
         val error = java.io.IOException(
             "GD Studio API 请求失败：HTTP 400（Value of `source` is not supported.）",
         )
         assertTrue(isGdStudioUnsupportedSourceError(error))
+        val hostFallbackError = java.io.IOException("GD Studio backup host connection failed.")
+        hostFallbackError.addSuppressed(error)
+        assertTrue(isGdStudioUnsupportedSourceError(hostFallbackError))
         assertFalse(isGdStudioUnsupportedSourceError(java.io.IOException("HTTP 503")))
     }
 
