@@ -85,6 +85,8 @@ internal object FlacSiteDownloadUrlCache {
 
 internal fun formatFlacSiteApiError(code: Int, detail: String, operation: String): String? {
     if (code == 0 || code == 200) return null
+    fun withContext(message: String): String =
+        "下载站接口业务错误（HTTP 2xx，API code=$code，操作=$operation）：$message"
     // Prefer the precise per-track error over the generic "-1" wrapper. Otherwise users are
     // incorrectly sent to the verification WebView for songs the endpoint simply cannot resolve.
     if (code == -1 && (
@@ -92,20 +94,20 @@ internal fun formatFlacSiteApiError(code: Int, detail: String, operation: String
                 detail.contains("invalid response", ignoreCase = true)
         )
     ) {
-        return if (operation.contains("下载地址")) {
+        return withContext(if (operation.contains("下载地址")) {
             "下载站无法解析该候选歌曲的下载地址：曲目可能已失效，或此版本在当前平台暂不可用。请重新搜索并选择其他候选；如果仍失败，可切换 API 服务或稍后重试。"
         } else {
             "下载站暂时无法处理这次$operation；该平台或候选可能暂不可用，请稍后重试。"
-        }
+        })
     }
     if (code == 468 || detail.contains("验证") || detail.contains("challenge", ignoreCase = true)) {
-        return "下载站要求网页访问验证。请先在下方网站页面完成验证，再重新搜索。"
+        return withContext("下载站要求网页访问验证。请先在下方网站页面完成验证，再重新搜索。")
     }
     if (code == -1 && detail.contains("接口请求失败")) {
-        return "下载站接口暂时无法处理请求（-1）。请重新搜索并重试；如果网站页面明确显示验证要求，再打开网页完成验证。"
+        return withContext("下载站接口暂时无法处理请求（-1）。请重新搜索并重试；如果网站页面明确显示验证要求，再打开网页完成验证。")
     }
     val message = detail.ifBlank { "请稍后重试" }
-    return "下载站接口返回错误 $code：$message"
+    return withContext("下载站接口返回错误 $code：$message")
 }
 
 internal fun isFlacInvalidCandidateError(error: Throwable): Boolean {
