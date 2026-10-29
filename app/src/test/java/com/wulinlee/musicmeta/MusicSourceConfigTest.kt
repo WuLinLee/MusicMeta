@@ -97,6 +97,27 @@ class MusicSourceConfigTest {
     }
 
     @Test
+    fun gdStudioUnsupportedSourceErrorIsOnlyRecognizedForSourceRejection() {
+        assertTrue(
+            isGdStudioUnsupportedSourceError(
+                java.io.IOException("GD Studio API 请求失败：HTTP 400（Value of `source` is not supported.）"),
+            ),
+        )
+        assertFalse(isGdStudioUnsupportedSourceError(java.io.IOException("HTTP 503")))
+        assertFalse(isGdStudioUnsupportedSourceError(java.io.IOException("invalid track ID")))
+    }
+
+    @Test
+    fun searchFallbackOrderStaysInsideSelectedGdStudioService() {
+        val sources = gdStudioFallbackPlatformOrder("netease")
+        assertEquals(listOf("netease", "joox", "bilibili"), sources)
+        // Every GD Studio search result is tagged "gd:<source>", so its URL request
+        // follows GD Studio rather than a plain "wyy"/FLAC result.
+        assertEquals("gd:joox", "gd:" + sources[1])
+        assertEquals("gd:bilibili", "gd:" + sources[2])
+    }
+
+    @Test
     fun flacSiteSongNotFoundErrorGivesRecoverySteps() {
         val message = formatFlacSiteApiError(
             -1,

@@ -3870,6 +3870,11 @@ private fun MusicMetaApp() {
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Text("音源服务（主 API）", fontWeight = FontWeight.SemiBold, color = Ink)
+                    Text(
+                        "所选 API 服务会用于搜索、试听和下载。若服务失败会提示切换，不会悄悄改用另一家 API。",
+                        color = SubInk,
+                        fontSize = 11.sp,
+                    )
                     listOf(
                         MusicSourceConfig.BACKEND_GD_STUDIO to "GD Studio API",
                         MusicSourceConfig.BACKEND_FLAC_SITE to "flac.music.hi.cn",
