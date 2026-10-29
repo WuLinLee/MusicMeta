@@ -269,15 +269,112 @@ internal object GdStudioApiClient {
             ?: "GD Studio API 返回错误代码 $code。"
     }
 
-    /** Custom MD5 round function copied from the maintained reference client. */
+    /**
+     * GD Studio's signature digest is intentionally not standard MD5: round constant K[29]
+     * is 0xFCFEA3F8 (rather than the standard 0xFCEFA3F8). Using MessageDigest("MD5")
+     * produces signatures that the live API rejects with HTTP 401 Invalid request.
+     */
     private fun modifiedMd5(message: String): String {
-        // Android's standard MD5 implementation is the reference algorithm used by GD Studio.
-        // The previous hand-written implementation drifted from MD5 and generated signatures
-        // rejected by the live API with HTTP 401 Invalid request.
-        val digest = java.security.MessageDigest.getInstance("MD5")
-            .digest(message.toByteArray(Charsets.UTF_8))
-        return digest.joinToString(separator = "") { byte ->
-            "%02x".format(Locale.US, byte.toInt() and 0xff)
+        val input = message.toByteArray(Charsets.UTF_8)
+        val paddedLength = ((input.size + 8) / 64 + 1) * 64
+        val data = ByteArray(paddedLength)
+        input.copyInto(data)
+        data[input.size] = 0x80.toByte()
+        val bitLength = input.size.toLong() * 8L
+        for (i in 0 until 8) {
+            data[paddedLength - 8 + i] = (bitLength ushr (8 * i)).toByte()
+        }
+
+        val shifts = intArrayOf(
+            7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
+            5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20,
+            4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
+            6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
+        )
+        val constants = longArrayOf(
+            0xD76AA478L, 0xE8C7B756L, 0x242070DBL, 0xC1BDCEEEL,
+            0xF57C0FAFL, 0x4787C62AL, 0xA8304613L, 0xFD469501L,
+            0x698098D8L, 0x8B44F7AFL, 0xFFFF5BB1L, 0x895CD7BEL,
+            0x6B901122L, 0xFD987193L, 0xA679438EL, 0x49B40821L,
+            0xF61E2562L, 0xC040B340L, 0x265E5A51L, 0xE9B6C7AAL,
+            0xD62F105DL, 0x02441453L, 0xD8A1E681L, 0xE7D3FBC8L,
+            0x21E1CDE6L, 0xC33707D6L, 0xF4D50D87L, 0x455A14EDL,
+            0xA9E3E905L, 0xFCFEA3F8L, 0x676F02D9L, 0x8D2A4C8AL,
+            0xFFFA3942L, 0x8771F681L, 0x6D9D6122L, 0xFDE5380CL,
+            0xA4BEEA44L, 0x4BDECFA9L, 0xF6BB4B60L, 0xBEBFBC70L,
+            0x289B7EC6L, 0xEAA127FAL, 0xD4EF3085L, 0x04881D05L,
+            0xD9D4D039L, 0xE6DB99E5L, 0x1FA27CF8L, 0xC4AC5665L,
+            0xF4292244L, 0x432AFF97L, 0xAB9423A7L, 0xFC93A039L,
+            0x655B59C3L, 0x8F0CCC92L, 0xFFEFF47DL, 0x85845DD1L,
+            0x6FA87E4FL, 0xFE2CE6E0L, 0xA3014314L, 0x4E0811A1L,
+            0xF7537E82L, 0xBD3AF235L, 0x2AD7D2BBL, 0xEB86D391L,
+        )
+
+        var a0 = 0x67452301
+        var b0 = 0xEFCDAB89.toInt()
+        var c0 = 0x98BADCFE.toInt()
+        var d0 = 0x10325476
+
+        var offset = 0
+        while (offset < data.size) {
+            val words = IntArray(16) { wordIndex ->
+                val p = offset + wordIndex * 4
+                (data[p].toInt() and 0xff) or
+                    ((data[p + 1].toInt() and 0xff) shl 8) or
+                    ((data[p + 2].toInt() and 0xff) shl 16) or
+                    ((data[p + 3].toInt() and 0xff) shl 24)
+            }
+            var a = a0
+            var b = b0
+            var c = c0
+            var d = d0
+
+            for (i in 0 until 64) {
+                val f: Int
+                val g: Int
+                when {
+                    i < 16 -> {
+                        f = (b and c) or (b.inv() and d)
+                        g = i
+                    }
+                    i < 32 -> {
+                        f = (d and b) or (c and d.inv())
+                        g = (5 * i + 1) % 16
+                    }
+                    i < 48 -> {
+                        f = b xor c xor d
+                        g = (3 * i + 5) % 16
+                    }
+                    else -> {
+                        f = c xor (b or d.inv())
+                        g = (7 * i) % 16
+                    }
+                }
+                val sum = a + f + constants[i].toInt() + words[g]
+                val nextB = b + Integer.rotateLeft(sum, shifts[i])
+                a = d
+                d = c
+                c = b
+                b = nextB
+            }
+
+            a0 += a
+            b0 += b
+            c0 += c
+            d0 += d
+            offset += 64
+        }
+
+        val state = intArrayOf(a0, b0, c0, d0)
+        val hex = "0123456789abcdef"
+        return buildString(32) {
+            for (word in state) {
+                for (i in 0 until 4) {
+                    val value = (word ushr (8 * i)) and 0xff
+                    append(hex[value ushr 4])
+                    append(hex[value and 0x0f])
+                }
+            }
         }
     }
 }
