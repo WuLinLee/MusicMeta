@@ -90,8 +90,23 @@ internal object GdStudioApiClient {
             .header("Accept", "application/json, text/javascript, */*; q=0.01")
             .get()
             .build()
-        val body = GdStudioApiSupport.getText(client, request, ttlMillis).trim()
-        apiPayloadError(body)?.let { throw IOException(it) }
+        val body = try {
+            GdStudioApiSupport.getText(client, request, ttlMillis).trim()
+        } catch (error: IOException) {
+            val context = "GD Studio 请求诊断：host=" + host +
+                ", types=" + params["types"].orEmpty() +
+                ", source=" + params["source"].orEmpty() +
+                ", signatureVersion=" + version
+            throw IOException(context + "；" + error.message.orEmpty(), error)
+        }
+        apiPayloadError(body)?.let { detail ->
+            throw IOException(
+                "GD Studio 请求诊断：host=" + host +
+                    ", types=" + params["types"].orEmpty() +
+                    ", source=" + params["source"].orEmpty() +
+                    ", signatureVersion=" + version + "；" + detail,
+            )
+        }
         return body
     }
 
