@@ -308,54 +308,60 @@ class FlacMusicProvider {
     }
 
     suspend fun resolveCoverUrl(song: FlacSiteSong): String = withContext(Dispatchers.IO) {
-        normalizeCoverUrl(song.coverUrl).ifBlank {
-            val source = when {
-                song.platform.startsWith("gd:") -> song.platform.removePrefix("gd:").ifBlank { "netease" }
-                song.platform == "wyy" -> "netease"
-                else -> song.platform
-            }
-            var picId = song.coverId
-            if (picId.isBlank() || picId == "0" || picId.equals("null", ignoreCase = true)) {
-                val searchPlatform = if (source == "netease") "wyy" else source
-                val match = runCatching {
-                    searchGdStudio(song.title + " " + song.artist, searchPlatform)
-                        .firstOrNull {
-                            normalizeMatch(it.title) == normalizeMatch(song.title) &&
-                                (normalizeMatch(it.artist).contains(normalizeMatch(song.artist.substringBefore(" / "))) ||
-                                    normalizeMatch(song.artist).contains(normalizeMatch(it.artist)))
-                        }
-                }.getOrNull()
-                picId = match?.coverId.orEmpty()
-            }
-            if (picId.isBlank() || picId == "0" || picId.equals("null", ignoreCase = true)) {
-                ""
-            } else {
-                val url = HttpUrl.Builder()
-                    .scheme("https")
-                    .host("music.gdstudio.xyz")
-                    .addPathSegments("api.php")
-                    .addQueryParameter("types", "pic")
-                    .addQueryParameter("source", source)
-                    .addQueryParameter("id", picId)
-                    .addQueryParameter("size", "500")
-                    .build()
-                val request = Request.Builder()
-                    .url(url)
-                    .header("Referer", "https://music.gdstudio.xyz/")
-                    .header("User-Agent", fallbackUserAgent)
-                    .get()
-                    .build()
-                val body = GdStudioApiSupport.getText(client, request, GdStudioApiSupport.COVER_URL_TTL_MILLIS).trim()
-                val direct = if (body.startsWith("http://") || body.startsWith("https://")) {
-                    body
-                } else {
-                    val json = runCatching { JSONObject(body) }.getOrNull()
-                    json?.optString("url").orEmpty()
-                        .ifBlank { json?.optJSONObject("data")?.optString("url").orEmpty() }
-                }
-                normalizeCoverUrl(direct)
-            }
+        val suppliedCover = normalizeCoverUrl(song.coverUrl)
+        if (suppliedCover.isNotBlank()) return@withContext suppliedCover
+
+        val source = when {
+            song.platform.startsWith("gd:") -> song.platform.removePrefix("gd:").ifBlank { "netease" }
+            song.platform == "wyy" -> "netease"
+            else -> song.platform
         }
+        // Do not query GD Studio with a secondary-site-only catalog (e.g. Kuwo).
+        // Returning blank lets the caller use its independent metadata-cover fallback.
+        if (MusicSourceConfig.platformsFor(MusicSourceConfig.BACKEND_GD_STUDIO).none { it.id == source }) {
+            return@withContext ""
+        }
+
+        var picId = song.coverId
+        if (picId.isBlank() || picId == "0" || picId.equals("null", ignoreCase = true)) {
+            val match = runCatching {
+                searchGdStudio(song.title + " " + song.artist, source)
+                    .firstOrNull {
+                        normalizeMatch(it.title) == normalizeMatch(song.title) &&
+                            (normalizeMatch(it.artist).contains(normalizeMatch(song.artist.substringBefore(" / "))) ||
+                                normalizeMatch(song.artist).contains(normalizeMatch(it.artist)))
+                    }
+            }.getOrNull()
+            picId = match?.coverId.orEmpty()
+        }
+        if (picId.isBlank() || picId == "0" || picId.equals("null", ignoreCase = true)) {
+            return@withContext ""
+        }
+
+        val url = HttpUrl.Builder()
+            .scheme("https")
+            .host("music.gdstudio.xyz")
+            .addPathSegments("api.php")
+            .addQueryParameter("types", "pic")
+            .addQueryParameter("source", source)
+            .addQueryParameter("id", picId)
+            .addQueryParameter("size", "500")
+            .build()
+        val request = Request.Builder()
+            .url(url)
+            .header("Referer", "https://music.gdstudio.xyz/")
+            .header("User-Agent", fallbackUserAgent)
+            .get()
+            .build()
+        val body = GdStudioApiSupport.getText(client, request, GdStudioApiSupport.COVER_URL_TTL_MILLIS).trim()
+        val direct = if (body.startsWith("http://") || body.startsWith("https://")) {
+            body
+        } else {
+            val json = runCatching { JSONObject(body) }.getOrNull()
+            json?.optString("url").orEmpty()
+                .ifBlank { json?.optJSONObject("data")?.optString("url").orEmpty() }
+        }
+        normalizeCoverUrl(direct)
     }
 
     suspend fun fetchLyrics(
