@@ -2,16 +2,17 @@
 
 MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 Android 应用：读取可公开访问的网易云歌单，搜索并核对音源，下载音频，并尽可能补齐封面、歌词和音频标签。
 
-> **源码版本：1.62** · `versionCode = 66`  
+> **源码版本：1.63** · `versionCode = 67`  
 > 应用 ID：`com.wulinlee.musicmeta` · 最低 Android：10（API 29）· 目标 SDK：35  
-> 本次 API 修复版本：v1.62；正式发布状态请以 [GitHub Releases](https://github.com/WuLinLee/MusicMeta/releases/tag/v1.62) 和对应 Actions 为准。
+> 本次 API 修复版本：v1.63；正式发布状态请以 [GitHub Releases](https://github.com/WuLinLee/MusicMeta/releases/tag/v1.63) 和对应 Actions 为准。
 > 技术栈：Kotlin、Jetpack Compose、Material 3、Coroutines、OkHttp、Coil、jaudiotagger。
 
 - **正式版发布页：** [GitHub Releases](https://github.com/WuLinLee/MusicMeta/releases)
-- **本次修复版本 APK：** [MusicMeta-v1.62.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.62/MusicMeta-v1.62.apk)
+- **本次修复版本 APK：** [MusicMeta-v1.63.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.63/MusicMeta-v1.63.apk)
 - **较早的正式版本：** 请在 [GitHub Releases](https://github.com/WuLinLee/MusicMeta/releases) 中选择已存在的版本和附件。
-- **最新 CI 构建：** [GitHub Actions](https://github.com/WuLinLee/MusicMeta/actions)；在对应成功运行中下载 `MusicMeta-v1.62` artifact。CI artifact 不等同于正式 Release。
+- **最新 CI 构建：** [GitHub Actions](https://github.com/WuLinLee/MusicMeta/actions)；在对应成功运行中下载 `MusicMeta-v1.63` artifact。CI artifact 不等同于正式 Release。
 - **构建记录：** [GitHub Actions](https://github.com/WuLinLee/MusicMeta/actions)
+- **v1.63 API 修复：** 修正 GD Studio 签名版本串（版本号去除分隔符），运行时读取 player.js 版本，并在 HTTP 401 后刷新时间与版本重签一次；hi.cn 的通用 -1 响应会在同一服务内有限重搜最多三个匹配候选，不再默认把问题归咎于网页验证。
 
 v1.55 将系统悬浮歌词与应用内备用播放器的歌词栏黑色背景不透明度统一调整为 70%，保留半透明效果。v1.52 修复应用内备用播放器歌词栏垂直偏移：歌词卡片改为相对播放器组顶部定位，保持与封面顶部对齐；v1.47 在保留原有薄荷绿歌词颜色（#9FF0C9）的前提下，提高歌词在复杂背景上的可读性：仅在歌词文字区域增加约 28% 不透明度的黑色半透明底和轻微文字阴影；外层歌词卡片继续透明，未播放进度轨道继续不绘制。默认歌词字号从 15.04sp 调整到 17.28sp，并将歌词栏高度调整为 70dp；按默认行高计算，文字区域可容纳两行歌词并为已播放进度线保留独立区域。系统悬浮窗与应用内备用播放器的样式同步，自定义字号通常会保留。v1.46 的无权限备用播放器拖动、歌单归属上一首/下一首导航，以及 v1.45 的五秒彻底关闭与画圈定位行为继续保留；v1.44 的时间轴歌词与本地内嵌双语歌词保守解析策略继续保留。v1.43 将侧键固定在独立窗口，歌词卡片使用独立窗口并修复右侧布局展开/收起时闪烁；v1.42 修复收起歌词后透明窗口遮挡后方触摸的问题。默认歌词字号为 17.28sp。下载链接仅在对应 Release 资产创建成功后可用；请以对应 Actions 构建和 Release 附件为准。
 
