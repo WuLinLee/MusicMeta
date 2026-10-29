@@ -157,6 +157,14 @@ private fun throwableTree(root: Throwable): Sequence<Throwable> = sequence {
     }
 }
 
+private fun hasExplicitFlacVerificationHint(error: Throwable): Boolean =
+    throwableTree(error).any { cause ->
+        val message = cause.message.orEmpty()
+        message.contains("验证") ||
+            message.contains("challenge", ignoreCase = true) ||
+            message.contains("HTTP 468", ignoreCase = true)
+    }
+
 /** Recognize the API validation response that says a source is currently unsupported. */
 internal fun isGdStudioUnsupportedSourceError(error: Throwable): Boolean =
     throwableTree(error).any { cause ->
@@ -279,8 +287,13 @@ class FlacMusicProvider {
                     } catch (fallbackError: CancellationException) {
                         throw fallbackError
                     } catch (fallbackError: Exception) {
+                        val verificationHint = if (hasExplicitFlacVerificationHint(fallbackError)) {
+                            " hi.cn 回退请求遇到网站访问验证要求，请在下方网站页面完成验证后重试。"
+                        } else {
+                            ""
+                        }
                         throw IOException(
-                            "GD Studio 搜索失败（${error.message ?: "未知错误"}）；已尝试 hi.cn 的${MusicSourceConfig.labelForPlatform(source)}音源，但也未能取得候选。请稍后重试或在设置中切换 API 服务。",
+                            "GD Studio 搜索失败（${error.message ?: "未知错误"}）；已尝试 hi.cn 的${MusicSourceConfig.labelForPlatform(source)}音源，但也未能取得候选。请稍后重试或在设置中切换 API 服务。$verificationHint",
                             error,
                         ).also { it.addSuppressed(fallbackError) }
                     }
@@ -590,6 +603,8 @@ class FlacMusicProvider {
 
             val provider = if (requestedFromGdStudio) "GD Studio" else "flac.music.hi.cn"
             val guidance = when {
+                didRetryGdStudioOnFlac && hasExplicitFlacVerificationHint(primaryError) ->
+                    "hi.cn 回退请求遇到网站明确的访问验证要求，请在下方网站页面完成验证后重试。"
                 didRetryGdStudioOnFlac ->
                     "已尝试通过 hi.cn 的同平台音源匹配曲名和歌手，但仍未取得试听地址；请稍后重试或切换音源。"
                 requestedFromGdStudio ->
