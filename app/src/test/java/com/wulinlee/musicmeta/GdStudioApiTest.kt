@@ -108,4 +108,30 @@ class GdStudioApiTest {
         )
     }
 
+    @Test
+    fun gdstudioAuthOrServerFailureFallsBackOnlyToHiCnSupportedCatalogues() {
+        assertTrue(
+            isGdStudioApiFallbackEligible(
+                java.io.IOException("GD Studio API 请求失败：HTTP 401（Invalid request.）"),
+                "netease",
+            ),
+        )
+        assertTrue(
+            isGdStudioApiFallbackEligible(java.io.IOException("HTTP 503"), "kuwo"),
+        )
+        assertFalse(
+            isGdStudioApiFallbackEligible(java.io.IOException("HTTP 401"), "joox"),
+        )
+        assertFalse(
+            isGdStudioApiFallbackEligible(java.io.IOException("HTTP 400 bad keyword"), "netease"),
+        )
+    }
+
+    @Test
+    fun hiCnFallbackPlatformOrderOnlyCrossesBetweenItsPublishedCatalogues() {
+        assertEquals(listOf("kuwo"), flacSiteFallbackPlatformOrder("wyy"))
+        assertEquals(listOf("wyy"), flacSiteFallbackPlatformOrder("kuwo"))
+        assertTrue(flacSiteFallbackPlatformOrder("bilibili").isEmpty())
+    }
+
 }
