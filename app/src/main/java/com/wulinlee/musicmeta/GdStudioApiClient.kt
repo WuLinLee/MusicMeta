@@ -45,9 +45,22 @@ internal object GdStudioApiClient {
                 } catch (error: IOException) {
                     if (!isSignatureRejection(error)) throw error
 
-                    // Refresh server time before one retry while retaining the upstream-pinned version.
+                    // Refresh both signing inputs after a rejection. If neither changed, sending
+                    // the same signature again cannot help and may worsen upstream rate limiting.
                     val refreshedVersion = currentApiVersion(client, host, forceRefresh = true)
                     val refreshedTime = serverTimePrefix(client, host)
+                    val versionChanged =
+                        normalizeVersion(refreshedVersion) != normalizeVersion(version)
+                    val timeBucketChanged = refreshedTime != serverTime
+                    if (!versionChanged && !timeBucketChanged) {
+                        error.addSuppressed(
+                            IOException(
+                                "401 后签名版本与服务器时间桶均未变化；为避免重复相同签名请求，已跳过本主机的重复重试。",
+                            ),
+                        )
+                        throw error
+                    }
+
                     try {
                         return executeSignedRequest(
                             client, host, params, ttlMillis, refreshedTime, refreshedVersion,
@@ -93,10 +106,15 @@ internal object GdStudioApiClient {
         val body = try {
             GdStudioApiSupport.getText(client, request, ttlMillis).trim()
         } catch (error: IOException) {
+            val payloadKey = if (params["types"] == "search") "name" else "id"
+            val payloadLength = encodeURIComponent(params[payloadKey].orEmpty()).length
             val context = "GD Studio 请求诊断：host=" + host +
                 ", types=" + params["types"].orEmpty() +
                 ", source=" + params["source"].orEmpty() +
-                ", signatureVersion=" + version
+                ", signatureVersion=" + version +
+                ", signatureTimePrefix=" + serverTime.take(9) +
+                ", signaturePayloadLength=" + payloadLength +
+                ", signatureAlgorithm=custom-md5-k29-fcfea3f8"
             throw IOException(context + "；" + error.message.orEmpty(), error)
         }
         apiPayloadError(body)?.let { detail ->
