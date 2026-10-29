@@ -288,7 +288,7 @@ internal object GdStudioApiSupport {
 
     private const val GD_STUDIO_HOST = "music.gdstudio.xyz"
     private const val GD_STUDIO_VERSION_FALLBACK = "2026.09.25"
-    private const val PLAYER_VERSION_TTL_MILLIS = 6 * 60 * 60 * 1000L
+    private const val PLAYER_VERSION_TTL_MILLIS = 10 * 60 * 1000L
     private const val SIGNATURE_BOOTSTRAP_TIMEOUT_MILLIS = 1_500L
     private val playerVersionRegex = Regex("""mkPlayer\.version\s*[:=]\s*["'](20\d{2}\.\d{1,2}\.\d{1,2})["']""")
     private val genericVersionRegex = Regex("""\bversion\s*[:=]\s*["'](20\d{2}\.\d{1,2}\.\d{1,2})["']""")
@@ -418,9 +418,10 @@ internal object GdStudioApiSupport {
                     response.code == 429 -> throw IOException(
                         "GD Studio 返回 HTTP 429，服务端可能已触发请求频率限制；已停止自动重试，请稍后再试。"
                     )
-                    response.code == 403 && attempt == 0 -> {
-                        // A 403 can mean the web-client version changed; refresh player.js once,
-                        // re-sign with the current version, and do not loop on persistent blocks.
+                    response.code == 401 && attempt == 0 -> {
+                        // GD Studio uses 401 for an invalid/stale signature. Refresh player.js,
+                        // re-read server time, and re-sign once. A 403 is an edge/host block,
+                        // not a signature error, so it should go directly to provider fallback.
                         forceRefreshVersion = true
                         retryRequest = true
                         ""
