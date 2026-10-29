@@ -4749,33 +4749,43 @@ private fun makeErrorReport(context: Context, stage: String, error: Throwable): 
         context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "unknown"
     }.getOrDefault("unknown")
     fun redact(value: String): String =
-        value.replace(Regex("https?://\\S+"), "<URL已隐藏>")
-            .replace(Regex("(?i)(cookie|authorization|token)\\s*[:=]\\s*[^\\s,;]+"), "<敏感字段已隐藏>")
-            .take(500)
+        value.replace(Regex("https?://\\\\S+"), "<URL已隐藏>")
+            .replace(Regex("(?i)(cookie|authorization|token|api[_-]?key)\\\\s*[:=]\\\\s*[^\\\\s,;]+"), "<敏感字段已隐藏>")
+            .replace(Regex("(?i)([?&](?:s|sign|signature|token|key)=)[^&\\\\s]+"), "$1<已隐藏>")
+            .replace(Regex("[\\\\r\\\\n\\\\t]+"), " ")
+            .take(1200)
 
-    val errorChain = generateSequence(error) { it.cause }
-        .take(4)
-        .joinToString("\n") { cause ->
-            cause.javaClass.name + if (cause.message.isNullOrBlank()) "" else ": " + redact(cause.message!!)
+    val report = StringBuilder()
+    val seen = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Throwable, Boolean>())
+    var count = 0
+    fun appendThrowable(current: Throwable, label: String, depth: Int) {
+        if (depth > 8 || count >= 20 || !seen.add(current)) return
+        count++
+        report.appendLine("$label${current.javaClass.name}" +
+            if (current.message.isNullOrBlank()) "" else ": " + redact(current.message!!))
+        current.stackTrace.take(if (depth == 0) 60 else 20).forEach { frame ->
+            report.appendLine("  at ${frame.className}.${frame.methodName}(${frame.fileName ?: "unknown"}:${frame.lineNumber})")
         }
-    val frames = error.stackTrace.take(30).joinToString("\n") { frame ->
-        "  at " + frame.className + "." + frame.methodName +
-            "(" + (frame.fileName ?: "unknown") + ":" + frame.lineNumber + ")"
+        current.suppressed.forEachIndexed { index, suppressed ->
+            if (count < 20) appendThrowable(suppressed, "抑制异常[$index]: ", depth + 1)
+        }
+        current.cause?.let { if (count < 20) appendThrowable(it, "原因: ", depth + 1) }
     }
+    appendThrowable(error, "", 0)
+
     val device = Build.MANUFACTURER + " " + Build.MODEL
     return buildString {
-        appendLine("音笺 MusicMeta 错误报告")
+        appendLine("音笺 MusicMeta 详细错误报告")
         appendLine("错误编号: MM-" + System.currentTimeMillis())
         appendLine("阶段: " + stage)
         appendLine("应用版本: " + appVersion)
         appendLine("设备: " + device)
         appendLine("Android: " + Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ")")
-        appendLine("异常链:")
-        appendLine(errorChain)
-        appendLine("调用位置（最多 30 层）:")
-        appendLine(frames)
-        appendLine("隐私说明: 未附加歌单输入、下载链接或 Cookie；消息中的网址已隐藏。")
-    }
+        appendLine("异常详情（含原因、抑制异常和调用栈）:")
+        append(report.toString())
+        appendLine("诊断说明: 已尽量保留服务端错误文本；网址、Cookie、Authorization、Token 和签名参数已隐藏。")
+        appendLine("隐私说明: 未附加歌单输入、下载链接或 Cookie。")
+    }.take(24000)
 }
 
 private const val fallbackUserAgent = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124.0 Mobile Safari/537.36"
