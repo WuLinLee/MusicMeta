@@ -110,26 +110,11 @@ internal object GdStudioApiClient {
         host: String,
         forceRefresh: Boolean = false,
     ): String {
-        val now = System.nanoTime() / 1_000_000L
-        synchronized(versionCache) {
-            if (!forceRefresh) {
-                versionCache[host]?.takeIf { now < it.expiresAtElapsedMs }?.let { return it.version }
-            }
-        }
-
-        // The website rotates the version used in its signature. Read the current value from
-        // the same host's player script and keep only a short cache; static API_VERSION is a
-        // fallback for mirrors which temporarily cannot serve the script.
-        val version = readApiVersion(client, host) ?: API_VERSION
-        synchronized(versionCache) {
-            versionCache[host] = VersionEntry(
-                version,
-                System.nanoTime() / 1_000_000L + VERSION_CACHE_TTL_MILLIS,
-            )
-        }
-        return version
+        // Match the maintained musicdl client: use its pinned, published signature version.
+        // Parsing an arbitrary version token from player.js can select an unrelated value
+        // and cause repeatable HTTP 401 Invalid request responses.
+        return API_VERSION
     }
-
     private fun readApiVersion(client: OkHttpClient, host: String): String? {
         val request = Request.Builder()
             .url("https://$host/js/player.js")
