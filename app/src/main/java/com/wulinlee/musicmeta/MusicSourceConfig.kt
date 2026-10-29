@@ -135,7 +135,14 @@ internal object GdStudioApiSupport {
         val body = client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
                 val errorBody = runCatching { response.body?.string().orEmpty() }.getOrDefault("")
-                throw IOException(formatGdStudioHttpErrorMessage(response.code, errorBody))
+                val message = formatGdStudioHttpErrorMessage(response.code, errorBody)
+                val endpointContext = if (request.url.encodedPath.endsWith("/api.php")) {
+                    "；请求主机=${request.url.host}, 实际响应主机=${response.request.url.host}, " +
+                        "hostChanged=${request.url.host != response.request.url.host}"
+                } else {
+                    ""
+                }
+                throw IOException(message + endpointContext)
             }
             val content = response.body?.string() ?: throw IOException("GD Studio API 返回空内容。")
             val trimmed = content.trimStart()
