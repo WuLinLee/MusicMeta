@@ -83,6 +83,7 @@ internal object GdStudioApiClient {
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", DEFAULT_USER_AGENT)
+            .header("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
             .header("Origin", "https://$host")
             .header("Referer", "https://$host/")
             .header("X-Requested-With", "XMLHttpRequest")
