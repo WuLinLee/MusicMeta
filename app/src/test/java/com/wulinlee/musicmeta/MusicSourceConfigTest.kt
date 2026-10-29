@@ -45,18 +45,18 @@ class MusicSourceConfigTest {
     @Test
     fun gdStudioOptionsMatchCurrentlyDocumentedStableSources() {
         val ids = MusicSourceConfig.platformsFor(MusicSourceConfig.BACKEND_GD_STUDIO).map { it.id }
-        assertEquals(listOf("netease", "joox", "bilibili"), ids)
+        assertEquals(listOf("netease", "kuwo", "joox", "bilibili"), ids)
         assertEquals("netease", MusicSourceConfig.platformForBackend(MusicSourceConfig.BACKEND_GD_STUDIO, "tencent"))
     }
 
     @Test
     fun gdStudioFallbackTriesPreferredSourceBeforeOtherStableSources() {
         assertEquals(
-            listOf("netease", "joox", "bilibili"),
+            listOf("netease", "kuwo", "joox", "bilibili"),
             gdStudioFallbackPlatformOrder("wyy"),
         )
         assertEquals(
-            listOf("joox", "netease", "bilibili"),
+            listOf("joox", "netease", "kuwo", "bilibili"),
             gdStudioFallbackPlatformOrder("joox"),
         )
     }
@@ -74,7 +74,7 @@ class MusicSourceConfigTest {
     fun flacPlatformRemainsAvailableEvenThoughGdStudioDoesNotListIt() {
         assertEquals("kuwo", MusicSourceConfig.normalizePlatform("kuwo"))
         assertEquals("kuwo", MusicSourceConfig.platformForBackend(MusicSourceConfig.BACKEND_FLAC_SITE, "kuwo"))
-        assertEquals("netease", MusicSourceConfig.platformForBackend(MusicSourceConfig.BACKEND_GD_STUDIO, "kuwo"))
+        assertEquals("kuwo", MusicSourceConfig.platformForBackend(MusicSourceConfig.BACKEND_GD_STUDIO, "kuwo"))
     }
 
     @Test
@@ -110,11 +110,12 @@ class MusicSourceConfigTest {
     @Test
     fun searchFallbackOrderStaysInsideSelectedGdStudioService() {
         val sources = gdStudioFallbackPlatformOrder("netease")
-        assertEquals(listOf("netease", "joox", "bilibili"), sources)
+        assertEquals(listOf("netease", "kuwo", "joox", "bilibili"), sources)
         // Every GD Studio search result is tagged "gd:<source>", so its URL request
         // follows GD Studio rather than a plain "wyy"/FLAC result.
-        assertEquals("gd:joox", "gd:" + sources[1])
-        assertEquals("gd:bilibili", "gd:" + sources[2])
+        assertEquals("gd:kuwo", "gd:" + sources[1])
+        assertEquals("gd:joox", "gd:" + sources[2])
+        assertEquals("gd:bilibili", "gd:" + sources[3])
     }
 
     @Test
