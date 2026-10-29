@@ -2,7 +2,6 @@ package com.wulinlee.musicmeta
 
 import java.io.IOException
 import java.util.Locale
-import okhttp3.FormBody
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -81,7 +80,7 @@ internal object GdStudioApiClient {
         serverTime: String,
         version: String,
     ): String {
-        val url = apiUrl(host)
+        val url = buildSignedUrl(host, params, serverTime, version)
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", DEFAULT_USER_AGENT)
@@ -89,7 +88,7 @@ internal object GdStudioApiClient {
             .header("Referer", "https://$host/")
             .header("X-Requested-With", "XMLHttpRequest")
             .header("Accept", "application/json, text/javascript, */*; q=0.01")
-            .post(buildSignedFormBody(host, params, serverTime, version))
+            .get()
             .build()
         val body = GdStudioApiSupport.getText(client, request, ttlMillis).trim()
         apiPayloadError(body)?.let { throw IOException(it) }
@@ -154,7 +153,7 @@ internal object GdStudioApiClient {
     internal fun parseVersionFromPlayerScript(script: String): String? =
         versionPattern.find(script)?.groupValues?.getOrNull(1)
 
-    /** Build the GD Studio API endpoint. Signed parameters are sent as a POST form, per web client. */
+    /** Build the GD Studio API endpoint. The maintained client uses signed GET query parameters. */
     internal fun apiUrl(host: String): HttpUrl {
         require(host in API_HOSTS) { "Unsupported GD Studio API host." }
         return HttpUrl.Builder()
@@ -165,15 +164,15 @@ internal object GdStudioApiClient {
     }
 
     /**
-     * GD Studio signs the URI-encoded search name or lookup id, but submits the original
-     * parameter values in an application/x-www-form-urlencoded POST body.
+     * GD Studio signs the URI-encoded search name or lookup id, then sends the original
+     * parameter values plus the signature as GET query parameters.
      */
-    internal fun buildSignedFormBody(
+    internal fun buildSignedUrl(
         host: String,
         params: Map<String, String>,
         serverTime: String,
         version: String = API_VERSION,
-    ): FormBody {
+    ): HttpUrl {
         require(host in API_HOSTS) { "Unsupported GD Studio API host." }
         val type = params["types"].orEmpty()
         val rawPayload = if (type == "search") params["name"] else params["id"]
@@ -185,11 +184,11 @@ internal object GdStudioApiClient {
         val signatureInput = "${timePrefix}|${host}|${normalizeVersion(version)}|${encodedPayload}"
         val signature = modifiedMd5(signatureInput).takeLast(8).uppercase(Locale.US)
 
-        return FormBody.Builder().apply {
+        return apiUrl(host).newBuilder().apply {
             params.forEach { (key, value) ->
-                if (key != "s") add(key, value)
+                if (key != "s") addQueryParameter(key, value)
             }
-            add("s", signature)
+            addQueryParameter("s", signature)
         }.build()
     }
 
