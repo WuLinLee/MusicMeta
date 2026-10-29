@@ -34,6 +34,30 @@ class GdStudioApiTest {
     }
 
     @Test
+    fun mirrorHostUsesCanonicalGdStudioHostInSignature() {
+        val params = linkedMapOf(
+            "types" to "search",
+            "source" to "netease",
+            "name" to "涙が ほお&x",
+            "count" to "20",
+            "pages" to "1",
+        )
+        val canonical = GdStudioApiClient.buildSignedParams(
+            GdStudioApiClient.PRIMARY_HOST,
+            params,
+            "1793255432",
+        )
+        val mirror = GdStudioApiClient.buildSignedParams(
+            "music.gdstudio.org",
+            params,
+            "1793255432",
+        )
+
+        assertEquals("E1188D36", canonical["s"])
+        assertEquals(canonical["s"], mirror["s"])
+    }
+
+    @Test
     fun signatureRejectionRetriesOnlyWhenVersionOrTimeBucketChanged() {
         assertEquals(
             false,
