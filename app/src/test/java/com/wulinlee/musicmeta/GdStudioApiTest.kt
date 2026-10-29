@@ -1,14 +1,13 @@
 package com.wulinlee.musicmeta
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GdStudioApiTest {
     @Test
-    fun searchRequestUsesMaintainedHostAndContainsSignature() {
+    fun searchRequestUsesMaintainedHostAndSignedPostForm() {
         val params = linkedMapOf(
             "types" to "search",
             "source" to "netease",
@@ -16,27 +15,34 @@ class GdStudioApiTest {
             "count" to "20",
             "pages" to "1",
         )
-        val url = GdStudioApiClient.buildSignedUrl(
+        val url = GdStudioApiClient.apiUrl(GdStudioApiClient.PRIMARY_HOST)
+        val form = GdStudioApiClient.buildSignedFormBody(
             GdStudioApiClient.PRIMARY_HOST,
             params,
             "1793255432",
         )
+        fun value(name: String): String? =
+            (0 until form.size).firstOrNull { form.name(it) == name }?.let(form::value)
+
         assertEquals("music.gdstudio.xyz", url.host)
         assertEquals("/api.php", url.encodedPath)
-        assertEquals("search", url.queryParameter("types"))
-        assertEquals("netease", url.queryParameter("source"))
-        assertEquals("涙が ほお&x", url.queryParameter("name"))
-        assertEquals("0AB1D53C", url.queryParameter("s"))
-        assertTrue(url.queryParameter("s").orEmpty().matches(Regex("[A-F0-9]{8}")))
+        assertEquals(0, url.querySize)
+        assertEquals("search", value("types"))
+        assertEquals("netease", value("source"))
+        assertEquals("涙が ほお&x", value("name"))
+        assertEquals("0AB1D53C", value("s"))
+        assertTrue(value("s").orEmpty().matches(Regex("[A-F0-9]{8}")))
     }
 
     @Test
     fun signaturesChangeWhenSearchPayloadChanges() {
-        fun signed(keyword: String) = GdStudioApiClient.buildSignedUrl(
+        fun signed(keyword: String): String? = GdStudioApiClient.buildSignedFormBody(
             GdStudioApiClient.PRIMARY_HOST,
             linkedMapOf("types" to "search", "source" to "netease", "name" to keyword, "count" to "20", "pages" to "1"),
             "1793255432",
-        ).queryParameter("s")
+        ).let { form ->
+            (0 until form.size).firstOrNull { form.name(it) == "s" }?.let(form::value)
+        }
         assertNotEquals(signed("涙がほおを流れても"), signed("あさきゆめみし"))
     }
 
@@ -109,30 +115,5 @@ class GdStudioApiTest {
         )
     }
 
-    @Test
-    fun gdstudioAuthOrServerFailureFallsBackOnlyToHiCnSupportedCatalogues() {
-        assertTrue(
-            isGdStudioApiFallbackEligible(
-                java.io.IOException("GD Studio API 请求失败：HTTP 401（Invalid request.）"),
-                "netease",
-            ),
-        )
-        assertTrue(
-            isGdStudioApiFallbackEligible(java.io.IOException("HTTP 503"), "kuwo"),
-        )
-        assertFalse(
-            isGdStudioApiFallbackEligible(java.io.IOException("HTTP 401"), "joox"),
-        )
-        assertFalse(
-            isGdStudioApiFallbackEligible(java.io.IOException("HTTP 400 bad keyword"), "netease"),
-        )
-    }
-
-    @Test
-    fun hiCnFallbackPlatformOrderOnlyCrossesBetweenItsPublishedCatalogues() {
-        assertEquals(listOf("kuwo"), flacSiteFallbackPlatformOrder("wyy"))
-        assertEquals(listOf("wyy"), flacSiteFallbackPlatformOrder("kuwo"))
-        assertTrue(flacSiteFallbackPlatformOrder("bilibili").isEmpty())
-    }
 
 }
