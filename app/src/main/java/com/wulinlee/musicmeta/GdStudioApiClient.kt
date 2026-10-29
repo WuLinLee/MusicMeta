@@ -275,85 +275,13 @@ internal object GdStudioApiClient {
 
     /** Custom MD5 round function copied from the maintained reference client. */
     private fun modifiedMd5(message: String): String {
-        val input = message.toByteArray(Charsets.UTF_8)
-        val paddedLength = ((input.size + 9 + 63) / 64) * 64
-        val data = ByteArray(paddedLength)
-        input.copyInto(data)
-        data[input.size] = 0x80.toByte()
-        val bitLength = input.size.toLong() * 8L
-        for (i in 0 until 8) data[paddedLength - 8 + i] = (bitLength ushr (i * 8)).toByte()
-
-        val shifts = intArrayOf(
-            7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
-            5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20,
-            4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
-            6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
-        )
-        val table = intArrayOf(
-            0xD76AA478.toInt(), 0xE8C7B756.toInt(), 0x242070DB, 0xC1BDCEEE.toInt(),
-            0xF57C0FAF.toInt(), 0x4787C62A, 0xA8304613.toInt(), 0xFD469501.toInt(),
-            0x698098D8, 0x8B44F7AF.toInt(), 0xFFFF5BB1.toInt(), 0x895CD7BE.toInt(),
-            0x6B901122, 0xFD987193.toInt(), 0xA679438E.toInt(), 0x49B40821,
-            0xF61E2562.toInt(), 0xC040B340.toInt(), 0x265E5A51, 0xE9B6C7AA.toInt(),
-            0xD62F105D.toInt(), 0x02441453, 0xD8A1E681.toInt(), 0xE7D3FBC8.toInt(),
-            0x21E1CDE6, 0xC33707D6.toInt(), 0xF4D50D87.toInt(), 0x455A14ED,
-            0xA9E3E905.toInt(), 0xFCFEA3F8.toInt(), 0x676F02D9, 0x8D2A4C8A.toInt(),
-            0xFFFA3942.toInt(), 0x8771F681.toInt(), 0x6D9D6122, 0xFDE5380C.toInt(),
-            0xA4BEEA44.toInt(), 0x4BDECFA9, 0xF6BB4B60.toInt(), 0xBEBFBC70.toInt(),
-            0x289B7EC6, 0xEAA127FA.toInt(), 0xD4EF3085.toInt(), 0x04881D05,
-            0xD9D4D039.toInt(), 0xE6DB99E5.toInt(), 0x1FA27CF8, 0xC4AC5665.toInt(),
-            0xF4292244.toInt(), 0x432AFF97, 0xAB9423A7.toInt(), 0xFC93A039.toInt(),
-            0x655B59C3, 0x8F0CCC92.toInt(), 0xFFEFF47D.toInt(), 0x85845DD1.toInt(),
-            0x6FA87E4F, 0xFE2CE6E0.toInt(), 0xA3014314.toInt(), 0x4E0811A1,
-            0xF7537E82.toInt(), 0xBD3AF235.toInt(), 0x2AD7D2BB, 0xEB86D391.toInt(),
-        )
-        var a0 = 0x67452301
-        var b0 = 0xEFCDAB89.toInt()
-        var c0 = 0x98BADCFE.toInt()
-        var d0 = 0x10325476
-        var offset = 0
-        while (offset < data.size) {
-            val words = IntArray(16) { index ->
-                val start = offset + index * 4
-                (data[start].toInt() and 0xff) or
-                    ((data[start + 1].toInt() and 0xff) shl 8) or
-                    ((data[start + 2].toInt() and 0xff) shl 16) or
-                    ((data[start + 3].toInt() and 0xff) shl 24)
-            }
-            var a = a0
-            var b = b0
-            var c = c0
-            var d = d0
-            for (i in 0 until 64) {
-                val f: Int
-                val g: Int
-                when (i) {
-                    in 0..15 -> { f = (b and c) or (b.inv() and d); g = i }
-                    in 16..31 -> { f = (d and b) or (c and d.inv()); g = (5 * i + 1) % 16 }
-                    in 32..47 -> { f = b xor c xor d; g = (3 * i + 5) % 16 }
-                    else -> { f = c xor (b or d.inv()); g = (7 * i) % 16 }
-                }
-                val sum = f + a + table[i] + words[g]
-                val nextB = b + Integer.rotateLeft(sum, shifts[i])
-                a = d
-                d = c
-                c = b
-                b = nextB
-            }
-            a0 += a
-            b0 += b
-            c0 += c
-            d0 += d
-            offset += 64
+        // Android's standard MD5 implementation is the reference algorithm used by GD Studio.
+        // The previous hand-written implementation drifted from MD5 and generated signatures
+        // rejected by the live API with HTTP 401 Invalid request.
+        val digest = java.security.MessageDigest.getInstance("MD5")
+            .digest(message.toByteArray(Charsets.UTF_8))
+        return digest.joinToString(separator = "") { byte ->
+            "%02x".format(Locale.US, byte.toInt() and 0xff)
         }
-        val output = StringBuilder(32)
-        for (word in intArrayOf(a0, b0, c0, d0)) {
-            for (i in 0 until 4) {
-                val byte = (word ushr (i * 8)) and 0xff
-                output.append("0123456789abcdef"[byte ushr 4])
-                output.append("0123456789abcdef"[byte and 0x0f])
-            }
-        }
-        return output.toString()
     }
 }
