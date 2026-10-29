@@ -270,6 +270,42 @@ class MusicSourceConfigTest {
     }
 
     @Test
+    fun crossProviderFallbackRequiresMatchingTitleAndCompatibleArtist() {
+        assertTrue(
+            gdStudioFallbackCandidateMatches(
+                "雨のmusique",
+                "JUDY AND MARY",
+                "雨のmusique",
+                "JUDY AND MARY",
+            ),
+        )
+        assertTrue(
+            gdStudioFallbackCandidateMatches(
+                "雨のmusique",
+                "JUDY AND MARY",
+                "雨のmusique",
+                "JUDY AND MARY / YUKI",
+            ),
+        )
+        assertFalse(
+            gdStudioFallbackCandidateMatches(
+                "雨のmusique",
+                "JUDY AND MARY",
+                "雨のmusique (Live)",
+                "JUDY AND MARY",
+            ),
+        )
+        assertFalse(
+            gdStudioFallbackCandidateMatches(
+                "雨のmusique",
+                "JUDY AND MARY",
+                "そばかす",
+                "JUDY AND MARY",
+            ),
+        )
+    }
+
+    @Test
     fun rateLimitExceptionProvidesRecoverableDelay() {
         val error = GdStudioRateLimitException(22_001L)
         assertEquals(23L, error.retryAfterSeconds)
