@@ -1,4 +1,4 @@
-# 音笺 MusicMeta v1.57 构建候选（尚未作为正式 Release 发布）
+# 音笺 MusicMeta v1.57 正式版
 
 - **取消客户端本地请求限流：** 移除每 5 分钟 50 次的本地预算、持久化时间戳和限流专用提示；服务端自己的频率限制仍然适用，缓存继续生效。
 - **统一 GD Studio API 主机：** MetadataProvider 的歌词、搜索与封面回退全部改为官方文档中的 `music-api.gdstudio.xyz/api.php`。
@@ -7,7 +7,6 @@
 - **回归测试：** 删除客户端限流测试，增加双后端平台名称映射测试。
 - **版本号：** 1.57，versionCode = 61。
 
-> 本节对应 CI 构建候选，不代表 GitHub 已创建 v1.57 正式 Release。
 
 ## v1.56 历史构建记录（正式 Release 状态未确认）
 
