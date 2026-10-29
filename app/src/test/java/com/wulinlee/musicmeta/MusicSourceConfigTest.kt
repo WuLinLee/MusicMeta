@@ -50,6 +50,27 @@ class MusicSourceConfigTest {
     }
 
     @Test
+    fun gdStudioFallbackTriesPreferredSourceBeforeOtherStableSources() {
+        assertEquals(
+            listOf("netease", "joox", "bilibili"),
+            gdStudioFallbackPlatformOrder("wyy"),
+        )
+        assertEquals(
+            listOf("joox", "netease", "bilibili"),
+            gdStudioFallbackPlatformOrder("joox"),
+        )
+    }
+
+    @Test
+    fun gdStudioUnsupportedSourceErrorIsRecognizedThroughWrappedExceptions() {
+        val error = java.io.IOException(
+            "GD Studio API 请求失败：HTTP 400（Value of `source` is not supported.）",
+        )
+        assertTrue(isGdStudioUnsupportedSourceError(error))
+        assertFalse(isGdStudioUnsupportedSourceError(java.io.IOException("HTTP 503")))
+    }
+
+    @Test
     fun flacPlatformRemainsAvailableEvenThoughGdStudioDoesNotListIt() {
         assertEquals("kuwo", MusicSourceConfig.normalizePlatform("kuwo"))
         assertEquals("kuwo", MusicSourceConfig.platformForBackend(MusicSourceConfig.BACKEND_FLAC_SITE, "kuwo"))
