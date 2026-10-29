@@ -80,6 +80,14 @@ class MusicSourceConfigTest {
 
 
     @Test
+    fun flacApiBusinessErrorDistinguishesHttpAndApiLayers() {
+        val message = formatFlacSiteApiError(-1, "接口请求失败", "下载地址解析")
+        assertTrue(message.orEmpty().contains("HTTP 2xx"))
+        assertTrue(message.orEmpty().contains("API code=-1"))
+        assertTrue(message.orEmpty().contains("下载地址解析"))
+    }
+
+    @Test
     fun flacSiteSongNotFoundErrorGivesRecoverySteps() {
         val message = formatFlacSiteApiError(
             -1,
