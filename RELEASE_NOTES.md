@@ -1,3 +1,10 @@
+# 音笺 MusicMeta v1.60 候选修复版
+
+- **补齐 GD Studio 稳定音源列表：** 按公开 API 文档将酷我（`kuwo`）加入稳定音源和备用顺序。此前应用漏掉了文档列出的酷我，导致网易云 source 被拒绝时少尝试一个可用候选。
+- **版本号：** 1.60，versionCode = 64。
+
+> 这次修正了音源列表并更新了回归测试；真实在线搜索与播放仍需在可访问 GD Studio API 的环境中验证。
+
 # 音笺 MusicMeta v1.59 正式版
 
 - **修复 API 服务串用：** 在设置中选择 GD Studio 后，搜索、试听和下载不会再悄悄改走 flac.music.hi.cn；选择 flac.music.hi.cn 时也不会自动改走 GD Studio。
