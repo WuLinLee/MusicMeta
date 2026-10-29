@@ -1,7 +1,7 @@
 # 音笺 MusicMeta v1.56 正式版
 
 - **修复 GD Studio 参数不兼容：** 搜索、封面和歌词回退统一按所选后端校验音乐平台，避免把旧设置中的不支持平台值发送给 GD Studio。
-- **适配 GD Studio 当前签名协议：** 改为请求 `music.gdstudio.xyz/api.php`，按 `/time` 服务端时间、`mkPlayer.version` 和对应查询值生成 `s` 签名；遇到 HTTP 403 时刷新播放器版本并重签一次。
+- **适配 GD Studio 当前签名协议：** 改为请求 `music.gdstudio.xyz/api.php`，按 `/time` 服务端时间、`mkPlayer.version` 和对应查询值生成 `s` 签名；HTTP 401（签名无效）时刷新版本并重签一次，HTTP 403（访问被拒）则切换备用音源。
 - **签名算法与网页实现一致：** 使用 GD Studio 修改过第 30 轮常量的 MD5 变体，而非标准 MD5；新增固定向量回归测试，避免签名看似正确却被服务端拒绝。
 - **双向备用音源：** 网易云搜索遇到 GD Studio HTTP 400/403、限流、服务故障或无候选时，自动尝试 flac.music.hi.cn；网站搜索或下载地址解析失败时，反向尝试 GD Studio。
 - **避免误换歌曲：** 跨接口回退要求歌名匹配，并在双方都有歌手信息时核对歌手。
