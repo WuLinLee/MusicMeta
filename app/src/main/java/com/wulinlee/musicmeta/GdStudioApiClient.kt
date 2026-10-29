@@ -70,8 +70,9 @@ internal object GdStudioApiClient {
         require(host in API_HOSTS) { "Unsupported GD Studio API host." }
         val type = params["types"].orEmpty()
         val rawPayload = if (type == "search") params["name"] else params["id"]
-        require(!rawPayload.isNullOrBlank()) { "GD Studio signature payload is missing." }
-        val encodedPayload = encodeURIComponent(rawPayload)
+        val payload = rawPayload?.takeIf { it.isNotBlank() }
+            ?: throw IllegalArgumentException("GD Studio signature payload is missing.")
+        val encodedPayload = encodeURIComponent(payload)
         val timePrefix = serverTime.take(9)
         require(timePrefix.length == 9) { "GD Studio server time must contain at least 9 digits." }
         val signatureInput = "$timePrefix|$host|${normalizeVersion(API_VERSION)}|$encodedPayload"

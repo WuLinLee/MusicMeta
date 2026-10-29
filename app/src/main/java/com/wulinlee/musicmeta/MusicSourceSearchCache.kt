@@ -23,6 +23,11 @@ internal object MusicSourceSearchCache {
     }
 
     @Synchronized
+    fun invalidate(key: String) {
+        cache.remove(key)
+    }
+
+    @Synchronized
     fun put(key: String, songs: List<FlacSiteSong>) {
         if (songs.isNotEmpty()) {
             cache[key] = Entry(System.nanoTime() / 1_000_000L + TTL_MILLIS, songs.toList())

@@ -187,7 +187,8 @@ class FlacMusicProvider {
         // A stale saved value such as Kuwo must never be sent to GD Studio as an unsupported source.
         val source = MusicSourceConfig.platformForBackend(selectedBackend, platform)
         val cacheKey = "$selectedBackend:$source:${keyword.trim().lowercase()}"
-        if (!forceRefresh) MusicSourceSearchCache.get(cacheKey)?.let { return@withContext it }
+        if (forceRefresh) MusicSourceSearchCache.invalidate(cacheKey)
+        else MusicSourceSearchCache.get(cacheKey)?.let { return@withContext it }
 
         val songs = if (selectedBackend == MusicSourceConfig.BACKEND_GD_STUDIO) {
             try {
