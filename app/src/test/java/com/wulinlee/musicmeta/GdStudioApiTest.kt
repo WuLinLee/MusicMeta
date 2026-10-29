@@ -8,7 +8,7 @@ import org.junit.Test
 
 class GdStudioApiTest {
     @Test
-    fun searchRequestUsesMaintainedHostAndSignedGetQuery() {
+    fun searchRequestUsesMaintainedHostAndSignedPostForm() {
         val params = linkedMapOf(
             "types" to "search",
             "source" to "netease",
@@ -17,7 +17,7 @@ class GdStudioApiTest {
             "pages" to "1",
         )
         val url = GdStudioApiClient.apiUrl(GdStudioApiClient.PRIMARY_HOST)
-        val signedUrl = GdStudioApiClient.buildSignedUrl(
+        val signedParams = GdStudioApiClient.buildSignedParams(
             GdStudioApiClient.PRIMARY_HOST,
             params,
             "1793255432",
@@ -25,14 +25,36 @@ class GdStudioApiTest {
 
         assertEquals("music.gdstudio.xyz", url.host)
         assertEquals("/api.php", url.encodedPath)
-        assertEquals("https", signedUrl.scheme)
-        assertEquals("music.gdstudio.xyz", signedUrl.host)
-        assertEquals("/api.php", signedUrl.encodedPath)
-        assertEquals("search", signedUrl.queryParameter("types"))
-        assertEquals("netease", signedUrl.queryParameter("source"))
-        assertEquals("涙が ほお&x", signedUrl.queryParameter("name"))
-        assertEquals("9ACA8505", signedUrl.queryParameter("s"))
-        assertTrue(signedUrl.queryParameter("s").orEmpty().matches(Regex("[A-F0-9]{8}")))
+        assertEquals(0, url.querySize)
+        assertEquals("search", signedParams["types"])
+        assertEquals("netease", signedParams["source"])
+        assertEquals("涙が ほお&x", signedParams["name"])
+        assertEquals("E1188D36", signedParams["s"])
+        assertTrue(signedParams["s"].orEmpty().matches(Regex("[A-F0-9]{8}")))
+    }
+
+    @Test
+    fun mirrorHostUsesCanonicalGdStudioHostInSignature() {
+        val params = linkedMapOf(
+            "types" to "search",
+            "source" to "netease",
+            "name" to "涙が ほお&x",
+            "count" to "20",
+            "pages" to "1",
+        )
+        val canonical = GdStudioApiClient.buildSignedParams(
+            GdStudioApiClient.PRIMARY_HOST,
+            params,
+            "1793255432",
+        )
+        val mirror = GdStudioApiClient.buildSignedParams(
+            "music.gdstudio.org",
+            params,
+            "1793255432",
+        )
+
+        assertEquals("E1188D36", canonical["s"])
+        assertEquals(canonical["s"], mirror["s"])
     }
 
     @Test
@@ -68,11 +90,11 @@ class GdStudioApiTest {
 
     @Test
     fun signaturesChangeWhenSearchPayloadChanges() {
-        fun signed(keyword: String): String? = GdStudioApiClient.buildSignedUrl(
+        fun signed(keyword: String): String? = GdStudioApiClient.buildSignedParams(
             GdStudioApiClient.PRIMARY_HOST,
             linkedMapOf("types" to "search", "source" to "netease", "name" to keyword, "count" to "20", "pages" to "1"),
             "1793255432",
-        ).queryParameter("s")
+        )["s"]
         assertNotEquals(signed("涙がほおを流れても"), signed("あさきゆめみし"))
     }
 
@@ -114,22 +136,9 @@ class GdStudioApiTest {
     }
 
     @Test
-    fun versionNormalizationMatchesTheWebsiteSignatureProtocol() {
-        assertEquals("2026.09.25", GdStudioApiClient.API_VERSION)
-        assertEquals("20260925", GdStudioApiClient.normalizeVersion("2026.09.25"))
-        assertEquals(
-            "2026.10.29",
-            GdStudioApiClient.parseVersionFromPlayerScript(
-                """const mkPlayer = { version: "2026.10.29" };""",
-            ),
-        )
-        assertEquals(
-            "2026.11.03",
-            GdStudioApiClient.parseVersionFromPlayerScript(
-                """window.mkPlayer = { name: "player", version: '2026.11.03' };""",
-            ),
-        )
-        assertEquals(null, GdStudioApiClient.parseVersionFromPlayerScript("const player = {};"))
+    fun apiVersionMatchesMaintainedClientProtocol() {
+        assertEquals("2026.08.01", GdStudioApiClient.API_VERSION)
+        assertEquals("20260801", GdStudioApiClient.normalizeVersion(GdStudioApiClient.API_VERSION))
     }
 
     @Test

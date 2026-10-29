@@ -1,3 +1,15 @@
+# 音笺 MusicMeta v1.73 正式候选版
+
+- **修复 GD Studio 签名算法：** 对齐上游维护中的 GDStudioMusicClient，移除错误的非标准 MD5 常量，改用标准 MD5 摘要；该错误与设备报告中的 HTTP 401 / Invalid request 相符。
+- **对齐签名协议版本与主机：** 固定使用上游客户端当前采用的 2026.08.01；即使因网络故障回退到 .org 镜像，签名仍使用上游规定的规范主机 music.gdstudio.xyz，不再把镜像域名带入签名字符串。
+- **修正 GD Studio 请求格式：** 将 API 参数和签名放入 application/x-www-form-urlencoded POST 表单，匹配上游客户端实际使用的请求方式，不再把这些参数放在 URL 查询串中。
+- **新增签名回归测试：** 覆盖 POST 所需的参数集合、Unicode/标点编码、固定签名值、协议版本和 .org 镜像主机回归，防止请求方式、MD5 常量、签名版本或主机字段再次偏离上游协议。
+- **hi.cn 错误状态：** 本次日志中多个网易云候选的 getUrl 请求均返回 HTTP 2xx / API code -1。现有证据不足以判断是 hi.cn 服务端、候选状态还是接口参数变化；此版本不宣称已修复该第三方响应，也不绕过网站验证。
+- **验证范围：** 先由 GitHub Actions 执行单元测试、Release 构建、APK 对齐、签名与包信息检查；CI 成功后仍需在真实设备重新测试 GD Studio 和 hi.cn。
+- **版本号：** 1.73，versionCode = 77。
+
+> 这是修复候选版。GD Studio 的签名和 HTTP 请求格式已按上游实现修正，但在线恢复情况仍以新 APK 的真实设备测试为准。
+
 # 音笺 MusicMeta v1.72 正式版
 
 - **补齐 hi.cn 业务错误诊断：** 当 HTTP 请求成功但 JSON 返回非零 API code 时，错误信息明确标出 HTTP 层为 2xx、API code 与操作阶段，避免把 HTTP 传输失败和服务端业务拒绝混为一谈。
