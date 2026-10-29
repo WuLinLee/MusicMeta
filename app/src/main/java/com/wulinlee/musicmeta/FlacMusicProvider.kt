@@ -167,6 +167,30 @@ internal fun isGdStudioUnsupportedSourceError(error: Throwable): Boolean =
                 message.contains("不支持"))
     }
 
+/**
+ * GD Studio's signed endpoint may be unavailable after a protocol change or transient outage.
+ * Only fall back to hi.cn for platforms the site actually exposes (NetEase and Kuwo); do not
+ * redirect JOOX/Bilibili searches to a different catalogue.
+ */
+internal fun isGdStudioApiFallbackEligible(error: Throwable, source: String): Boolean {
+    if (MusicSourceConfig.platformsFor(MusicSourceConfig.BACKEND_FLAC_SITE).none { it.id == source }) {
+        return false
+    }
+    return throwableTree(error).any { cause ->
+        val message = cause.message.orEmpty()
+        message.contains("HTTP 401", ignoreCase = true) ||
+            message.contains("Invalid request", ignoreCase = true) ||
+            Regex("""\\bHTTP 5\\d{2}\\b""").containsMatchIn(message)
+    }
+}
+
+/** hi.cn has only the wyy/Kuwo catalogues; keep fallback candidates title/artist-validated. */
+internal fun flacSiteFallbackPlatformOrder(platform: String): List<String> = when (platform.lowercase()) {
+    "wyy" -> listOf("kuwo")
+    "kuwo" -> listOf("wyy")
+    else -> emptyList()
+}
+
 internal fun isGdStudioNoCandidatesError(error: Throwable): Boolean =
     throwableTree(error).any { it.message?.contains("GD Studio 没有搜索到候选歌曲") == true }
 
@@ -206,6 +230,20 @@ class FlacMusicProvider {
         return candidates
     }
 
+    private fun searchFlacSiteCandidates(
+        keyword: String,
+        fallbackKeyword: String?,
+        source: String,
+        cookie: String?,
+        userAgent: String,
+    ): List<FlacSiteSong> {
+        for (searchKeyword in gdStudioSearchKeywords(keyword, fallbackKeyword)) {
+            val candidates = searchFlacSite(searchKeyword, source, cookie, userAgent)
+            if (candidates.isNotEmpty()) return candidates
+        }
+        throw IOException("flac.music.hi.cn 没有搜索到候选歌曲。")
+    }
+
     suspend fun search(
         keyword: String,
         platform: String,
@@ -230,9 +268,26 @@ class FlacMusicProvider {
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                // If the selected GD Studio catalog explicitly rejects its source ID,
-                // try another documented GD Studio catalog. Never replace GD Studio
-                // results with flac.music.hi.cn results behind the user's back.
+                // A signature rejection or upstream 5xx can affect every GD Studio source.
+                // Reuse the existing hi.cn adapter for its actual supported catalogues only.
+                // Do not cache the fallback under the GD Studio search key.
+                if (isGdStudioApiFallbackEligible(error, source)) {
+                    try {
+                        return@withContext searchFlacSiteCandidates(
+                            keyword, fallbackKeyword, source, cookie, userAgent,
+                        )
+                    } catch (fallbackError: CancellationException) {
+                        throw fallbackError
+                    } catch (fallbackError: Exception) {
+                        throw IOException(
+                            "GD Studio 搜索失败（${error.message ?: "未知错误"}）；已尝试 hi.cn 的${MusicSourceConfig.labelForPlatform(source)}音源，但也未能取得候选。请稍后重试或在设置中切换 API 服务。",
+                            error,
+                        ).also { it.addSuppressed(fallbackError) }
+                    }
+                }
+
+                // If a source ID is explicitly rejected, try another documented GD Studio catalog.
+                // This source switch is restricted to an explicit upstream unsupported-source response.
                 if (!isGdStudioUnsupportedSourceError(error)) throw error
                 var lastError: Exception = error
                 var alternate: List<FlacSiteSong> = emptyList()
@@ -339,13 +394,52 @@ class FlacMusicProvider {
         val requestedFromGdStudio = song.platform.startsWith("gd:")
         val source = song.platform.removePrefix("gd:").lowercase().ifBlank { "netease" }
         var didRetryFlacResolution = false
+        var didRetryGdStudioOnFlac = false
         try {
             resolveDownloadUrl(song, format, bitrate, cookie, userAgent) to requestedFromGdStudio
         } catch (error: CancellationException) {
             throw error
         } catch (primaryError: Exception) {
+            // If GD Studio's signed endpoint is rejected, try the same catalogue through the
+            // existing hi.cn adapter only when that catalogue is available there.
+            if (requestedFromGdStudio && isGdStudioApiFallbackEligible(primaryError, source)) {
+                didRetryGdStudioOnFlac = true
+                val keywords = gdStudioSearchKeywords(
+                    listOf(song.title, song.artist).filter { it.isNotBlank() }.joinToString(" "),
+                    song.title,
+                )
+                val matchedCandidates = mutableListOf<FlacSiteSong>()
+                for (keyword in keywords) {
+                    try {
+                        matchedCandidates += searchFlacSite(keyword, source, cookie, userAgent)
+                            .filter { candidate ->
+                                gdStudioFallbackCandidateMatches(
+                                    song.title, song.artist, candidate.title, candidate.artist,
+                                )
+                            }
+                    } catch (fallbackError: CancellationException) {
+                        throw fallbackError
+                    } catch (fallbackError: Exception) {
+                        primaryError.addSuppressed(fallbackError)
+                    }
+                }
+                for (candidate in matchedCandidates
+                    .distinctBy { listOf(it.platform, it.id, it.time, it.sign).joinToString("|") }
+                    .take(3)
+                ) {
+                    try {
+                        val url = resolveDownloadUrl(candidate, format, bitrate, cookie, userAgent)
+                        return@withContext url to false
+                    } catch (fallbackError: CancellationException) {
+                        throw fallbackError
+                    } catch (fallbackError: Exception) {
+                        primaryError.addSuppressed(fallbackError)
+                    }
+                }
+            }
+
             // A GD Studio result may be retried through another supported GD Studio catalog
-            // if the URL endpoint explicitly rejects the selected source. Never switch to FLAC.
+            // if the URL endpoint explicitly rejects the selected source.
             if (requestedFromGdStudio && isGdStudioUnsupportedSourceError(primaryError)) {
                 val keyword = listOf(song.title, song.artist)
                     .filter { it.isNotBlank() }
@@ -456,19 +550,58 @@ class FlacMusicProvider {
                         primaryError.addSuppressed(retryError)
                     }
                 }
+
+                // hi.cn officially exposes only NetEase (wyy) and Kuwo. If a NetEase
+                // candidate has no playable URL, try Kuwo for the *same exact title* and
+                // a compatible artist rather than returning an unrelated search hit.
+                for (alternatePlatform in flacSiteFallbackPlatformOrder(song.platform)) {
+                    val alternateSource = if (alternatePlatform == "wyy") "netease" else alternatePlatform
+                    val alternateCandidates = mutableListOf<FlacSiteSong>()
+                    for (keyword in refreshKeywords) {
+                        try {
+                            alternateCandidates += searchFlacSite(
+                                keyword, alternateSource, cookie, userAgent,
+                            ).filter { candidate ->
+                                gdStudioFallbackCandidateMatches(
+                                    song.title, song.artist, candidate.title, candidate.artist,
+                                )
+                            }
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (alternateError: Exception) {
+                            primaryError.addSuppressed(alternateError)
+                        }
+                    }
+                    for (candidate in alternateCandidates
+                        .distinctBy { listOf(it.platform, it.id, it.time, it.sign).joinToString("|") }
+                        .take(3)
+                    ) {
+                        try {
+                            val url = resolveDownloadUrl(candidate, format, bitrate, cookie, userAgent)
+                            return@withContext url to false
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (alternateError: Exception) {
+                            primaryError.addSuppressed(alternateError)
+                        }
+                    }
+                }
             }
 
             val provider = if (requestedFromGdStudio) "GD Studio" else "flac.music.hi.cn"
             val guidance = when {
+                didRetryGdStudioOnFlac ->
+                    "已尝试通过 hi.cn 的同平台音源匹配曲名和歌手，但仍未取得试听地址；请稍后重试或切换音源。"
                 requestedFromGdStudio ->
                     "请在设置中选择 GD Studio 的其他可用音乐平台，或稍后重试。"
                 didRetryFlacResolution ->
-                    "已在同一 API 服务内刷新搜索并尝试匹配候选，仍未取得地址；请稍后重试或切换 API 服务。只有网页明确显示访问验证要求时，才需要先在网页中完成验证。"
+                    "已在同一 API 服务内刷新搜索，并尝试酷我等可用平台上曲名和歌手匹配的候选，仍未取得地址；请稍后重试或手动切换平台。只有网页明确显示访问验证要求时，才需要先在网页中完成验证。"
                 else ->
                     "请重新搜索或切换 API 服务；只有网页明确显示访问验证要求时，才需要先在网页中完成验证。"
             }
+            val providerSwitchNote = if (didRetryGdStudioOnFlac) "" else "本次未自动切换到另一 API 服务。"
             throw IOException(
-                "$provider 解析《${song.title}》的下载地址失败（${primaryError.message ?: "未知错误"}）。$guidance 本次未自动切换到另一 API 服务。",
+                "$provider 解析《${song.title}》的下载地址失败（${primaryError.message ?: "未知错误"}）。$guidance $providerSwitchNote",
                 primaryError,
             )
         }
