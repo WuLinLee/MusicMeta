@@ -120,15 +120,29 @@ internal object GdStudioApiClient {
             text.contains("Invalid request", ignoreCase = true)
     }
 
+    @Synchronized
     private fun currentApiVersion(
         client: OkHttpClient,
         host: String,
         forceRefresh: Boolean = false,
     ): String {
-        // Match the maintained musicdl client: use its pinned, published signature version.
-        // Parsing an arbitrary version token from player.js can select an unrelated value
-        // and cause repeatable HTTP 401 Invalid request responses.
-        return API_VERSION
+        val now = System.nanoTime() / 1_000_000L
+        val cached = versionCache[host]
+        if (!forceRefresh && cached != null && now < cached.expiresAtElapsedMs) {
+            return cached.version
+        }
+
+        // The site's player.js version is part of the signature. It can change without an
+        // app release; a pinned fallback alone leaves every API request invalid after rotation.
+        // On a 401, forceRefresh bypasses this cache and reads player.js again before retrying.
+        val selected = readApiVersion(client, host)
+            ?: cached?.version
+            ?: API_VERSION
+        versionCache[host] = VersionEntry(
+            version = selected,
+            expiresAtElapsedMs = now + VERSION_CACHE_TTL_MILLIS,
+        )
+        return selected
     }
     private fun readApiVersion(client: OkHttpClient, host: String): String? {
         val request = Request.Builder()
