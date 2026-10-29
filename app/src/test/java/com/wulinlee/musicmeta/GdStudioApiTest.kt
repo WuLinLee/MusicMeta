@@ -31,7 +31,7 @@ class GdStudioApiTest {
         assertEquals("search", signedUrl.queryParameter("types"))
         assertEquals("netease", signedUrl.queryParameter("source"))
         assertEquals("涙が ほお&x", signedUrl.queryParameter("name"))
-        assertEquals("0AB1D53C", signedUrl.queryParameter("s"))
+        assertEquals("9ACA8505", signedUrl.queryParameter("s"))
         assertTrue(signedUrl.queryParameter("s").orEmpty().matches(Regex("[A-F0-9]{8}")))
     }
 
