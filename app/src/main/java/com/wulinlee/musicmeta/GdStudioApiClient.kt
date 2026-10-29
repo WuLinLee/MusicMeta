@@ -45,8 +45,7 @@ internal object GdStudioApiClient {
                 } catch (error: IOException) {
                     if (!isSignatureRejection(error)) throw error
 
-                    // Refresh both the player-script version and server time before one retry.
-                    // A fresh time read avoids reusing a signature prefix across a bucket boundary.
+                    // Refresh server time before one retry while retaining the upstream-pinned version.
                     val refreshedVersion = currentApiVersion(client, host, forceRefresh = true)
                     val refreshedTime = serverTimePrefix(client, host)
                     try {
