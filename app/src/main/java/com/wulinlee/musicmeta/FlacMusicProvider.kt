@@ -1,5 +1,6 @@
 package com.wulinlee.musicmeta
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
@@ -76,6 +77,22 @@ internal fun isGdStudioNoCandidatesError(error: Throwable): Boolean =
     generateSequence(error) { it.cause }
         .any { it.message?.contains("GD Studio 没有搜索到候选歌曲") == true }
 
+/** Require an exact normalized title and, when both are known, a compatible artist before cross-source fallback. */
+internal fun gdStudioFallbackCandidateMatches(
+    requestedTitle: String,
+    requestedArtist: String,
+    candidateTitle: String,
+    candidateArtist: String,
+): Boolean {
+    fun normalize(value: String): String = value.trim().lowercase().filter { it.isLetterOrDigit() }
+    val requestedTitleKey = normalize(requestedTitle)
+    if (requestedTitleKey.isBlank() || requestedTitleKey != normalize(candidateTitle)) return false
+    val requestedArtistKey = normalize(requestedArtist.substringBefore(" / "))
+    val candidateArtistKey = normalize(candidateArtist.substringBefore(" / "))
+    return requestedArtistKey.isBlank() || candidateArtistKey.isBlank() ||
+        candidateArtistKey.contains(requestedArtistKey) || requestedArtistKey.contains(candidateArtistKey)
+}
+
 class FlacMusicProvider {
     private val client = OkHttpClient.Builder()
         .followRedirects(true)
@@ -92,7 +109,9 @@ class FlacMusicProvider {
     ): List<FlacSiteSong> = withContext(Dispatchers.IO) {
         if (keyword.isBlank()) throw IOException("请输入要搜索的歌名或歌手。")
         val selectedBackend = MusicSourceConfig.normalizeBackend(backend)
-        val source = MusicSourceConfig.normalizePlatform(platform)
+        // Normalize against the selected backend, not the union of all known platform IDs.
+        // A stale saved value such as Kuwo must never be sent to GD Studio as an unsupported source.
+        val source = MusicSourceConfig.platformForBackend(selectedBackend, platform)
         val cacheKey = "$selectedBackend:$source:${keyword.trim().lowercase()}"
         MusicSourceSearchCache.get(cacheKey)?.let { return@withContext it }
 
@@ -105,17 +124,32 @@ class FlacMusicProvider {
                 }
                 if (candidates.isEmpty()) throw IOException(formatGdStudioNoCandidatesMessage())
                 candidates
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Exception) {
-                // When the NetEase endpoint is temporarily returning 5xx, keep playback moving
-                // by trying the implemented flac.music.hi.cn adapter. Never silently switch
-                // JOOX/Bilibili requests onto a different music catalog.
-                if (source != "netease" || !isGdStudioTransientServiceError(error)) throw error
-                var candidates = searchFlacSite(keyword, source, cookie, userAgent)
-                if (candidates.isEmpty() && !fallbackKeyword.isNullOrBlank()) {
-                    candidates = searchFlacSite(fallbackKeyword, source, cookie, userAgent)
+                // The secondary site implements NetEase but not JOOX/Bilibili. For NetEase,
+                // use it when GD Studio rejects the request (400/403), is rate-limited, is
+                // unavailable, or returns no candidates. Never cross-search another catalog.
+                if (source != "netease") throw error
+                val candidates = try {
+                    var alternate = searchFlacSite(keyword, source, cookie, userAgent)
+                    if (alternate.isEmpty() && !fallbackKeyword.isNullOrBlank()) {
+                        alternate = searchFlacSite(fallbackKeyword, source, cookie, userAgent)
+                    }
+                    alternate
+                } catch (fallbackError: CancellationException) {
+                    throw fallbackError
+                } catch (fallbackError: Exception) {
+                    throw IOException(
+                        "GD Studio 搜索失败（${error.message ?: "未知错误"}）；备用源 flac.music.hi.cn 也请求失败（${fallbackError.message ?: "未知错误"}）。",
+                        error,
+                    ).also { it.addSuppressed(fallbackError) }
                 }
                 if (candidates.isEmpty()) {
-                    throw IOException("GD Studio 暂时返回 HTTP 5xx，已尝试切换下载站搜索但没有找到候选；请稍后重试。", error)
+                    throw IOException(
+                        "GD Studio 搜索失败或没有候选，备用源 flac.music.hi.cn 也没有找到结果；请稍后重试。",
+                        error,
+                    )
                 }
                 candidates
             }
@@ -184,42 +218,76 @@ class FlacMusicProvider {
         bitrate: String,
         cookie: String?,
         userAgent: String,
-    ): Pair<String, Boolean> {
-        val usedGdStudio = song.platform.startsWith("gd:")
-        val url = try {
-            resolveDownloadUrl(song, format, bitrate, cookie, userAgent)
-        } catch (error: GdStudioRateLimitException) {
+    ): Pair<String, Boolean> = withContext(Dispatchers.IO) {
+        val requestedFromGdStudio = song.platform.startsWith("gd:")
+        try {
+            resolveDownloadUrl(song, format, bitrate, cookie, userAgent) to requestedFromGdStudio
+        } catch (error: CancellationException) {
             throw error
-        } catch (error: Exception) {
-            val gdSource = song.platform.removePrefix("gd:").ifBlank { "netease" }
-            if (usedGdStudio && gdSource == "netease" && isGdStudioTransientServiceError(error)) {
-                val alternatives = runCatching {
-                    withContext(Dispatchers.IO) {
-                        searchFlacSite(
-                            keyword = listOf(song.title, song.artist).filter { it.isNotBlank() }.joinToString(" "),
-                            normalizedPlatform = "netease",
-                            cookie = cookie,
-                            userAgent = userAgent,
-                        )
+        } catch (primaryError: Exception) {
+            val source = song.platform.removePrefix("gd:").lowercase().ifBlank { "netease" }
+            val isNetEase = source == "netease" || source == "wyy"
+
+            // If GD Studio fails for NetEase, retry through the secondary site's API.
+            // This includes HTTP 400/403 and local/upstream rate limits, not only 5xx.
+            if (requestedFromGdStudio && source == "netease") {
+                val fallbackUrl = try {
+                    val keyword = listOf(song.title, song.artist)
+                        .filter { it.isNotBlank() }
+                        .joinToString(" ")
+                    var alternatives = searchFlacSite(keyword, "netease", cookie, userAgent)
+                    if (alternatives.isEmpty()) {
+                        alternatives = searchFlacSite(song.title, "netease", cookie, userAgent)
                     }
-                }.getOrDefault(emptyList())
-                val titleKey = normalizeMatch(song.title)
-                val artistKey = normalizeMatch(song.artist.substringBefore(" / "))
-                val alternative = alternatives.firstOrNull { candidate ->
-                    val candidateArtist = normalizeMatch(candidate.artist)
-                    normalizeMatch(candidate.title) == titleKey &&
-                        (candidateArtist.contains(artistKey) || artistKey.contains(candidateArtist))
+                    val alternative = alternatives.firstOrNull { candidate ->
+                        gdStudioFallbackCandidateMatches(
+                            song.title, song.artist, candidate.title, candidate.artist,
+                        )
+                    } ?: throw IOException("备用下载站没有找到标题和歌手匹配的候选。")
+                    resolveDownloadUrl(alternative, format, bitrate, cookie, userAgent)
+                } catch (fallbackError: CancellationException) {
+                    throw fallbackError
+                } catch (fallbackError: Exception) {
+                    throw IOException(
+                        "GD Studio 解析《${song.title}》失败（${primaryError.message ?: "未知错误"}）；" +
+                            "备用源 flac.music.hi.cn 也失败（${fallbackError.message ?: "未知错误"}）。请稍后重试。",
+                        primaryError,
+                    ).also { it.addSuppressed(fallbackError) }
                 }
-                if (alternative != null) {
-                    return resolveDownloadUrl(alternative, format, bitrate, cookie, userAgent) to false
-                }
+                return@withContext fallbackUrl to false
             }
+
+            // Conversely, a NetEase result from flac.music.hi.cn can be retried through GD Studio.
+            // Match both title and artist so a similarly named track is not silently substituted.
+            if (!requestedFromGdStudio && isNetEase) {
+                val fallbackUrl = try {
+                    val keyword = listOf(song.title, song.artist)
+                        .filter { it.isNotBlank() }
+                        .joinToString(" ")
+                    val alternatives = searchGdStudio(keyword, "netease")
+                    val alternative = alternatives.firstOrNull { candidate ->
+                        gdStudioFallbackCandidateMatches(
+                            song.title, song.artist, candidate.title, candidate.artist,
+                        )
+                    } ?: throw IOException("GD Studio 没有找到标题和歌手匹配的候选。")
+                    resolveDownloadUrl(alternative, format, bitrate, cookie, userAgent)
+                } catch (fallbackError: CancellationException) {
+                    throw fallbackError
+                } catch (fallbackError: Exception) {
+                    throw IOException(
+                        "下载站解析《${song.title}》失败（${primaryError.message ?: "未知错误"}）；" +
+                            "GD Studio 备用解析也失败（${fallbackError.message ?: "未知错误"}）。请稍后重试或切换 API 服务。",
+                        primaryError,
+                    ).also { it.addSuppressed(fallbackError) }
+                }
+                return@withContext fallbackUrl to true
+            }
+
             throw IOException(
-                "无法通过所选服务解析《${song.title}》的下载地址（${error.message ?: "未知错误"}）。可切换 API 服务后重试。",
-                error,
+                "无法通过所选服务解析《${song.title}》的下载地址（${primaryError.message ?: "未知错误"}）。可切换 API 服务后重试。",
+                primaryError,
             )
         }
-        return url to usedGdStudio
     }
 
     suspend fun resolveCoverUrl(song: FlacSiteSong): String = withContext(Dispatchers.IO) {
