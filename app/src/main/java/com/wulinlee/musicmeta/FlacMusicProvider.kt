@@ -147,6 +147,11 @@ private fun throwableTree(root: Throwable): Sequence<Throwable> = sequence {
     }
 }
 
+internal fun isGdStudioNoCandidatesError(error: Throwable): Boolean =
+    throwableTree(error).any {
+        it.message?.contains("GD Studio 没有搜索到候选歌曲") == true
+    }
+
 /** Require exact normalized titles and compatible artists when retrying candidates on the same platform. */
 internal fun samePlatformCandidateMatches(
     requestedTitle: String,
