@@ -80,6 +80,18 @@ class MusicSourceConfigTest {
 
 
     @Test
+    fun gdStudioHttpErrorRedactsStandaloneCredentialFields() {
+        val message = formatGdStudioHttpErrorMessage(
+            401,
+            "Invalid request token=secret123 sign=deadbeef api_key=private",
+        )
+        assertTrue(message.contains("Invalid request"))
+        assertFalse(message.contains("secret123"))
+        assertFalse(message.contains("deadbeef"))
+        assertFalse(message.contains("private"))
+    }
+
+    @Test
     fun flacApiBusinessErrorDistinguishesHttpAndApiLayers() {
         val message = formatFlacSiteApiError(-1, "接口请求失败", "下载地址解析")
         assertTrue(message.orEmpty().contains("HTTP 2xx"))
