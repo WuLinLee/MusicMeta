@@ -250,7 +250,7 @@ internal object GdStudioApiClient {
         val prefix = serverTime.take(9)
         val epochSeconds = serverTime.toLongOrNull()
         val untilPrefixChangesMs = epochSeconds?.let {
-            (((10 - (it % 10)) % 10) * 1_000L - 500L).coerceIn(250L, 8_500L)
+            ((10 - (it % 10)) * 1_000L - 500L).coerceIn(250L, 8_500L)
         } ?: 1_000L
         synchronized(timeCache) {
             timeCache[host] = TimeEntry(prefix, System.nanoTime() / 1_000_000L + untilPrefixChangesMs)
