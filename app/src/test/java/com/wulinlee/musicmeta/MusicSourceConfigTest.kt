@@ -13,6 +13,29 @@ class MusicSourceConfigTest {
     }
 
     @Test
+    fun flacSiteDownloadUrlCacheKeysIncludeSignatureAndQuality() {
+        val song = FlacSiteSong(
+            id = "123",
+            platform = "kuwo",
+            title = "测试歌曲",
+            artist = "测试歌手",
+            album = "测试专辑",
+            sign = "sig-a",
+            time = "1700000000",
+            coverUrl = "",
+        )
+        val key = flacSiteDownloadUrlCacheKey(song, "flac", "2000")
+        assertEquals(key, flacSiteDownloadUrlCacheKey(song, "FLAC", "2000"))
+        assertFalse(key == flacSiteDownloadUrlCacheKey(song, "mp3", "320"))
+        assertFalse(
+            key == flacSiteDownloadUrlCacheKey(song.copy(sign = "sig-b"), "flac", "2000"),
+        )
+        assertEquals(50 * 60 * 1000L, FlacSiteDownloadUrlCache.TTL_MILLIS)
+        FlacSiteDownloadUrlCache.put(key, "https://cdn.example/test.flac")
+        assertEquals("https://cdn.example/test.flac", FlacSiteDownloadUrlCache.get(key))
+    }
+
+    @Test
     fun defaultLimitMatchesGdStudioDocumentation() {
         // GdStudioRequestLimiter exposes its configured ceiling through a testable helper.
         assertEquals(50, GdStudioRequestLimiter.maxRequestsForTests())
