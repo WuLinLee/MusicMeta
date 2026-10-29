@@ -332,7 +332,7 @@ class FlacMusicProvider {
             } else {
                 val url = HttpUrl.Builder()
                     .scheme("https")
-                    .host("music-api.gdstudio.xyz")
+                    .host("music.gdstudio.xyz")
                     .addPathSegments("api.php")
                     .addQueryParameter("types", "pic")
                     .addQueryParameter("source", source)
@@ -421,7 +421,7 @@ class FlacMusicProvider {
     private fun fetchGdStudioLyricsBody(source: String, lyricId: String, userAgent: String): String {
         val url = HttpUrl.Builder()
             .scheme("https")
-            .host("music-api.gdstudio.xyz")
+            .host("music.gdstudio.xyz")
             .addPathSegments("api.php")
             .addQueryParameter("types", "lyric")
             .addQueryParameter("source", source)
@@ -495,7 +495,7 @@ class FlacMusicProvider {
         )
         val url = HttpUrl.Builder()
             .scheme("https")
-            .host("music-api.gdstudio.xyz")
+            .host("music.gdstudio.xyz")
             .addPathSegments("api.php")
             .addQueryParameter("types", "search")
             .addQueryParameter("source", source)
@@ -571,7 +571,7 @@ class FlacMusicProvider {
         val source = song.platform.removePrefix("gd:").ifBlank { "netease" }
         val url = HttpUrl.Builder()
             .scheme("https")
-            .host("music-api.gdstudio.xyz")
+            .host("music.gdstudio.xyz")
             .addPathSegments("api.php")
             .addQueryParameter("types", "url")
             .addQueryParameter("source", source)
