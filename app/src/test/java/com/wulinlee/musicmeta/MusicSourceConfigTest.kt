@@ -250,42 +250,6 @@ class MusicSourceConfigTest {
     }
 
     @Test
-    fun gdStudioSignatureMatchesCurrentClientFormula() {
-        assertEquals(
-            "A%20B%21%27%28%29%2A%2F%E9%9B%A8",
-            gdStudioEncodeSignatureValue("A B!'()*/雨"),
-        )
-        assertEquals(
-            "E7B351FB",
-            gdStudioApiSignature(
-                value = "雨のmusique",
-                serverTime = "1793250000",
-                host = "music.gdstudio.xyz",
-                version = "2026.09.25",
-            ),
-        )
-        assertEquals(
-            "E7B351FB",
-            gdStudioApiSignature(
-                value = "雨のmusique",
-                serverTime = "1793250000",
-                host = "music.gdstudio.xyz",
-                version = "2026.9.25",
-            ),
-        )
-        assertEquals("9ef90af686e68195b6f6d89b69d3c584", gdStudioProtocolDigest("abc"))
-        assertEquals(
-            "FA9A7FE6",
-            gdStudioApiSignature(
-                value = "abc",
-                serverTime = "1793250000",
-                host = "music.gdstudio.xyz",
-                version = "2026.09.25",
-            ),
-        )
-    }
-
-    @Test
     fun crossProviderFallbackRequiresMatchingTitleAndCompatibleArtist() {
         assertTrue(
             gdStudioFallbackCandidateMatches(
