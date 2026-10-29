@@ -34,6 +34,38 @@ data class FlacSiteSong(
     val lyricId: String = id,
 )
 
+internal fun flacSiteDownloadUrlCacheKey(song: FlacSiteSong, format: String, bitrate: String): String =
+    listOf(song.platform, song.id, format.lowercase(), bitrate, song.time, song.sign).joinToString("|")
+
+/** Short-lived, bounded cache for direct URLs returned by flac.music.hi.cn. */
+internal object FlacSiteDownloadUrlCache {
+    const val TTL_MILLIS = 50 * 60 * 1000L
+    private const val MAX_ENTRIES = 100
+
+    private data class Entry(val url: String, val expiresAt: Long)
+    private val cache = object : LinkedHashMap<String, Entry>(32, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Entry>?): Boolean =
+            size > MAX_ENTRIES
+    }
+
+    @Synchronized
+    fun get(key: String): String? {
+        val entry = cache[key] ?: return null
+        if (System.nanoTime() / 1_000_000L >= entry.expiresAt) {
+            cache.remove(key)
+            return null
+        }
+        return entry.url
+    }
+
+    @Synchronized
+    fun put(key: String, url: String) {
+        if (url.startsWith("https://") || url.startsWith("http://")) {
+            cache[key] = Entry(url, System.nanoTime() / 1_000_000L + TTL_MILLIS)
+        }
+    }
+}
+
 internal fun formatFlacSiteApiError(code: Int, detail: String, operation: String): String? {
     if (code == 0 || code == 200) return null
     if (code == 468 || detail.contains("验证") || detail.contains("challenge", ignoreCase = true)) {
@@ -197,6 +229,11 @@ class FlacMusicProvider {
             val gdBitrate = if (normalizedFormat == "flac") "999" else actualBitrate
             return@withContext resolveGdStudioUrl(song, gdBitrate, userAgent)
         }
+        // The open-source FlacMusic client documents these direct URLs as valid for about
+        // one hour. Reuse them for 50 minutes to avoid repeatedly hitting getUrl for the
+        // same track/quality, while leaving a safety margin before expiry.
+        val cacheKey = flacSiteDownloadUrlCacheKey(song, normalizedFormat, actualBitrate)
+        FlacSiteDownloadUrlCache.get(cacheKey)?.let { return@withContext it }
         val request = baseRequest(apiUrl("getUrl"), cookie, userAgent)
             .post(
                 FormBody.Builder()
@@ -226,6 +263,7 @@ class FlacMusicProvider {
         if (uri == null || uri.scheme?.lowercase() !in setOf("http", "https") || uri.host.isNullOrBlank()) {
             throw IOException("下载站没有返回有效的 HTTP/HTTPS 音频地址。")
         }
+        FlacSiteDownloadUrlCache.put(cacheKey, direct)
         direct
     }
 
