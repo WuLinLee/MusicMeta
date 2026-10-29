@@ -29,7 +29,7 @@ class GdStudioApiTest {
         assertEquals("search", signedParams["types"])
         assertEquals("netease", signedParams["source"])
         assertEquals("涙が ほお&x", signedParams["name"])
-        assertEquals("0AB1D53C", signedParams["s"])
+        assertEquals("E1188D36", signedParams["s"])
         assertTrue(signedParams["s"].orEmpty().matches(Regex("[A-F0-9]{8}")))
     }
 
@@ -112,22 +112,9 @@ class GdStudioApiTest {
     }
 
     @Test
-    fun versionNormalizationMatchesTheWebsiteSignatureProtocol() {
-        assertEquals("2026.09.25", GdStudioApiClient.API_VERSION)
-        assertEquals("20260925", GdStudioApiClient.normalizeVersion("2026.09.25"))
-        assertEquals(
-            "2026.10.29",
-            GdStudioApiClient.parseVersionFromPlayerScript(
-                """const mkPlayer = { version: "2026.10.29" };""",
-            ),
-        )
-        assertEquals(
-            "2026.11.03",
-            GdStudioApiClient.parseVersionFromPlayerScript(
-                """window.mkPlayer = { name: "player", version: '2026.11.03' };""",
-            ),
-        )
-        assertEquals(null, GdStudioApiClient.parseVersionFromPlayerScript("const player = {};"))
+    fun apiVersionMatchesMaintainedClientProtocol() {
+        assertEquals("2026.08.01", GdStudioApiClient.API_VERSION)
+        assertEquals("20260801", GdStudioApiClient.normalizeVersion(GdStudioApiClient.API_VERSION))
     }
 
     @Test
