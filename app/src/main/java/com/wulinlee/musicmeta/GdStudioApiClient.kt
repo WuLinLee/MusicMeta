@@ -165,7 +165,9 @@ internal object GdStudioApiClient {
         val encodedPayload = encodeURIComponent(payload)
         val timePrefix = serverTime.take(9)
         require(timePrefix.length == 9) { "GD Studio server time must contain at least 9 digits." }
-        val signatureInput = "${timePrefix}|${host}|${normalizeVersion(version)}|${encodedPayload}"
+        // The upstream client always signs with the canonical .xyz host, including when
+        // the request itself uses the .org mirror as a network fallback.
+        val signatureInput = "${timePrefix}|${PRIMARY_HOST}|${normalizeVersion(version)}|${encodedPayload}"
         val digest = MessageDigest.getInstance("MD5")
             .digest(signatureInput.toByteArray(Charsets.UTF_8))
         val signature = digest.joinToString("") { byte ->
