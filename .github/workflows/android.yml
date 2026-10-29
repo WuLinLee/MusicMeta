@@ -195,8 +195,10 @@ jobs:
           CURRENT_VERSION="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n 1)"
           CURRENT_TAG="v$CURRENT_VERSION"
           # Keep the current version plus nine milestones that show the project's evolution.
-          # Keep the current release, its previous stable release, and curated milestones.
-          KEEP_TAGS=" $CURRENT_TAG v1.50 v1.32 v1.31 v1.30 v1.29 v1.28 v1.27 v1.26 v1.25 v1.23 "
+          # Preserve the current release, the newest previously published stable release,
+          # and curated milestones. Release lists are newest-first.
+          PREVIOUS_STABLE_TAG="$(gh release list --limit 1000 --json tagName,isPrerelease,isDraft --jq '.[] | select(.isPrerelease == false and .isDraft == false) | .tagName' | grep -v -Fx "$CURRENT_TAG" | head -n 1 || true)"
+          KEEP_TAGS=" $CURRENT_TAG $PREVIOUS_STABLE_TAG v1.50 v1.32 v1.31 v1.30 v1.29 v1.28 v1.27 v1.26 v1.25 v1.23 "
           while IFS= read -r TAG; do
             [[ -z "$TAG" ]] && continue
             if [[ "$KEEP_TAGS" == *" $TAG "* ]]; then
