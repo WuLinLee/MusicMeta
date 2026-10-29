@@ -80,7 +80,7 @@ internal fun formatFlacSiteApiError(code: Int, detail: String, operation: String
         )
     ) {
         return if (operation.contains("下载地址")) {
-            "下载站无法解析该候选歌曲的下载地址：曲目可能已失效，或此版本在当前平台暂不可用。请重新搜索并选择其他候选，或稍后重试。"
+            "下载站无法解析该候选歌曲的下载地址：曲目可能已失效，或此版本在当前平台暂不可用。请重新搜索并选择其他候选；如果仍失败，可切换 API 服务或稍后重试。"
         } else {
             "下载站暂时无法处理这次$operation；该平台或候选可能暂不可用，请稍后重试。"
         }

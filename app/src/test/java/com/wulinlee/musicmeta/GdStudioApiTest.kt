@@ -58,7 +58,7 @@ class GdStudioApiTest {
     @Test
     fun encodeURIComponentMatchesJavascriptEncodingForJapaneseAndPunctuation() {
         assertEquals(
-            "%E6%B6%9A%E3%81%8C%20%E3%81%BB%E3%81%8A%26x",
+            "%E6%B6%99%E3%81%8C%20%E3%81%BB%E3%81%8A%26x",
             GdStudioApiClient.encodeURIComponent("涙が ほお&x"),
         )
         assertEquals("%21%27%28%29%2A", GdStudioApiClient.encodeURIComponent("!'()*"))
