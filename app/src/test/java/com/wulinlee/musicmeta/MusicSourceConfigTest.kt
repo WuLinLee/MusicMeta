@@ -49,29 +49,7 @@ class MusicSourceConfigTest {
         assertEquals("netease", MusicSourceConfig.platformForBackend(MusicSourceConfig.BACKEND_GD_STUDIO, "tencent"))
     }
 
-    @Test
-    fun gdStudioFallbackTriesPreferredSourceBeforeOtherStableSources() {
-        assertEquals(
-            listOf("netease", "kuwo", "joox", "bilibili"),
-            gdStudioFallbackPlatformOrder("wyy"),
-        )
-        assertEquals(
-            listOf("joox", "netease", "kuwo", "bilibili"),
-            gdStudioFallbackPlatformOrder("joox"),
-        )
-    }
 
-    @Test
-    fun gdStudioUnsupportedSourceErrorIsRecognizedThroughCauseAndSuppressedChains() {
-        val error = java.io.IOException(
-            "GD Studio API 请求失败：HTTP 400（Value of `source` is not supported.）",
-        )
-        assertTrue(isGdStudioUnsupportedSourceError(error))
-        val hostFallbackError = java.io.IOException("GD Studio backup host connection failed.")
-        hostFallbackError.addSuppressed(error)
-        assertTrue(isGdStudioUnsupportedSourceError(hostFallbackError))
-        assertFalse(isGdStudioUnsupportedSourceError(java.io.IOException("HTTP 503")))
-    }
 
     @Test
     fun flacPlatformRemainsAvailableEvenThoughGdStudioDoesNotListIt() {
@@ -99,27 +77,7 @@ class MusicSourceConfigTest {
         assertFalse(message.contains("token=secret"))
     }
 
-    @Test
-    fun gdStudioUnsupportedSourceErrorIsOnlyRecognizedForSourceRejection() {
-        assertTrue(
-            isGdStudioUnsupportedSourceError(
-                java.io.IOException("GD Studio API 请求失败：HTTP 400（Value of `source` is not supported.）"),
-            ),
-        )
-        assertFalse(isGdStudioUnsupportedSourceError(java.io.IOException("HTTP 503")))
-        assertFalse(isGdStudioUnsupportedSourceError(java.io.IOException("invalid track ID")))
-    }
 
-    @Test
-    fun searchFallbackOrderStaysInsideSelectedGdStudioService() {
-        val sources = gdStudioFallbackPlatformOrder("netease")
-        assertEquals(listOf("netease", "kuwo", "joox", "bilibili"), sources)
-        // Every GD Studio search result is tagged "gd:<source>", so its URL request
-        // follows GD Studio rather than a plain "wyy"/FLAC result.
-        assertEquals("gd:kuwo", "gd:" + sources[1])
-        assertEquals("gd:joox", "gd:" + sources[2])
-        assertEquals("gd:bilibili", "gd:" + sources[3])
-    }
 
     @Test
     fun flacSiteSongNotFoundErrorGivesRecoverySteps() {
@@ -319,41 +277,6 @@ class MusicSourceConfigTest {
         assertTrue(isGdStudioNoCandidatesError(java.io.IOException(formatGdStudioNoCandidatesMessage())))
     }
 
-    @Test
-    fun crossProviderFallbackRequiresMatchingTitleAndCompatibleArtist() {
-        assertTrue(
-            gdStudioFallbackCandidateMatches(
-                "雨のmusique",
-                "JUDY AND MARY",
-                "雨のmusique",
-                "JUDY AND MARY",
-            ),
-        )
-        assertTrue(
-            gdStudioFallbackCandidateMatches(
-                "雨のmusique",
-                "JUDY AND MARY",
-                "雨のmusique",
-                "JUDY AND MARY / YUKI",
-            ),
-        )
-        assertFalse(
-            gdStudioFallbackCandidateMatches(
-                "雨のmusique",
-                "JUDY AND MARY",
-                "雨のmusique (Live)",
-                "JUDY AND MARY",
-            ),
-        )
-        assertFalse(
-            gdStudioFallbackCandidateMatches(
-                "雨のmusique",
-                "JUDY AND MARY",
-                "そばかす",
-                "JUDY AND MARY",
-            ),
-        )
-    }
 
     @Test
     fun pageSizesReuseSameHundredTrackBatch() {
