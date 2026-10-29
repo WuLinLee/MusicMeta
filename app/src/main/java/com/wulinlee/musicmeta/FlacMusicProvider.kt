@@ -101,6 +101,26 @@ internal fun gdStudioSearchKeywords(keyword: String, fallbackKeyword: String?): 
 internal fun formatGdStudioNoCandidatesMessage(): String =
     "GD Studio 没有搜索到候选歌曲：可能是当前平台暂无此版本，或关键词不匹配。请改用歌名搜索、稍后重试，或切换音乐平台 / API 服务。"
 
+/** Try the preferred GD Studio source first, then only other sources currently marked stable. */
+internal fun gdStudioFallbackPlatformOrder(preferredSource: String): List<String> {
+    val supported = MusicSourceConfig.platformsFor(MusicSourceConfig.BACKEND_GD_STUDIO).map { it.id }
+    val preferred = MusicSourceConfig.platformForBackend(
+        MusicSourceConfig.BACKEND_GD_STUDIO,
+        preferredSource,
+    )
+    return listOf(preferred) + supported.filterNot { it == preferred }
+}
+
+/** Recognize the API validation response that says a source is currently unsupported. */
+internal fun isGdStudioUnsupportedSourceError(error: Throwable): Boolean =
+    generateSequence(error) { it.cause }.any { cause ->
+        val message = cause.message.orEmpty()
+        message.contains("source", ignoreCase = true) &&
+            (message.contains("not supported", ignoreCase = true) ||
+                message.contains("unsupported", ignoreCase = true) ||
+                message.contains("不支持"))
+    }
+
 internal fun isGdStudioNoCandidatesError(error: Throwable): Boolean =
     generateSequence(error) { it.cause }
         .any { it.message?.contains("GD Studio 没有搜索到候选歌曲") == true }
@@ -322,13 +342,55 @@ class FlacMusicProvider {
                     val keyword = listOf(song.title, song.artist)
                         .filter { it.isNotBlank() }
                         .joinToString(" ")
-                    val alternatives = searchGdStudio(keyword, "netease")
-                    val alternative = alternatives.firstOrNull { candidate ->
-                        gdStudioFallbackCandidateMatches(
-                            song.title, song.artist, candidate.title, candidate.artist,
-                        )
-                    } ?: throw IOException("GD Studio 没有找到标题和歌手匹配的候选。")
-                    resolveDownloadUrl(alternative, format, bitrate, cookie, userAgent)
+                    var lastFallbackError: Exception? = null
+                    var resolvedUrl: String? = null
+
+                    // A source may be accepted by search but rejected by the URL endpoint.
+                    // Try the preferred catalog first, then other sources explicitly marked
+                    // stable by the current API configuration. Every candidate must still
+                    // match both title and artist before it can be played.
+                    for (fallbackSource in gdStudioFallbackPlatformOrder(source)) {
+                        try {
+                            var alternatives = searchGdStudio(keyword, fallbackSource)
+                            var alternative = alternatives.firstOrNull { candidate ->
+                                gdStudioFallbackCandidateMatches(
+                                    song.title, song.artist, candidate.title, candidate.artist,
+                                )
+                            }
+                            if (alternative == null) {
+                                alternatives = searchGdStudio(song.title, fallbackSource)
+                                alternative = alternatives.firstOrNull { candidate ->
+                                    gdStudioFallbackCandidateMatches(
+                                        song.title, song.artist, candidate.title, candidate.artist,
+                                    )
+                                }
+                            }
+                            if (alternative == null) continue
+
+                            try {
+                                resolvedUrl = resolveDownloadUrl(
+                                    alternative, format, bitrate, cookie, userAgent,
+                                )
+                                break
+                            } catch (fallbackError: CancellationException) {
+                                throw fallbackError
+                            } catch (fallbackError: Exception) {
+                                lastFallbackError = fallbackError
+                                if (isGdStudioUnsupportedSourceError(fallbackError)) continue
+                                throw fallbackError
+                            }
+                        } catch (fallbackError: CancellationException) {
+                            throw fallbackError
+                        } catch (fallbackError: Exception) {
+                            lastFallbackError = fallbackError
+                            if (isGdStudioUnsupportedSourceError(fallbackError)) continue
+                            throw fallbackError
+                        }
+                    }
+                    resolvedUrl ?: throw IOException(
+                        "GD Studio 当前可用音源均未能解析到曲名和歌手匹配的下载地址。",
+                        lastFallbackError,
+                    )
                 } catch (fallbackError: CancellationException) {
                     throw fallbackError
                 } catch (fallbackError: Exception) {
