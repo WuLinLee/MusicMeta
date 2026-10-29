@@ -2,12 +2,13 @@
 
 MusicMeta（音笺）是一款以歌单整理和本地音乐管理为核心的 Android 应用：读取可公开访问的网易云歌单，搜索并核对音源，下载音频，并尽可能补齐封面、歌词和音频标签。
 
-> **当前版本：1.55** · `versionCode = 59`  
+> **当前版本：1.56** · `versionCode = 60`  
 > 应用 ID：`com.wulinlee.musicmeta` · 最低 Android：10（API 29）· 目标 SDK：35  
 > 技术栈：Kotlin、Jetpack Compose、Material 3、Coroutines、OkHttp、Coil、jaudiotagger。
 
 - **正式版发布页：** [GitHub Releases](https://github.com/WuLinLee/MusicMeta/releases)
-- **v1.55 APK 直链：** [MusicMeta-v1.55.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.55/MusicMeta-v1.55.apk)
+- **v1.56 APK 直链：** [MusicMeta-v1.56.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.56/MusicMeta-v1.56.apk)
+- **上一版本 APK：** [MusicMeta-v1.55.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.55/MusicMeta-v1.55.apk)
 - **上一版本 APK：** [MusicMeta-v1.52.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.52/MusicMeta-v1.52.apk)
 - **上一版本 APK：** [MusicMeta-v1.51.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.51/MusicMeta-v1.51.apk)
 - **上一版本 APK：** [MusicMeta-v1.50.apk](https://github.com/WuLinLee/MusicMeta/releases/download/v1.50/MusicMeta-v1.50.apk)
