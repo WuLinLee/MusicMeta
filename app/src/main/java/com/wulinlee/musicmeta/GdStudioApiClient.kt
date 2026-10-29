@@ -15,20 +15,11 @@ import okhttp3.Request
  * Protocol reference: musicdl's maintained GDStudioMusicClient (updated October 2026).
  */
 internal object GdStudioApiClient {
-    const val API_VERSION = "2026.09.25"
+    const val API_VERSION = "2026.08.01"
     const val PRIMARY_HOST = "music.gdstudio.xyz"
     internal val API_HOSTS = listOf(PRIMARY_HOST, "music.gdstudio.org")
     internal const val DEFAULT_USER_AGENT =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
-
-    private data class VersionEntry(val version: String, val expiresAtElapsedMs: Long)
-
-    private const val VERSION_CACHE_TTL_MILLIS = 10 * 60 * 1000L
-    private val versionCache = mutableMapOf<String, VersionEntry>()
-    private val versionPattern = Regex(
-        """\bversion\s*[:=]\s*["']?(20\d{2}\.\d{1,2}\.\d{1,2})""",
-        RegexOption.IGNORE_CASE,
-    )
 
     /** Host failover stays within GD Studio; cross-provider fallback is handled by FlacMusicProvider. */
     fun getText(
@@ -40,7 +31,7 @@ internal object GdStudioApiClient {
         val errors = mutableListOf<IOException>()
         for (host in API_HOSTS) {
             try {
-                val version = currentApiVersion(client, host)
+                val version = API_VERSION
                 val serverTime = serverTimePrefix(client, host)
                 try {
                     return executeSignedRequest(client, host, params, ttlMillis, serverTime, version)
@@ -49,7 +40,7 @@ internal object GdStudioApiClient {
 
                     // Refresh both signing inputs after a rejection. If neither changed, sending
                     // the same signature again cannot help and may worsen upstream rate limiting.
-                    val refreshedVersion = currentApiVersion(client, host, forceRefresh = true)
+                    val refreshedVersion = API_VERSION
                     val refreshedTime = serverTimePrefix(client, host)
                     if (!shouldRetryAfterSignatureRejection(
                             version,
@@ -145,53 +136,6 @@ internal object GdStudioApiClient {
         return text.contains("HTTP 401", ignoreCase = true) ||
             text.contains("Invalid request", ignoreCase = true)
     }
-
-    @Synchronized
-    private fun currentApiVersion(
-        client: OkHttpClient,
-        host: String,
-        forceRefresh: Boolean = false,
-    ): String {
-        val now = System.nanoTime() / 1_000_000L
-        val cached = versionCache[host]
-        if (!forceRefresh && cached != null && now < cached.expiresAtElapsedMs) {
-            return cached.version
-        }
-
-        // The site's player.js version is part of the signature. It can change without an
-        // app release; a pinned fallback alone leaves every API request invalid after rotation.
-        // On a 401, forceRefresh bypasses this cache and reads player.js again before retrying.
-        val selected = readApiVersion(client, host)
-            ?: cached?.version
-            ?: API_VERSION
-        versionCache[host] = VersionEntry(
-            version = selected,
-            expiresAtElapsedMs = now + VERSION_CACHE_TTL_MILLIS,
-        )
-        return selected
-    }
-    private fun readApiVersion(client: OkHttpClient, host: String): String? {
-        val request = Request.Builder()
-            .url("https://$host/js/player.js")
-            .header("User-Agent", DEFAULT_USER_AGENT)
-            .header("Origin", "https://$host")
-            .header("Referer", "https://$host/")
-            .header("Accept", "text/javascript, application/javascript, */*; q=0.1")
-            .get()
-            .build()
-        val script = try {
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return null
-                response.body?.string().orEmpty()
-            }
-        } catch (_: Exception) {
-            return null
-        }
-        return parseVersionFromPlayerScript(script)
-    }
-
-    internal fun parseVersionFromPlayerScript(script: String): String? =
-        versionPattern.find(script)?.groupValues?.getOrNull(1)
 
     /** Build the GD Studio API endpoint; signed parameters are sent as a form-encoded POST body. */
     internal fun apiUrl(host: String): HttpUrl {
