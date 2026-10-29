@@ -28,8 +28,7 @@ internal object GdStudioApiClient {
         RegexOption.IGNORE_CASE,
     )
 
-    /** Host failover stays within GD Studio; it never silently changes API providers. */
-    /** Host failover stays within GD Studio; it never silently changes API providers. */
+    /** Host failover stays within GD Studio; cross-provider fallback is handled by FlacMusicProvider. */
     fun getText(
         client: OkHttpClient,
         params: Map<String, String>,
@@ -46,8 +45,8 @@ internal object GdStudioApiClient {
                 } catch (error: IOException) {
                     if (!isSignatureRejection(error)) throw error
 
-                    // A 401 means either the site rotated its player version or the 10-second
-                    // signing bucket changed. Refresh both values and retry this host once.
+                    // Refresh both the player-script version and server time before one retry.
+                    // A fresh time read avoids reusing a signature prefix across a bucket boundary.
                     val refreshedVersion = currentApiVersion(client, host, forceRefresh = true)
                     val refreshedTime = serverTimePrefix(client, host)
                     try {
